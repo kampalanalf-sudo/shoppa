@@ -8,7 +8,8 @@ ART = os.path.join(HERE, "art")
 CACHE = os.path.join(HERE, "cache")
 os.makedirs(CACHE, exist_ok=True)
 
-DPI = 200
+DPI = int(os.environ.get("BROCHURE_DPI", "200"))
+QUALITY = int(os.environ.get("BROCHURE_Q", "90"))
 MM = DPI / 25.4          # px per mm
 PAGE_W_MM, PAGE_H_MM = 297, 210
 PW, PH = int(PAGE_W_MM * MM), int(PAGE_H_MM * MM)
@@ -107,8 +108,11 @@ def base_page(glows, grid=True, grain=True):
     return canvas.convert("RGB")
 
 
-def save(im, name, quality=90):
-    p = os.path.join(CACHE, name)
+def save(im, name, quality=None):
+    quality = quality or QUALITY
+    cache_dir = os.environ.get("BROCHURE_CACHE", CACHE)
+    os.makedirs(cache_dir, exist_ok=True)
+    p = os.path.join(cache_dir, name)
     im.save(p, quality=quality, optimize=True, progressive=True)
     return p
 
@@ -250,7 +254,7 @@ def build_crops():
     cov = crop_cover(os.path.join(ART, "cover.png"), PW, PH, focus=0.55)
     cov = linear_fade(cov, "left", int(PW * 0.58), INK, 252, gamma=1.9, ease=0.30)
     cov = linear_fade(cov, "bottom", int(PH * 0.34), INK, 235, gamma=2.2, ease=0.20)
-    save(cov, "cover_full.jpg", 92)
+    save(cov, "cover_full.jpg")
 
     # Per-product page plates: the art is baked into the page background with a
     # feathered edge, so there is never a seam or a bounding box in the PDF.
@@ -270,7 +274,7 @@ def build_crops():
         mask = feather_mask((pw, ph), "left", int(pw * 0.40), power=1.9)
         page = base_page_img.copy()
         page.paste(panel, (PW - pw, 0), mask)
-        save(page, f"story_{p}.jpg", 90)
+        save(page, f"story_{p}.jpg")
 
         # --- engineering page: art band near the top
         bw, bh = int(268 * MM), int(52 * MM)
@@ -282,13 +286,13 @@ def build_crops():
         mask = ImageChops.multiply(ImageChops.multiply(m, m2), ImageChops.multiply(m3, m4))
         page = quiet_img.copy()
         page.paste(band, (int(14.5 * MM), int(5 * MM)), mask)
-        save(page, f"eng_{p}.jpg", 90)
+        save(page, f"eng_{p}.jpg")
 
     # portfolio grid cards: 82mm x 52mm
     for p in PRODUCT_KEYS:
         w, h = int(82 * MM), int(52 * MM)
         im = crop_cover(os.path.join(ART, p + ".png"), w, h, focus=0.5)
-        save(im, f"card_{p}.jpg", 88)
+        save(im, f"card_{p}.jpg")
 
     # wide dividers 273 x 44
     for p in PRODUCT_KEYS:
@@ -296,13 +300,13 @@ def build_crops():
         im = crop_cover(os.path.join(ART, p + ".png"), w, h, focus=0.5)
         im = linear_fade(im, "left", int(w * 0.26), INK, 250, gamma=1.8, ease=0.3)
         im = linear_fade(im, "right", int(w * 0.14), INK, 250, gamma=1.8, ease=0.3)
-        save(im, f"strip_{p}.jpg", 88)
+        save(im, f"strip_{p}.jpg")
 
     # small index thumbnails 64 x 41
     for p in PRODUCT_KEYS:
         w, h = int(64 * MM), int(41 * MM)
         im = crop_cover(os.path.join(ART, p + ".png"), w, h, focus=0.5)
-        save(im, f"thumb_{p}.jpg", 86)
+        save(im, f"thumb_{p}.jpg")
 
     # contents band — RGBA so it feathers into the page plate with no seam
     bw, bh = int(297 * MM), int(64 * MM)
@@ -313,7 +317,7 @@ def build_crops():
         feather_mask((bw, bh), "left", int(bw * 0.45), power=1.6))
     band = band.convert("RGBA")
     band.putalpha(m)
-    band.save(os.path.join(CACHE, "band_cover.png"), optimize=True)
+    band.save(os.path.join(os.environ.get("BROCHURE_CACHE", CACHE), "band_cover.png"), optimize=True)
 
     # back-cover ornament — RGBA, feathered on two edges
     ow, oh = int(150 * MM), int(150 * MM)
@@ -324,7 +328,7 @@ def build_crops():
         feather_mask((ow, oh), "top", int(oh * 0.40), power=1.7))
     orn = orn.convert("RGBA")
     orn.putalpha(m)
-    orn.save(os.path.join(CACHE, "orn_back.png"), optimize=True)
+    orn.save(os.path.join(os.environ.get("BROCHURE_CACHE", CACHE), "orn_back.png"), optimize=True)
 
 
 # --------------------------------------------------------------------------
@@ -344,4 +348,4 @@ def glyphs():
 if __name__ == "__main__":
     plates()
     build_crops()
-    print("assets ready in", CACHE)
+    print("assets ready in", os.environ.get("BROCHURE_CACHE", CACHE), "at", DPI, "dpi / q", QUALITY)

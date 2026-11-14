@@ -15,7 +15,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 FONTS = os.path.join(HERE, "fonts")
-CACHE = os.path.join(HERE, "cache")
+CACHE = os.environ.get("BROCHURE_CACHE", os.path.join(HERE, "cache"))
 
 # ---------------------------------------------------------------- page geometry
 PT = 72 / 25.4          # points per millimetre

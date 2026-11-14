@@ -12,8 +12,9 @@ from kit import (Kit, register_fonts, W, H, ML, MR, MT, MB, CONTENT_W, CACHE,
                  ACCENTS, rgba, mix)
 from reportlab.pdfbase import pdfmetrics
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..",
-                   "Great-Lakes-Technology-Portfolio-2026.pdf")
+OUT = os.environ.get("BROCHURE_OUT") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..",
+    "Great-Lakes-Technology-Portfolio-2026.pdf")
 
 PAGE = 0
 
