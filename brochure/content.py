@@ -387,113 +387,114 @@ PRODUCTS = [
     ),
     dict(
         key="proxicore", art="proxicore", name="ProxiCore",
-        kicker="PROXIMITY PLATFORM",
-        tagline="The core layer that knows where people and devices are.",
-        sector="Proximity & location",
-        accent="violet", status="In build · private repository",
-        url="Core platform",
+        kicker="BLE DEVICE INTELLIGENCE",
+        tagline="See the radio field around you — and understand what is in it.",
+        sector="Security & device intelligence",
+        accent="violet", status="Live · proxicore.site",
+        url="proxicore.site · proxicore-visor.vercel.app",
         summary=(
-            "ProxiCore is the platform layer underneath the Proxi family: identity for people, "
-            "devices and locations, plus the services that decide what should happen when they "
-            "come close to each other. Proxicore-Point and ProxiCast are built as applications "
-            "on top of it rather than as separate systems."
+            "ProxiCore is a browser-based Bluetooth Low Energy discovery platform. It scans the "
+            "BLE field around a phone or laptop, estimates distance, bearing and signal strength "
+            "for every advertised device, and maps what it finds. The companion Visor console "
+            "turns a capture into a readable picture: signal radar, closest labels, activity "
+            "timeline and a plain-language summary of what stands out."
         ),
         highlights=[
-            ("One spatial record",
-             "People, devices and venues modelled once, so every Proxi product reads the same "
-             "source of truth instead of maintaining parallel lists."),
-            ("Event-based, not polled",
-             "Arrival, dwell and departure are treated as events that other services subscribe "
-             "to, which keeps downstream behaviour cheap and predictable."),
-            ("Multi-tenant from the start",
-             "Organisations, their sites and their staff are scoped in the data model, with "
-             "row-level security rather than application-side filtering."),
-            ("Security-first boundary",
-             "Location data is personal data. Consent, retention and per-role visibility are "
-             "part of the platform contract, not an afterthought."),
+            ("Works with no hardware",
+             "Web Bluetooth on Android and desktop, Bluefy on iOS — no dedicated scanner, "
+             "gateway or proprietary hardware is required to start a capture."),
+            ("Distance, bearing and strength",
+             "RSSI is converted to an estimated distance using a tunable path-loss exponent, "
+             "with bearing and confidence shown per label rather than a single vague number."),
+            ("Capture, then interrogate",
+             "Sessions export to History as GeoJSON, CSV or JSON, and Visor replays a window as "
+             "a radar, a closest-labels register and an activity timeline."),
+            ("Device index and registry",
+             "Repeated labels are tracked across a session and stored in a registry, so a site "
+             "can be reviewed over time rather than only in the moment."),
         ],
-        metrics=[("1", "shared core"), ("3", "products on it"), ("RLS", "by default")],
+        metrics=[("22", "labels per capture"), ("500 m", "max radar range"), ("BLE", "no hardware")],
         arch=[
-            ("Model", "Organisations → sites → zones → devices, with people attached by consent."),
-            ("Services", "Presence, proximity evaluation and event dispatch as separate concerns."),
-            ("Access", "Row-level security scoped per organisation; secrets kept server-side."),
-            ("Delivery", "Vercel-hosted application surface with a private source repository."),
+            ("Capture", "Web Bluetooth scan with configurable RSSI threshold and scan interval."),
+            ("Estimating", "Path-loss model converts RSSI to distance; bearing from directional reads."),
+            ("Analysis", "Visor: radar plot, closest-labels register, timeline and quick-read summary."),
+            ("Storage", "IndexedDB locally; optional Supabase for shared sessions and registry."),
         ],
-        note="Positioning inferred from product naming — to be confirmed against the repository.",
-        inferred=True,
+        note="A label is not a verified identity — the product states that limit, and so do we.",
+        links=[("Scanner", "https://proxicore.site"),
+               ("Visor console", "https://proxicore-visor.vercel.app/")],
     ),
     dict(
         key="proxipoint", art="proxipoint", name="Proxicore-Point",
-        kicker="PROXIMITY POINTS & COMMERCE",
-        tagline="Every entrance, counter and shelf becomes a measurable point.",
-        sector="Retail & venues",
-        accent="cyan", status="In build · private repository",
-        url="Point-of-presence product",
+        kicker="FIXED-SITE DEPLOYMENT",
+        tagline="The same discovery engine, parked at a door, a gate or a floor.",
+        sector="Venues & occupancy",
+        accent="cyan", status="In build · fixed-site module",
+        url="Point module · occupancy · security",
         summary=(
-            "Proxicore-Point puts a ProxiCore endpoint where commerce actually happens: doors, "
-            "counters, queues and shelves. It answers who arrived, how long they stayed and "
-            "whether they came back — turning footfall into a number a shop can plan against."
+            "Proxicore-Point is the fixed-site form of the platform: a registered point that runs "
+            "continuously at an entrance, a gate or a floor, and reports what the radio field "
+            "looks like over time. It is aimed at occupancy counting, site security review and "
+            "repeat-presence patterns — the questions a venue asks after the fact."
         ),
         highlights=[
-            ("Points, not guesses",
-             "Each location is a registered point with its own presence history, so reporting "
-             "is per door or per counter rather than per building."),
-            ("Dwell and return",
-             "Dwell time and repeat-visit rates are first-class metrics, the two numbers that "
-             "separate passing traffic from real intent."),
-            ("Works with the retail stack",
-             "Designed to complement a retention engine such as Rebuy: footfall explains the "
-             "visit, purchase history explains the basket."),
-            ("Merchant-readable",
-             "Output is a dashboard a shop owner can act on without a data analyst, aligned to "
-             "mobile-first and low-bandwidth use."),
+            ("Registered points",
+             "Each site is a named point with its own capture history, so reporting is per door "
+             "or per floor rather than one undifferentiated feed."),
+            ("Occupancy and flow",
+             "Presence and dwell are derived from label continuity across successive captures, "
+             "which answers how busy a space was and when."),
+            ("Security review",
+             "Repeat labels and unusual persistence can be reviewed against a timeline, giving a "
+             "site a record to look back on rather than only a live view."),
+            ("Honest by design",
+             "The platform will not claim to identify a person from a label; output is presence "
+             "and pattern, and the interface says so."),
         ],
-        metrics=[("per point", "reporting"), ("dwell", "tracked"), ("repeat", "visits")],
+        metrics=[("per point", "capture history"), ("dwell", "derived"), ("review", "timeline")],
         arch=[
-            ("Sensor layer", "ProxiCore endpoints or beacons registered per site and per zone."),
-            ("Presence", "Arrival and dwell events resolved into sessions, not raw reads."),
-            ("Reporting", "Merchant-facing metrics per point, per day, with trend comparison."),
-            ("Adjacent", "Complements Rebuy's customer record to connect visit to purchase."),
+            ("Deployment", "A fixed station or kiosk running the ProxiCore capture engine."),
+            ("Aggregation", "Sessions roll up per point, per day, with trend comparison."),
+            ("Modules", "Occupancy and security views sit over the shared registry."),
+            ("Adjacent", "Pairs with Rebuy where a venue also wants the customer record."),
         ],
-        note="Positioning inferred from product naming — to be confirmed against the repository.",
-        inferred=True,
+        note="Fixed points turn one-off captures into a site record you can act on.",
     ),
     dict(
         key="proxicast", art="proxicast", name="ProxiCast",
-        kicker="PROXIMITY BROADCAST",
-        tagline="The right message, in the moment someone is actually there.",
-        sector="Messaging & media",
-        accent="gold", status="In build · private repository",
-        url="Proximity broadcast product",
+        kicker="ALERTING & BROADCAST",
+        tagline="When the field changes, the right people hear about it.",
+        sector="Alerting & messaging",
+        accent="gold", status="Planned · alerting layer",
+        url="Broadcast layer on the ProxiCore registry",
         summary=(
-            "ProxiCast delivers content to a defined place and moment rather than to a mailing "
-            "list: a promotion at the entrance, an offer at the counter, an announcement at the "
-            "gate. It reuses the delivery discipline already proven in Rebuy — templates, "
-            "scheduling, quiet hours and opt-outs — scoped by proximity instead of by segment."
+            "ProxiCast is the planned alerting layer over ProxiCore: rules that watch the field "
+            "and notify when something that matters changes — a device that keeps appearing "
+            "near a restricted area, a threshold crossed at a gate, a capture that needs review. "
+            "Delivery reuses the messaging core already operating in Rebuy."
         ),
         highlights=[
-            ("Proximity as the trigger",
-             "Campaigns attach to a point or zone, so delivery is gated by real presence "
-             "rather than a timer that hopes the person is nearby."),
-            ("Fair-use by design",
-             "Frequency caps, quiet hours and explicit opt-out are inherited requirements, "
-             "because proximity messaging fails the moment it feels like spam."),
+            ("Rules over raw signal",
+             "A rule is expressed as a condition on presence, persistence, distance or count — "
+             "so an alert means something rather than firing on every reading."),
+            ("Routing that fits the site",
+             "Alerts route to a guard, a duty manager or a group channel, with escalation and "
+             "acknowledgement recorded."),
             ("One delivery core",
-             "WhatsApp, SMS and in-app surfaces share the same template and audit path already "
-             "operating in Rebuy."),
+             "WhatsApp, SMS and email share the templates, quiet hours and audit path already "
+             "proven in Rebuy, including per-channel fallback."),
             ("Measurable",
-             "Impressions, engagement and redemption recorded per campaign and per point, so "
-             "spend can be justified against footfall."),
+             "Every alert is logged with its trigger, recipient and response time, so the rule "
+             "set can be tuned instead of trusted blindly."),
         ],
-        metrics=[("proximity", "trigger"), ("capped", "frequency"), ("audited", "sends")],
+        metrics=[("rule", "based alerts"), ("3", "channels"), ("audited", "sends")],
         arch=[
-            ("Trigger", "Zone entry or dwell threshold published by ProxiCore as an event."),
-            ("Content", "Templates and compliance rules shared with the messaging core."),
-            ("Delivery", "WhatsApp Cloud API, SMS and in-app, with per-channel fallback."),
-            ("Audit", "Every send recorded against campaign, point and consent state."),
+            ("Trigger", "Rules evaluated against the ProxiCore registry and live sessions."),
+            ("Routing", "Recipient, escalation and acknowledgement tracked per alert."),
+            ("Delivery", "WhatsApp Cloud API, SMS and email via the shared messaging core."),
+            ("Tuning", "Alert log and response times feed back into rule thresholds."),
         ],
-        note="Positioning inferred from product naming — to be confirmed against the repository.",
-        inferred=True,
+        note="Planned module. Scope to be confirmed before it appears in a commercial offer.",
     ),
 ]
 
@@ -624,4 +625,82 @@ ECON_NOTES = [
     "Volumes shown are the scale at which each line becomes material, not forecasts.",
     "Currency: Ugandan shilling. USD conversion at the prevailing rate at time of reading.",
     "Replace every input with live figures before presenting to a lender or auditor.",
+]
+
+# ---------------------------------------------------------------------------
+# The ask — 18-month use of funds
+# Base case USD 85,000 · Ceiling USD 200,000. Rows sum exactly to each total.
+# ---------------------------------------------------------------------------
+ASK_BASE = 85000
+ASK_CEIL = 200000
+
+
+def ask_totals():
+    """Derived totals — the breakdown always reconciles to the headline ask."""
+    prod_b = sum(r[1] for r in ASK_ROWS)
+    prod_c = sum(r[2] for r in ASK_ROWS)
+    shared_b = sum(r[1] for r in ASK_SHARED)
+    shared_c = sum(r[2] for r in ASK_SHARED)
+    return prod_b, prod_c, shared_b, shared_c
+
+ASK_ROWS = [
+    # product, base, ceiling, what the money buys
+    ("FloatBet Gaming", 4000, 10000,
+     "Real-money compliance before any wagering: licensing review, KYC/AML integration, "
+     "audited RNG certification and geofencing."),
+    ("Rebuy", 12000, 24000,
+     "Two engineering hires, WhatsApp Business verification and a message-volume float for the "
+     "first paying shops."),
+    ("Tank Tickets", 8000, 18000,
+     "Durable Postgres migration off serverless storage, gateway reconciliation and organiser "
+     "onboarding through one full event season."),
+    ("Trampo", 14000, 30000,
+     "Dispatch hardening, driver KYC, TURN calling infrastructure and the transport licensing "
+     "and insurance work that a live platform requires."),
+    ("Tank Distribution", 5000, 12000,
+     "DDEX partner agreements, ISRC/UPC registration and DSP delivery certification."),
+    ("IUEA Community Radio", 2000, 6000,
+     "Streaming and podcast hosting for campus scale, plus content production for the five shows."),
+    ("BioPay", 6000, 16000,
+     "Passkey and server-side verification build-out, sandbox provider certification and an "
+     "independent security review before any pilot with real money."),
+    ("Gateway Revival Glory", 2000, 4000,
+     "Hosting, domain and content operations, plus support for the phone-tracker tool."),
+    ("ProxiCore", 12000, 26000,
+     "Full-time engineering on the capture engine and Visor console: iOS coverage, label "
+     "persistence, and the shared Supabase backend."),
+    ("Proxicore-Point", 5000, 14000,
+     "Field kits for pilot sites, occupancy aggregation and the security-review module."),
+    ("ProxiCast", 3000, 10000,
+     "Alerting rules engine, routing and acknowledgement, built on the Rebuy delivery core."),
+]
+
+ASK_SHARED = [
+    ("Shared platform", 5000, 12000,
+     "Identity, billing and messaging consolidation across the portfolio — one core, eleven products."),
+    ("Security & compliance", 3000, 9000,
+     "Recurring penetration testing, row-level-security audits, secret management and a written "
+     "incident response runbook."),
+    ("Go-to-market", 4000, 9000,
+     "Merchant acquisition for Rebuy and Tank Tickets: field sales, training and case studies."),
+]
+
+USE_OF_FUNDS = [
+    ("Engineering capacity", 55, "Two engineers plus contract specialists across the portfolio."),
+    ("Compliance & security", 18, "Licensing, provider certification, audits and penetration testing."),
+    ("Go-to-market", 15, "Merchant acquisition, operator training and reference sites."),
+    ("Infrastructure float", 8, "Messaging and streaming volume ahead of revenue."),
+    ("Contingency", 4, "Held back for regulatory or platform surprises."),
+]
+
+ASK_TERMS = [
+    ("Horizon", "An 18-month runway to take the two commercial verticals from pilot to "
+                     "paying, and to finish the fixed-site Proxi products."),
+    ("Why this range", "USD 85,000 funds the base plan: two hires and compliance only where "
+                       "revenue is already possible. USD 200,000 adds ProxiCore engineering and "
+                       "field kits, plus wider go-to-market."),
+    ("What we will not spend it on", "No office expansion, no rebrand, and no new product "
+                                     "verticals until an existing one is billing."),
+    ("Reporting", "Monthly written update against these line items, with a revenue note per "
+                  "commercial product."),
 ]

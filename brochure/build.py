@@ -99,38 +99,39 @@ def page_cover(k):
 def page_contents(k):
     full_bg(k, "bg_quiet")
 
-    k.label(ML, H - MT - 4, "Contents", VIOLET, 6.8, 2.3)
-    k.text(ML, H - 26, "The book at a glance", "DisplayB", 26, INK)
-    k.rule_gradient(ML, H - 33, 58, 0.8, VIOLET, CYAN, alpha=0.85)
+    k.label(ML, H - 14, "Contents", VIOLET, 6.8, 2.3)
+    k.text(ML, H - 30, "The book at a glance", "DisplayB", 26, INK)
+    k.rule_gradient(ML, H - 37, 58, 0.8, VIOLET, CYAN, alpha=0.85)
 
     rows = [
         ("I", "The studio", "Mission, positioning, how we work, platform and standards", "03"),
         ("II", "The portfolio", f"{len(C.PRODUCTS)} products, each on a spread", "10"),
         ("III", "The economics", "Revenue model, pricing and market opportunity", "32"),
-        ("IV", "The business", "Roadmap, commercial focus and engagement", "35"),
+        ("IV", "The ask", "USD 85,000 to 200,000, allocated by product", "35"),
+        ("V", "The business", "Roadmap, commercial focus and engagement", "37"),
     ]
-    y = 152
+    y = 150
     for num, title, sub, page in rows:
-        k.hline(ML, y + 12, CONTENT_W, HAIR, 0.4)
+        k.hline(ML, y + 10, CONTENT_W, HAIR, 0.4)
         k.text(ML, y, num, "DisplayB", 15, VIOLET)
         k.text(ML + 14, y + 1.5, title, "DisplaySB", 13, INK)
         k.text(ML + 58, y, sub, "BodyR", 8.0, MUTED)
         k.text(W - MR, y + 1, page, "DisplaySB", 12, CYAN, align="right")
-        y -= 23
+        y -= 18.5
 
     # product index with thumbnails
-    k.label(ML, 62, "Products in this book", MUTED_D, 6.2, 1.9)
-    k.hline(ML, 58, CONTENT_W, HAIR, 0.4)
+    k.label(ML, 66, "Products in this book", MUTED_D, 6.2, 1.9)
+    k.hline(ML, 62, CONTENT_W, HAIR, 0.4)
 
     col_w = CONTENT_W / 6
     for i, pr in enumerate(C.PRODUCTS):
         cx = ML + (i % 6) * col_w
-        cy = 46 - (i // 6) * 26
+        cy = 47 - (i // 6) * 23
         a = acc(pr["accent"])
         if os.path.exists(plate(k, f"thumb_{pr['art']}")):
-            k.image_frame(plate(k, f"thumb_{pr['art']}"), cx, cy + 1, 26, 17, r=1.8)
-        k.text(cx, cy - 3.4, f"{i + 1:02d} · {pr['name']}", "BodySB", 6.6, INK)
-        k.text(cx, cy - 7.6, pr["sector"].upper(), "BodyM", 5.0, a, tracking=1.0)
+            k.image_frame(plate(k, f"thumb_{pr['art']}"), cx, cy, 22, 13, r=1.5)
+        k.text(cx, cy - 3.6, f"{i + 1:02d} · {pr['name']}", "BodySB", 6.2, INK)
+        k.text(cx, cy - 7.2, pr["sector"].upper(), "BodyM", 4.8, a, tracking=0.9)
 
     k.footer(PAGE + 1, "Contents")
 
@@ -359,8 +360,8 @@ def page_product_engineering(k, p, idx):
         k.block(cx + 6, cy_top - 6.5, body, "BodyR", 7.2, 10.8, MUTED, col_w - 6)
 
     # architecture strip
-    k.rect(ML, 18, CONTENT_W, 30, fill=WHITE, alpha=0.92, r=2.2)
-    k.rect(ML, 18, CONTENT_W, 30, fill=None, stroke=PAGE_EDGE, lw=0.4, r=2.2)
+    k.rect(ML, 22, CONTENT_W, 27, fill=WHITE, alpha=0.92, r=2.2)
+    k.rect(ML, 22, CONTENT_W, 27, fill=None, stroke=PAGE_EDGE, lw=0.4, r=2.2)
     k.label(ML + 6, 42, "How it is built", a, 5.9, 1.8)
     aw = (CONTENT_W - 12) / 4
     for i, (layer, body) in enumerate(p["arch"]):
@@ -368,7 +369,7 @@ def page_product_engineering(k, p, idx):
         k.text(ax, 36.5, layer.upper(), "BodySB", 5.8, INK, tracking=1.4)
         k.block(ax, 32.5, body, "BodyR", 6.6, 9.4, MUTED, aw - 4)
 
-    k.text(ML, 12.5, p["note"], "DisplayM", 8.2, a)
+    k.text(ML, 16.2, p["note"], "DisplayM", 8.2, a)
     k.footer(PAGE + 1, p["name"])
 
 
@@ -470,6 +471,100 @@ def page_econ_cost(k):
             "DisplayM", 8.6, 11.6, INK, CONTENT_W - 14)
 
     k.footer(PAGE + 1, "The economics")
+
+
+def page_ask_summary(k):
+    full_bg(k, "bg_page")
+    k.label(ML, H - MT - 2, "IV · The ask", GOLD, 6.6, 2.2)
+    k.text(ML, H - 36, "The raise", "DisplayB", 24, INK)
+
+    # headline figures
+    pb, pc, sb, sc = C.ask_totals()
+
+    k.rect(ML, 118, 104, 52, fill=VIOLET, alpha=0.06, r=3)
+    k.rect(ML, 118, 104, 52, fill=None, stroke=VIOLET, lw=0.5, r=3, stroke_alpha=0.35)
+    k.label(ML + 8, 160, "Base case · 18 months", VIOLET, 6.0, 1.9)
+    k.text(ML + 8, 142, "USD 85,000", "DisplayB", 26, INK)
+    k.text(ML + 8, 133, "Two hires and compliance only where revenue is already possible.",
+           "BodyR", 7.4, MUTED)
+    k.text(ML + 8, 124, f"Product lines {pb:,}   ·   Shared {sb:,}", "BodyM", 7.0, VIOLET)
+
+    k.rect(ML + 112, 118, 104, 52, fill=CYAN, alpha=0.06, r=3)
+    k.rect(ML + 112, 118, 104, 52, fill=None, stroke=CYAN, lw=0.5, r=3, stroke_alpha=0.35)
+    k.label(ML + 120, 160, "Ceiling · 18 months", CYAN, 6.0, 1.9)
+    k.text(ML + 120, 142, "USD 200,000", "DisplayB", 26, INK)
+    k.text(ML + 120, 133, "Adds ProxiCore engineering, field kits and wider go-to-market.",
+           "BodyR", 7.4, MUTED)
+    k.text(ML + 120, 124, f"Product lines {pc:,}   ·   Shared {sc:,}", "BodyM", 7.0, CYAN)
+
+    # use of funds
+    k.label(ML, 102, "Use of funds", GOLD, 6.0, 1.8)
+    y = 95
+    for name, pct, note in C.USE_OF_FUNDS:
+        bar_w = 96 * pct / 55.0
+        k.text(ML, y, name, "BodySB", 7.8, INK)
+        k.rect(ML + 52, y - 0.4, bar_w, 2.8, fill=GOLD, alpha=0.55, r=1.4)
+        k.text(ML + 52 + bar_w + 2.5, y, f"{pct}%", "BodyM", 7.0, GOLD)
+        k.text(ML + 168, y, note, "BodyR", 6.9, MUTED)
+        y -= 9.4
+
+    # terms — stacked, label column then body column
+    k.hline(ML, 46, CONTENT_W, HAIR, 0.4)
+    y = 40
+    for title, body in C.ASK_TERMS:
+        k.text(ML, y, title.upper(), "BodySB", 5.8, VIOLET, tracking=1.4)
+        k.block(ML + 62, y + 2.6, body, "BodyR", 6.9, 9.6, MUTED, CONTENT_W - 62)
+        y -= 8.6
+
+    k.footer(PAGE + 1, "The ask")
+
+
+def page_ask_breakdown(k):
+    full_bg(k, "bg_quiet")
+    k.label(ML, H - MT - 2, "Allocation by product", CYAN, 6.6, 2.2)
+    k.text(ML, H - 33, "Where every dollar goes", "DisplayB", 21, INK)
+    k.text(ML, H - 42, "18-month allocation. Base case and ceiling both reconcile exactly to "
+                       "the headline ask.", "BodyR", 8.2, MUTED)
+
+    pb, pc, sb, sc = C.ask_totals()
+
+    y = 148
+    k.hline(ML, y + 5, CONTENT_W, INK, 0.7, 0.5)
+    for h, x, al in [("Product", ML, "left"), ("USD base", ML + 108, "right"),
+                     ("USD ceiling", ML + 138, "right"), ("What it buys", ML + 146, "left")]:
+        k.text(x, y, h.upper(), "BodySB", 5.5, MUTED_D, tracking=1.4, align=al)
+    k.hline(ML, y - 2, CONTENT_W, HAIR, 0.4)
+
+    y -= 8.4
+    for name, base, ceil, what in C.ASK_ROWS:
+        zero = ceil == 0
+        k.text(ML, y, name, "BodySB", 7.6, INK if not zero else MUTED_D)
+        k.text(ML + 108, y, f"{base:,}" if not zero else "—", "BodyM", 7.4,
+               INK if not zero else MUTED_D, align="right")
+        k.text(ML + 138, y, f"{ceil:,}" if not zero else "—", "BodyM", 7.4,
+               CYAN if not zero else MUTED_D, align="right")
+        k.block(ML + 146, y + 2.2, what, "BodyR", 6.2, 8.0, MUTED_D, CONTENT_W - 146)
+        k.hline(ML, y - 3.6, CONTENT_W, HAIR, 0.25)
+        y -= 8.4
+
+    # shared rows
+    for name, base, ceil, what in C.ASK_SHARED:
+        k.text(ML, y, name, "BodySB", 7.6, GOLD)
+        k.text(ML + 108, y, f"{base:,}", "BodyM", 7.4, GOLD, align="right")
+        k.text(ML + 138, y, f"{ceil:,}", "BodyM", 7.4, GOLD, align="right")
+        k.block(ML + 146, y + 2.2, what, "BodyR", 6.2, 8.0, MUTED_D, CONTENT_W - 146)
+        k.hline(ML, y - 3.6, CONTENT_W, HAIR, 0.25)
+        y -= 8.4
+
+    # totals row
+    k.hline(ML, y + 3.4, CONTENT_W, INK, 0.8, 0.6)
+    k.text(ML, y - 1, "TOTAL ASK", "DisplaySB", 9.4, INK)
+    k.text(ML + 108, y - 1, f"{pb + sb:,}", "DisplaySB", 9.4, INK, align="right")
+    k.text(ML + 138, y - 1, f"{pc + sc:,}", "DisplaySB", 9.4, CYAN, align="right")
+    k.text(ML + 146, y - 1, "Reconciles to the headline figure in both cases.",
+           "BodyM", 6.8, MUTED)
+
+    k.footer(PAGE + 1, "The ask")
 
 
 def page_traction(k):
@@ -660,8 +755,16 @@ def build():
     bookmark("Cost base & assumptions", 1)
     new_page(c)
 
+    page_ask_summary(k)
+    bookmark("IV — The ask")
+    bookmark("The raise", 1)
+    new_page(c)
+    page_ask_breakdown(k)
+    bookmark("Allocation by product", 1)
+    new_page(c)
+
     page_traction(k)
-    bookmark("IV — The business")
+    bookmark("V — The business")
     bookmark("Where the portfolio stands", 1)
     new_page(c)
     page_roadmap(k)
