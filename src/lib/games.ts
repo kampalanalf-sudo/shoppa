@@ -1,11 +1,17 @@
 import type { GameMeta } from './types'
 
+/**
+ * Resolves a public asset against Vite's BASE_URL so the app works both at a
+ * domain root and under a GitHub Pages project subpath.
+ */
+export const asset = (path: string) => `${import.meta.env.BASE_URL}${path.replace(/^\//, '')}`
+
 export const GAMES: GameMeta[] = [
   {
     id: 'plinko',
     name: 'Float Plinko',
     tagline: 'Drop, bounce, multiply',
-    art: '/art/plinko.webp',
+    art: asset('/art/plinko.webp'),
     accent: '#c6f24e',
     accentSoft: 'rgba(198,242,78,.16)',
     rtp: '99.0%',
@@ -18,7 +24,7 @@ export const GAMES: GameMeta[] = [
     id: 'crash',
     name: 'Lift Off',
     tagline: 'Cash out before the fall',
-    art: '/art/crash.webp',
+    art: asset('/art/crash.webp'),
     accent: '#3ad7ff',
     accentSoft: 'rgba(58,215,255,.16)',
     rtp: '99.0%',
@@ -31,7 +37,7 @@ export const GAMES: GameMeta[] = [
     id: 'mines',
     name: 'Deep Mines',
     tagline: 'Reveal gems, dodge the mines',
-    art: '/art/mines.webp',
+    art: asset('/art/mines.webp'),
     accent: '#a06bff',
     accentSoft: 'rgba(160,107,255,.16)',
     rtp: '99.0%',
@@ -43,7 +49,7 @@ export const GAMES: GameMeta[] = [
     id: 'dice',
     name: 'Precision Dice',
     tagline: 'Roll over or under',
-    art: '/art/dice.webp',
+    art: asset('/art/dice.webp'),
     accent: '#2ef2c0',
     accentSoft: 'rgba(46,242,192,.16)',
     rtp: '99.0%',
@@ -55,7 +61,7 @@ export const GAMES: GameMeta[] = [
     id: 'limbo',
     name: 'High Limbo',
     tagline: 'One multiplier, no limit',
-    art: '/art/limbo.webp',
+    art: asset('/art/limbo.webp'),
     accent: '#8bff5a',
     accentSoft: 'rgba(139,255,90,.16)',
     rtp: '99.0%',
@@ -67,7 +73,7 @@ export const GAMES: GameMeta[] = [
     id: 'wheel',
     name: 'Fortune Wheel',
     tagline: 'Spin for instant multipliers',
-    art: '/art/wheel.webp',
+    art: asset('/art/wheel.webp'),
     accent: '#ffcf5c',
     accentSoft: 'rgba(255,207,92,.16)',
     rtp: '99.0%',
@@ -80,7 +86,7 @@ export const GAMES: GameMeta[] = [
     id: 'tower',
     name: 'Sky Tower',
     tagline: 'Climb, cash out, repeat',
-    art: '/art/tower.webp',
+    art: asset('/art/tower.webp'),
     accent: '#ff4fa3',
     accentSoft: 'rgba(255,79,163,.16)',
     rtp: '99.0%',
@@ -93,7 +99,7 @@ export const GAMES: GameMeta[] = [
     id: 'roulette',
     name: 'Neon Roulette',
     tagline: 'European single-zero table',
-    art: '/art/roulette.webp',
+    art: asset('/art/roulette.webp'),
     accent: '#ff6b5c',
     accentSoft: 'rgba(255,107,92,.16)',
     rtp: '97.3%',

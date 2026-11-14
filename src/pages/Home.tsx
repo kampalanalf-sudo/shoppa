@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { GAMES, LIVE_WINS } from '../lib/games'
+import { GAMES, LIVE_WINS, asset } from '../lib/games'
 import type { GameId } from '../lib/types'
 import { compact, money, mult } from '../lib/format'
 import { useStore } from '../lib/store'
@@ -27,7 +27,7 @@ export function Home({ onPlay, onSearch, onFair }: Props) {
       body: '8 provably fair originals. Instant settlement, zero-fee withdrawals and up to 1,000,000× multipliers.',
       cta: 'Start playing',
       badge: 'NEW PLAYER BONUS +200%',
-      art: '/art/hero.webp',
+      art: asset('/art/hero.webp'),
       onClick: () => setPromo(true),
       accent: '#c6f24e',
     },
@@ -37,7 +37,7 @@ export function Home({ onPlay, onSearch, onFair }: Props) {
       body: 'Ride the multiplier as high as you dare. Cash out before the rocket flies away.',
       cta: 'Play Lift Off',
       badge: 'UP TO 1,000,000×',
-      art: '/art/crash.webp',
+      art: asset('/art/crash.webp'),
       onClick: () => onPlay('crash'),
       accent: '#3ad7ff',
     },
@@ -47,7 +47,7 @@ export function Home({ onPlay, onSearch, onFair }: Props) {
       body: 'Race the top 100 players across all originals. New leaderboard every Monday, 00:00 UTC.',
       cta: 'View leaderboard',
       badge: 'ENDS IN 2D 14H',
-      art: '/art/wheel.webp',
+      art: asset('/art/wheel.webp'),
       onClick: () => setPromo(true),
       accent: '#ffcf5c',
     },
@@ -75,7 +75,7 @@ export function Home({ onPlay, onSearch, onFair }: Props) {
               key={current.art}
               src={current.art}
               alt=""
-              className={`absolute inset-0 h-full w-full object-cover ${current.art === '/art/hero.webp' ? 'object-[66%_center]' : 'object-center opacity-70'}`}
+              className={`absolute inset-0 h-full w-full object-cover ${current.art === asset('/art/hero.webp') ? 'object-[66%_center]' : 'object-center opacity-70'}`}
             />
             <div className="absolute inset-0 bg-gradient-to-r from-ink-950 via-ink-950/85 to-transparent" />
             <div className="absolute inset-0 bg-gradient-to-t from-ink-950/90 via-transparent to-transparent" />
