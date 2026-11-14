@@ -88,6 +88,30 @@ def noise(size, amount=5):
     return layer
 
 
+LIGHT_BG    = (251, 250, 247)
+LIGHT_TINT  = (244, 242, 236)
+LIGHT_EDGE  = (231, 227, 217)
+
+
+def light_page(tint=False, glow=None):
+    """Paper-white plate with a whisper of warm tint and a soft edge falloff."""
+    base = LIGHT_TINT if tint else LIGHT_BG
+    canvas = Image.new("RGBA", (PW, PH), hexc(base))
+    # very soft corner washes so the page is not dead flat
+    if glow:
+        for centre, radius, colour, op in glow:
+            canvas = Image.alpha_composite(canvas, radial((PW, PH), centre, radius, colour, op))
+    # gentle edge shading
+    edge = Image.new("L", (PW // 8, PH // 8), 0)
+    d = ImageDraw.Draw(edge)
+    d.rectangle([0, 0, edge.width, edge.height], fill=0)
+    edge = edge.filter(ImageFilter.GaussianBlur(6))
+    edge = edge.resize((PW, PH), Image.LANCZOS)
+    shade = Image.new("RGBA", (PW, PH), (214, 208, 196, 22))
+    canvas = Image.alpha_composite(canvas, shade)
+    return canvas.convert("RGB")
+
+
 def base_page(glows, grid=True, grain=True):
     canvas = Image.new("RGBA", (PW, PH), hexc(INK))
     # subtle vertical lift
@@ -120,74 +144,8 @@ def save(im, name, quality=None):
 # --------------------------------------------------------------------------
 # Page plates
 # --------------------------------------------------------------------------
-def plates():
-    # standard interior page
-    save(base_page([
-        ((PW * 0.05, PH * -0.05), PW * 0.62, VIOLET, 0.30),
-        ((PW * 0.98, PH * 1.02), PW * 0.55, CYAN, 0.20),
-    ]), "bg_page.jpg")
-
-    # darker, quieter page for text-heavy spreads
-    save(base_page([
-        ((PW * 0.1, PH * 0.05), PW * 0.5, VIOLET, 0.13),
-        ((PW * 1.0, PH * 0.95), PW * 0.45, CYAN, 0.10),
-    ]), "bg_quiet.jpg")
-
-    # divider / section opener — stronger
-    save(base_page([
-        ((PW * 0.5, PH * 1.05), PW * 0.95, VIOLET, 0.45),
-        ((PW * 0.15, PH * 0.0), PW * 0.55, CYAN, 0.22),
-        ((PW * 0.9, PH * 0.1), PW * 0.4, GOLD, 0.10),
-    ]), "bg_divider.jpg")
-
-    # back cover
-    save(base_page([
-        ((PW * 0.5, PH * 0.15), PW * 0.8, VIOLET, 0.38),
-        ((PW * 0.5, PH * 1.15), PW * 0.7, CYAN, 0.18),
-    ]), "bg_back.jpg")
-
-    # cover base (art goes on top)
-    save(base_page([
-        ((PW * 0.62, PH * 0.18), PW * 0.85, VIOLET, 0.34),
-        ((PW * 0.15, PH * 0.95), PW * 0.6, CYAN, 0.16),
-    ], grid=False), "bg_cover.jpg")
-
-
-# --------------------------------------------------------------------------
-# Art crops
-# --------------------------------------------------------------------------
-def feather_mask(size, side, extent, power=1.8):
-    """L mask: 0 at the named edge, 255 beyond the ramp."""
-    w, h = size
-    n = 1200
-    ramp = [int(255 * ((i / (n - 1)) ** power)) for i in range(n)]
-    mask = Image.new("L", (w, h), 255)
-    px = mask.load()
-    extent = max(1, min(extent, (w if side in ("left", "right") else h) - 1))
-    if side in ("left", "right"):
-        for x in range(w):
-            if side == "left":
-                idx = min(n - 1, int(x / extent * (n - 1))) if x < extent else n - 1
-            else:
-                d = w - 1 - x
-                idx = min(n - 1, int(d / extent * (n - 1))) if d < extent else n - 1
-            a = ramp[idx]
-            for y in range(h):
-                px[x, y] = a
-    else:
-        for y in range(h):
-            if side == "top":
-                idx = min(n - 1, int(y / extent * (n - 1))) if y < extent else n - 1
-            else:
-                d = h - 1 - y
-                idx = min(n - 1, int(d / extent * (n - 1))) if d < extent else n - 1
-            a = ramp[idx]
-            for x in range(w):
-                px[x, y] = a
-    return mask
-
-
 def crop_cover(src, out_w, out_h, focus=0.5, focus_y=0.5):
+    """Centre-crop (or edge-crop) the source art to the target aspect, then resize."""
     im = Image.open(src).convert("RGB")
     sw, sh = im.size
     target = out_w / out_h
@@ -203,146 +161,43 @@ def crop_cover(src, out_w, out_h, focus=0.5, focus_y=0.5):
     return im.resize((out_w, out_h), Image.LANCZOS)
 
 
-def linear_fade(im, side, extent, colour=INK, max_alpha=252, gamma=1.8, ease=0.0):
-    """Fade one edge of the artwork into the page colour.
-
-    side   : the edge that becomes page colour ('left','right','top','bottom')
-    extent : ramp length in pixels measured from that edge
-    ease   : fraction of the ramp held fully opaque before the falloff
-    """
-    w, h = im.size
-    extent = max(1, int(extent))
-    n = 1024
-
-    def alpha_at(t):
-        # t: 0 at the faded edge, 1 at the far end of the ramp
-        u = max(0.0, (t - ease) / max(1e-6, 1 - ease))
-        return int(max_alpha * (min(1.0, u) ** gamma))
-
-    mask = Image.new("L", (w, h), max_alpha)
-    px = mask.load()
-
-    if side in ("left", "right"):
-        col = [alpha_at(i / max(1, extent - 1)) for i in range(extent)]
-        for x in range(w):
-            if side == "left":
-                a = col[x] if x < extent else max_alpha
-            else:
-                a = col[w - 1 - x] if (w - 1 - x) < extent else max_alpha
-            for y in range(h):
-                px[x, y] = a
-    else:
-        row = [alpha_at(i / max(1, extent - 1)) for i in range(extent)]
-        for y in range(h):
-            if side == "top":
-                a = row[y] if y < extent else max_alpha
-            else:
-                a = row[h - 1 - y] if (h - 1 - y) < extent else max_alpha
-            for x in range(w):
-                px[x, y] = a
-
-    layer = Image.new("RGB", (w, h), colour)
-    # mask == amount of artwork to keep, so im first
-    return Image.composite(im, layer, mask)
+def plates():
+    save(light_page(), "bg_page.jpg")
+    save(light_page(tint=True), "bg_quiet.jpg")
+    save(light_page(glow=[((PW * 0.5, PH * 0.1), PW * 0.8, (226, 219, 240), 0.55),
+                          ((PW * 0.1, PH * 1.0), PW * 0.6, (232, 226, 238), 0.40)]), "bg_divider.jpg")
+    save(light_page(glow=[((PW * 0.5, PH * 0.2), PW * 0.9, (228, 220, 240), 0.45)]), "bg_back.jpg")
+    save(light_page(glow=[((PW * 0.3, PH * 0.5), PW * 0.8, (232, 226, 240), 0.45)]), "bg_cover.jpg")
 
 
-PRODUCT_KEYS = ["floatbet", "rebuy", "tanktickets", "trampo", "tankdistro", "iuea", "biopay", "grgc"]
+PRODUCT_KEYS = [k for k in ["floatbet", "rebuy", "tanktickets", "trampo", "tankdistro",
+                            "iuea", "biopay", "grgc", "proxicore", "proxipoint", "proxicast"]
+                if os.path.exists(os.path.join(ART, k + ".png"))]
 
 
 def build_crops():
-    # full-bleed cover
-    cov = crop_cover(os.path.join(ART, "cover.png"), PW, PH, focus=0.55)
-    cov = linear_fade(cov, "left", int(PW * 0.58), INK, 252, gamma=1.9, ease=0.30)
-    cov = linear_fade(cov, "bottom", int(PH * 0.34), INK, 235, gamma=2.2, ease=0.20)
+    # cover: wide art inset (light page, art sits in a frame)
+    cov = crop_cover(os.path.join(ART, "cover.png"), int(250 * MM), int(150 * MM), focus=0.55)
     save(cov, "cover_full.jpg")
 
-    # Per-product page plates: the art is baked into the page background with a
-    # feathered edge, so there is never a seam or a bounding box in the PDF.
-    base_page_img = base_page([
-        ((PW * 0.05, PH * -0.05), PW * 0.62, VIOLET, 0.30),
-        ((PW * 0.98, PH * 1.02), PW * 0.55, CYAN, 0.20),
-    ])
-    quiet_img = base_page([
-        ((PW * 0.1, PH * 0.05), PW * 0.5, VIOLET, 0.13),
-        ((PW * 1.0, PH * 0.95), PW * 0.45, CYAN, 0.10),
-    ])
-
+    # story page inset: 108 x 132 mm portrait plate on the right
     for p in PRODUCT_KEYS:
-        # --- story page: full-height art panel on the right
-        pw, ph = int(153 * MM), PH
-        panel = crop_cover(os.path.join(ART, p + ".png"), pw, ph, focus=0.45).convert("RGB")
-        mask = feather_mask((pw, ph), "left", int(pw * 0.40), power=1.9)
-        page = base_page_img.copy()
-        page.paste(panel, (PW - pw, 0), mask)
-        save(page, f"story_{p}.jpg")
+        im = crop_cover(os.path.join(ART, p + ".png"), int(108 * MM), int(132 * MM), focus=0.5)
+        save(im, f"story_{p}.jpg")
 
-        # --- engineering page: art band near the top
-        bw, bh = int(268 * MM), int(52 * MM)
-        band = crop_cover(os.path.join(ART, p + ".png"), bw, bh, focus=0.5).convert("RGB")
-        m = feather_mask((bw, bh), "left", int(bw * 0.16), power=1.7)
-        m2 = feather_mask((bw, bh), "right", int(bw * 0.16), power=1.7)
-        m3 = feather_mask((bw, bh), "top", int(bh * 0.16), power=2.0)
-        m4 = feather_mask((bw, bh), "bottom", int(bh * 0.20), power=2.0)
-        mask = ImageChops.multiply(ImageChops.multiply(m, m2), ImageChops.multiply(m3, m4))
-        page = quiet_img.copy()
-        page.paste(band, (int(14.5 * MM), int(5 * MM)), mask)
-        save(page, f"eng_{p}.jpg")
-
-    # portfolio grid cards: 82mm x 52mm
+    # engineering page band: 120 x 74 mm landscape plate
     for p in PRODUCT_KEYS:
-        w, h = int(82 * MM), int(52 * MM)
-        im = crop_cover(os.path.join(ART, p + ".png"), w, h, focus=0.5)
-        save(im, f"card_{p}.jpg")
+        im = crop_cover(os.path.join(ART, p + ".png"), int(120 * MM), int(74 * MM), focus=0.5)
+        save(im, f"eng_{p}.jpg")
 
-    # wide dividers 273 x 44
+    # small index thumbnails 34 x 22
     for p in PRODUCT_KEYS:
-        w, h = int(257 * MM), int(44 * MM)
-        im = crop_cover(os.path.join(ART, p + ".png"), w, h, focus=0.5)
-        im = linear_fade(im, "left", int(w * 0.26), INK, 250, gamma=1.8, ease=0.3)
-        im = linear_fade(im, "right", int(w * 0.14), INK, 250, gamma=1.8, ease=0.3)
-        save(im, f"strip_{p}.jpg")
-
-    # small index thumbnails 64 x 41
-    for p in PRODUCT_KEYS:
-        w, h = int(64 * MM), int(41 * MM)
-        im = crop_cover(os.path.join(ART, p + ".png"), w, h, focus=0.5)
+        im = crop_cover(os.path.join(ART, p + ".png"), int(34 * MM), int(22 * MM), focus=0.5)
         save(im, f"thumb_{p}.jpg")
 
-    # contents band — RGBA so it feathers into the page plate with no seam
-    bw, bh = int(297 * MM), int(64 * MM)
-    band = crop_cover(os.path.join(ART, "cover.png"), bw, bh, focus=0.5).convert("RGB")
-    band = Image.blend(band, Image.new("RGB", band.size, INK), 0.28)
-    m = ImageChops.multiply(
-        feather_mask((bw, bh), "bottom", int(bh * 0.55), power=1.7),
-        feather_mask((bw, bh), "left", int(bw * 0.45), power=1.6))
-    band = band.convert("RGBA")
-    band.putalpha(m)
-    band.save(os.path.join(os.environ.get("BROCHURE_CACHE", CACHE), "band_cover.png"), optimize=True)
-
-    # back-cover ornament — RGBA, feathered on two edges
-    ow, oh = int(150 * MM), int(150 * MM)
-    orn = crop_cover(os.path.join(ART, "cover.png"), ow, oh, focus=0.62).convert("RGB")
-    orn = Image.blend(orn, Image.new("RGB", orn.size, INK), 0.30)
-    m = ImageChops.multiply(
-        feather_mask((ow, oh), "left", int(ow * 0.45), power=1.7),
-        feather_mask((ow, oh), "top", int(oh * 0.40), power=1.7))
-    orn = orn.convert("RGBA")
-    orn.putalpha(m)
-    orn.save(os.path.join(os.environ.get("BROCHURE_CACHE", CACHE), "orn_back.png"), optimize=True)
-
-
-# --------------------------------------------------------------------------
-# Simple vector-ish glyph tiles used for icons (crisp at print size)
-# --------------------------------------------------------------------------
-def glyphs():
-    size = 256
-    specs = {
-        "grid":    [(64, 64, 108, 108), (148, 64, 192, 108), (64, 148, 108, 192), (148, 148, 192, 192)],
-        "bolt":    None,
-        "shield":  None,
-        "clock":   None,
-    }
-    return specs
+    # economics page hero strip
+    im = crop_cover(os.path.join(ART, "cover.png"), int(257 * MM), int(34 * MM), focus=0.5)
+    save(im, "econ_strip.jpg")
 
 
 if __name__ == "__main__":

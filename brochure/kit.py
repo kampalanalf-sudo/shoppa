@@ -25,22 +25,27 @@ MT, MB = 16.0, 15.0
 CONTENT_W = W - ML - MR
 
 # ---------------------------------------------------------------- palette
-INK       = HexColor("#08080F")
-INK_DEEP  = HexColor("#050509")
-INK_SOFT  = HexColor("#0E0F1A")
-VIOLET    = HexColor("#7C5CFF")
-VIOLET_D  = HexColor("#4B32C3")
-CYAN      = HexColor("#2FE3EC")
-CYAN_D    = HexColor("#12A0AA")
-GOLD      = HexColor("#F2B65A")
-GOLD_D    = HexColor("#C8873A")
+INK       = HexColor("#12121C")   # primary text colour (was page background)
+INK_DEEP  = HexColor("#0B0B12")
+INK_SOFT  = HexColor("#1D1E2C")
+
+# page surfaces, light editorial
+PAGE_BG   = HexColor("#FBFAF7")
+PAGE_TINT = HexColor("#F4F2EC")
+PAGE_EDGE = HexColor("#E7E3D9")
+VIOLET    = HexColor("#5B3FD6")
+VIOLET_D  = HexColor("#3A2595")
+CYAN      = HexColor("#0E8F9E")
+CYAN_D    = HexColor("#0A6E7A")
+GOLD      = HexColor("#B4741D")
+GOLD_D    = HexColor("#8A5713")
 WHITE     = HexColor("#FFFFFF")
-PAPER     = HexColor("#F4F2FF")
-MUTED     = HexColor("#A9A6C9")
-MUTED_D   = HexColor("#6F6C93")
-HAIR      = HexColor("#2A2A44")
-EMERALD   = HexColor("#34D399")
-ROSE      = HexColor("#FB7185")
+PAPER     = HexColor("#2B2B3C")   # body ink
+MUTED     = HexColor("#5A5A70")   # secondary ink
+MUTED_D   = HexColor("#8A879B")   # tertiary ink
+HAIR      = HexColor("#DCD7CB")   # hairlines
+EMERALD   = HexColor("#0F7A5A")
+ROSE      = HexColor("#B23A55")
 
 ACCENTS = {
     "violet": VIOLET,
@@ -263,7 +268,7 @@ class Kit:
 
     def card(self, x, y, w, h, accent=VIOLET, r=2.4, lift=0.055,
              border_alpha=0.20, fill_alpha=0.055):
-        self.rect(x, y, w, h, fill=WHITE, alpha=fill_alpha, r=r)
+        self.rect(x, y, w, h, fill=WHITE, alpha=max(fill_alpha, 0.9), r=r)
         self.rect(x, y, w, h, fill=None, stroke=accent, lw=0.3, r=r,
                   stroke_alpha=border_alpha)
 
@@ -276,6 +281,21 @@ class Kit:
 
     def link(self, x, y, w, h, url):
         self.c.linkURL(url, (x, y, x + w, y + h), relative=0)
+
+    def caption(self, x, y, s, col=None):
+        self.text(x, y, s, "BodyM", 6.0, col or MUTED_D, tracking=1.2)
+
+    def image_frame(self, path, x, y, w, h, r=2.6, border=PAGE_EDGE, lw=0.3):
+        """Draw an image clipped to a rounded rectangle, with a hairline border."""
+        c = self.c
+        c.saveState()
+        pth = c.beginPath()
+        pth.roundRect(x, y, w, h, r)
+        c.clipPath(pth, stroke=0, fill=0)
+        c.drawImage(ImageReader(path), x, y, w, h, mask=None)
+        c.restoreState()
+        if border is not None:
+            self.rect(x, y, w, h, fill=None, stroke=border, lw=lw, r=r, stroke_alpha=1.0)
 
     def glow_dot(self, x, y, r, col, a1=0.30, rings=4):
         for i in range(rings):

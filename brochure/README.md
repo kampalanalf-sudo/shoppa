@@ -17,7 +17,24 @@ python3 -m venv .venv && .venv/bin/pip install reportlab pillow
 | `art/` | Source key art (AI-generated, 2048 px) |
 | `fonts/` | Space Grotesk + Inter (SIL Open Font License) |
 
-## Outputs (repo root)
+## Outputs (repo root, light theme)
+
+| File | Use |
+| --- | --- |
+| `Great-Lakes-Technology-Portfolio-2026-light.pdf` | Print master — 4.4 MB, 200 dpi, 38 pages |
+| `Great-Lakes-Technology-Portfolio-2026-light-compressed.pdf` | Share/email — 2.1 MB, 150 dpi |
+
+Build:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install reportlab pillow pypdfium2
+BROCHURE_CACHE=cache_light .venv/bin/python prep_assets.py
+BROCHURE_CACHE=cache_light \
+BROCHURE_OUT=../Great-Lakes-Technology-Portfolio-2026-light.pdf \
+  .venv/bin/python build.py
+```
+
+## Earlier dark edition
 
 | File | Use |
 | --- | --- |

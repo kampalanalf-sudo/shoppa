@@ -7,7 +7,8 @@ from reportlab.lib.colors import HexColor
 
 import content as C
 from kit import (Kit, register_fonts, W, H, ML, MR, MT, MB, CONTENT_W, CACHE,
-                 INK, INK_DEEP, INK_SOFT, VIOLET, VIOLET_D, CYAN, CYAN_D, GOLD,
+                 INK, INK_DEEP, INK_SOFT, PAGE_BG, PAGE_TINT, PAGE_EDGE,
+                 VIOLET, VIOLET_D, CYAN, CYAN_D, GOLD,
                  GOLD_D, WHITE, PAPER, MUTED, MUTED_D, HAIR, EMERALD, ROSE,
                  ACCENTS, rgba, mix)
 from reportlab.pdfbase import pdfmetrics
@@ -64,233 +65,215 @@ def full_bg(k, name):
 # ===========================================================================
 def page_cover(k):
     full_bg(k, "bg_cover")
-    k.image(plate(k, "cover"), 0, 0, W, H)
 
-    # top rule
-    k.rule_gradient(ML, H - 22, 46, 0.7, VIOLET, CYAN, alpha=0.95)
+    # brand rule + label
+    k.rule_gradient(ML, H - 24, 52, 0.9, VIOLET, CYAN, alpha=1.0)
+    k.label(ML, H - 33, "Portfolio · Investor Edition 2026", VIOLET, 7.0, 2.4)
 
-    k.label(ML, H - 30.5, "Portfolio · Investor Edition", CYAN, 7.0, 2.4)
+    k.text(ML, 118, "Great Lakes", "DisplayB", 44, INK)
+    k.text(ML, 96, "Technology", "DisplayB", 44, INK)
+    k.text(ML, 84, "Kampala, Uganda", "DisplayM", 13, CYAN)
 
-    y = 128
-    k.text(ML, y + 22, "Great Lakes", "DisplayB", 42, WHITE)
-    k.text(ML, y - 2, "Technology", "DisplayB", 42, WHITE)
-    k.rule_gradient(ML, y - 9, 64, 0.8, VIOLET, CYAN, alpha=0.9)
+    k.block(ML, 74,
+            "Eight software products designed, built and shipped in-house — "
+            "from casino game engines and retail retention to event commerce, "
+            "mobility and proximity infrastructure.",
+            "BodyR", 9.2, 14.0, MUTED, 116)
 
-    k.text(ML, y - 21, "Eight products. One engineering practice.", "DisplayM", 12.5, PAPER, alpha=0.94)
-    k.text(ML, y - 29, "Designed, built and shipped from Kampala, Uganda.", "DisplayM", 12.5, PAPER, alpha=0.94)
+    # art inset, right
+    k.image_frame(plate(k, "cover_full.jpg"), 146, 52, 131, 118, r=3.2)
 
-    k.hline(ML, 40, 112, HAIR, 0.3, 0.9)
-    x = ML
-    for i, (cap, val, colr) in enumerate([
-            ("Office", "Plot 14 Martyrs Drive, Ntinda", PAPER),
-            ("Director", C.DIRECTOR, PAPER),
-            ("Contact", C.LINKEDIN, CYAN)]):
+    # contact strip
+    k.hline(ML, 42, 118, HAIR, 0.4)
+    for i, (cap, val) in enumerate([("Director", C.DIRECTOR),
+                                    ("Email", C.EMAIL),
+                                    ("LinkedIn", C.LINKEDIN)]):
         cx = ML + i * 40
-        k.text(cx, 33, cap.upper(), "BodySB", 5.6, MUTED_D, tracking=1.6)
-        k.text(cx, 27.5, val, "BodyM", 7.6, colr)
+        k.text(cx, 35, cap.upper(), "BodySB", 5.6, MUTED_D, tracking=1.6)
+        k.text(cx, 29.5, val, "BodyM", 7.2, INK)
 
-    k.link(ML + 80, 26.5, 46, 5.5, "https://linkedin.com/kampalan")
+    k.text(ML, 14, "Plot 14 Martyrs Drive, Ntinda, Kampala", "BodyR", 7.0, MUTED_D)
     k.text(W - MR, 14, "2026", "DisplayB", 7.2, MUTED_D, align="right")
-    k.text(ML, 14, "Portfolio · Investor Edition", "BodyR", 7.0, MUTED_D)
 
 
-# ===========================================================================
-# 02 — Contents
-# ===========================================================================
 def page_contents(k):
     full_bg(k, "bg_quiet")
-    k.image(plate(k, "band_cover.png"), 0, H - 64, W, 64, mask="auto")
 
-    k.label(ML, H - 24, "Contents", CYAN, 7.0, 2.4)
-    k.text(ML, H - 42, "The book", "DisplayB", 26, WHITE)
-    k.text(ML + 44, H - 42, "at a glance", "DisplayM", 26, MUTED_D, alpha=0.55)
+    k.label(ML, H - MT - 4, "Contents", VIOLET, 6.8, 2.3)
+    k.text(ML, H - 26, "The book at a glance", "DisplayB", 26, INK)
+    k.rule_gradient(ML, H - 33, 58, 0.8, VIOLET, CYAN, alpha=0.85)
 
     rows = [
         ("I", "The studio", "Mission, positioning, how we work, platform and standards", "03"),
-        ("II", "The portfolio", "Eight products, each on a full spread", "10"),
-        ("III", "The business", "Traction, roadmap, commercial focus and engagement", "26"),
+        ("II", "The portfolio", f"{len(C.PRODUCTS)} products, each on a spread", "10"),
+        ("III", "The economics", "Revenue model, pricing and market opportunity", "32"),
+        ("IV", "The business", "Roadmap, commercial focus and engagement", "35"),
     ]
-    y = 146
+    y = 152
     for num, title, sub, page in rows:
-        k.hline(ML, y + 12, CONTENT_W, HAIR, 0.3, 0.85)
+        k.hline(ML, y + 12, CONTENT_W, HAIR, 0.4)
         k.text(ML, y, num, "DisplayB", 15, VIOLET)
-        k.text(ML + 14, y + 1.5, title, "DisplaySB", 13, WHITE)
+        k.text(ML + 14, y + 1.5, title, "DisplaySB", 13, INK)
         k.text(ML + 58, y, sub, "BodyR", 8.0, MUTED)
         k.text(W - MR, y + 1, page, "DisplaySB", 12, CYAN, align="right")
-        y -= 26
+        y -= 23
 
-    # product index grid
-    k.label(ML, 60, "Products in this book", MUTED_D, 6.2, 1.9)
-    k.hline(ML, 56.5, CONTENT_W, HAIR, 0.3, 0.85)
+    # product index with thumbnails
+    k.label(ML, 62, "Products in this book", MUTED_D, 6.2, 1.9)
+    k.hline(ML, 58, CONTENT_W, HAIR, 0.4)
 
-    col_w = CONTENT_W / 4
-    for i, (name, sector, _, accent) in enumerate(C.AT_A_GLANCE):
-        cx = ML + (i % 4) * col_w
-        cy = 40 - (i // 4) * 15
-        k.text(cx, cy, f"{i + 1:02d}", "DisplayB", 7.4, acc(accent))
-        k.text(cx + 8, cy, name, "BodySB", 8.2, PAPER)
-        k.text(cx + 8, cy - 5.2, sector.upper(), "BodyM", 5.6, MUTED_D, tracking=1.2)
+    col_w = CONTENT_W / 6
+    for i, pr in enumerate(C.PRODUCTS):
+        cx = ML + (i % 6) * col_w
+        cy = 46 - (i // 6) * 26
+        a = acc(pr["accent"])
+        if os.path.exists(plate(k, f"thumb_{pr['art']}")):
+            k.image_frame(plate(k, f"thumb_{pr['art']}"), cx, cy + 1, 26, 17, r=1.8)
+        k.text(cx, cy - 3.4, f"{i + 1:02d} · {pr['name']}", "BodySB", 6.6, INK)
+        k.text(cx, cy - 7.6, pr["sector"].upper(), "BodyM", 5.0, a, tracking=1.0)
 
     k.footer(PAGE + 1, "Contents")
 
 
-# ===========================================================================
-# 03 — Mission
-# ===========================================================================
 def page_mission(k):
     full_bg(k, "bg_page")
-    k.label(ML, H - MT - 2, "I · The studio", CYAN, 6.6, 2.2)
+    k.label(ML, H - MT - 2, "I · The studio", VIOLET, 6.6, 2.2)
 
-    k.text(ML, H - 40, "We build software", "DisplayB", 27, WHITE)
-    k.text(ML, H - 52, "for how East Africa", "DisplayB", 27, WHITE)
-    k.text(ML, H - 64, "actually works.", "DisplayB", 27, CYAN)
+    k.text(ML, H - 40, "We build software", "DisplayB", 28, INK)
+    k.text(ML, H - 53, "for how East Africa", "DisplayB", 28, INK)
+    k.text(ML, H - 66, "actually works.", "DisplayB", 28, CYAN)
 
-    left_w = 128
-    k.block(ML, H - 82, C.MISSION, "BodyR", 8.9, 13.2, MUTED, left_w)
+    left_w = 126
+    k.block(ML, H - 84, C.MISSION, "BodyR", 9.0, 13.4, MUTED, left_w)
 
-    # pull quote
-    k.rect(ML, 52, left_w, 26, fill=VIOLET, alpha=0.07, r=2)
-    k.rect(ML, 52, 1.2, 26, fill=VIOLET, alpha=0.9)
-    k.block(ML + 7, 71, "Every product in this book runs on the same platform layer — "
+    k.rect(ML, 50, left_w, 28, fill=VIOLET, alpha=0.055, r=2.4)
+    k.rect(ML, 50, 1.4, 28, fill=VIOLET, alpha=1.0)
+    k.block(ML + 8, 71, "Every product in this book runs on the same platform layer — "
                         "identity, data, messaging and delivery we already operate.",
-            "DisplayM", 9.0, 13.0, PAPER, left_w - 14)
+            "DisplayM", 9.4, 13.4, INK, left_w - 16)
 
-    k.text(ML, 40, C.DIRECTOR.upper(), "BodySB", 6.6, CYAN, tracking=1.8)
-    k.text(ML, 34.5, "Founder & Director", "BodyR", 7.6, MUTED)
-    k.text(ML + 42, 34.5, " · ".join(C.ADDRESS), "BodyR", 7.6, MUTED)
+    k.text(ML, 38, C.DIRECTOR.upper(), "BodySB", 6.6, VIOLET, tracking=1.8)
+    k.text(ML, 32.5, "Founder & Director", "BodyR", 7.6, MUTED)
+    k.text(ML + 44, 32.5, C.EMAIL, "BodyR", 7.6, MUTED)
 
     # right column: facts
-    x = W - MR - 108
+    x = W - MR - 104
     k.label(x, H - MT - 2, "At a glance", MUTED_D, 6.2, 1.9)
     y = H - 40
     for value, cap in C.TRACTION:
-        k.text(x, y, value, "DisplayB", 19, CYAN if value != "100%" else GOLD)
-        k.text(x + 26, y, cap, "BodyR", 7.8, MUTED)
-        k.hline(x, y - 4.6, 108, HAIR, 0.25, 0.7)
-        y -= 17
+        k.text(x, y, value, "DisplayB", 19, VIOLET if value != "100%" else GOLD)
+        k.text(x + 26, y, cap, "BodyR", 7.6, MUTED)
+        k.hline(x, y - 4.6, 104, HAIR, 0.35)
+        y -= 16
 
     k.text(x, y - 1, "Sectors", "BodySB", 6.0, MUTED_D, tracking=1.6)
-    sectors = ["Gaming", "Retail", "Events", "Mobility", "Music", "Media", "Fintech", "Institutions"]
-    k.chip_row(x, y - 11, sectors, CYAN, w_max=108, size=5.8, h=4.4)
+    sectors = ["Gaming", "Retail", "Events", "Mobility", "Music", "Media",
+               "Fintech", "Institutions", "Proximity"]
+    k.chip_row(x, y - 11, sectors, CYAN, w_max=104, size=5.8, h=4.4)
 
     k.footer(PAGE + 1, "The studio")
 
 
-# ===========================================================================
-# 04 — Positioning
-# ===========================================================================
 def page_positioning(k):
     full_bg(k, "bg_quiet")
-    k.label(ML, H - MT - 2, "Why this portfolio is different", CYAN, 6.6, 2.2)
-    k.text(ML, H - 34, "Four things we do that", "DisplayB", 22, WHITE)
-    k.text(ML, H - 45, "most local builders do not.", "DisplayB", 22, MUTED_D)
+    k.label(ML, H - MT - 2, "Why this portfolio is different", VIOLET, 6.6, 2.2)
+    k.text(ML, H - 34, "Four things we do that", "DisplayB", 22, INK)
+    k.text(ML, H - 45, "most local builders do not.", "DisplayB", 22, MUTED)
 
     col_w = (CONTENT_W - 10) / 2
     for i, (title, body) in enumerate(C.POSITIONING):
         cx = ML + (i % 2) * (col_w + 10)
-        cy_top = 144 - (i // 2) * 54
-        k.card(cx, cy_top - 44, col_w, 44, VIOLET if i % 2 == 0 else CYAN, r=2.6)
-        k.text(cx + 7, cy_top - 12, f"0{i + 1}", "DisplayB", 14,
-               VIOLET if i % 2 == 0 else CYAN, alpha=0.85)
-        k.text(cx + 20, cy_top - 10.5, title, "DisplaySB", 10.2, WHITE)
-        k.block(cx + 7, cy_top - 21, body, "BodyR", 7.7, 11.4, MUTED, col_w - 14)
+        cy_top = 144 - (i // 2) * 48
+        a = VIOLET if i % 2 == 0 else CYAN
+        k.card(cx, cy_top - 40, col_w, 40, a, r=2.6, fill_alpha=0.85)
+        k.text(cx + 7, cy_top - 12, f"0{i + 1}", "DisplayB", 14, a)
+        k.text(cx + 20, cy_top - 10.5, title, "DisplaySB", 10.2, INK)
+        k.block(cx + 7, cy_top - 19, body, "BodyR", 7.8, 11.6, MUTED, col_w - 14)
 
     k.footer(PAGE + 1, "The studio")
 
 
-# ===========================================================================
-# 05 — Capabilities
-# ===========================================================================
 def page_capabilities(k):
     full_bg(k, "bg_page")
-    k.label(ML, H - MT - 2, "Capabilities", CYAN, 6.6, 2.2)
-    k.text(ML, H - 34, "One team across the whole stack", "DisplayB", 21, WHITE)
+    k.label(ML, H - MT - 2, "Capabilities", VIOLET, 6.6, 2.2)
+    k.text(ML, H - 34, "One team across the whole stack", "DisplayB", 21, INK)
     k.text(ML, H - 44, "Design, interface, API, data, delivery and operations — in-house.",
            "BodyR", 8.6, MUTED)
 
     col_w = (CONTENT_W - 2 * 7) / 3
     for i, (title, items) in enumerate(C.CAPABILITIES):
         cx = ML + (i % 3) * (col_w + 7)
-        cy_top = 132 - (i // 3) * 58
-        accent = [VIOLET, CYAN, GOLD, EMERALD, ROSE, VIOLET][i]
-        k.hline(cx, cy_top, col_w, accent, 0.9, 0.8)
-        k.text(cx, cy_top - 7, title, "DisplaySB", 10.0, WHITE)
+        cy_top = 134 - (i // 3) * 54
+        a = [VIOLET, CYAN, GOLD, EMERALD, ROSE, VIOLET][i]
+        k.hline(cx, cy_top, col_w, a, 1.1, 1.0)
+        k.text(cx, cy_top - 7, title, "DisplaySB", 10.0, INK)
         yy = cy_top - 15
         for it in items:
-            k.circle(cx + 1.0, yy + 1.5, 0.55, accent)
+            k.circle(cx + 1.0, yy + 1.5, 0.55, a)
             yy = k.block(cx + 5, yy + 3.4, it, "BodyR", 7.4, 10.6, MUTED, col_w - 6) - 4.6
 
-    k.text(ML, 32, "Every capability above ships in at least one live product in this book.",
+    k.text(ML, 30, "Every capability above ships in at least one live product in this book.",
            "BodyM", 7.2, MUTED_D)
     k.footer(PAGE + 1, "The studio")
 
 
-# ===========================================================================
-# 06 — Method
-# ===========================================================================
 def page_method(k):
     full_bg(k, "bg_quiet")
-    k.label(ML, H - MT - 2, "How we work", CYAN, 6.6, 2.2)
-    k.text(ML, H - 34, "A repeatable path from intent to operating", "DisplayB", 21, WHITE)
+    k.label(ML, H - MT - 2, "How we work", VIOLET, 6.6, 2.2)
+    k.text(ML, H - 34, "A repeatable path from intent to operating", "DisplayB", 21, INK)
 
     y = 152
     for i, (num, title, body) in enumerate(C.METHOD):
-        accent = [VIOLET, CYAN, GOLD, EMERALD, ROSE][i]
-        k.hline(ML, y + 11, CONTENT_W, HAIR, 0.25, 0.8)
-        k.text(ML, y, num, "DisplayB", 13, accent)
-        k.text(ML + 16, y + 1, title, "DisplaySB", 11.2, WHITE)
+        a = [VIOLET, CYAN, GOLD, EMERALD, ROSE][i]
+        k.hline(ML, y + 11, CONTENT_W, HAIR, 0.35)
+        k.text(ML, y, num, "DisplayB", 13, a)
+        k.text(ML + 16, y + 1, title, "DisplaySB", 11.2, INK)
         k.block(ML + 62, y + 4, body, "BodyR", 7.9, 11.6, MUTED, CONTENT_W - 62)
         y -= 22
 
     k.rect(ML, 26, CONTENT_W, 26, fill=GOLD, alpha=0.06, r=2.4)
-    k.rect(ML, 26, CONTENT_W, 26, fill=None, stroke=GOLD, lw=0.3, r=2.4, stroke_alpha=0.22)
+    k.rect(ML, 26, CONTENT_W, 26, fill=None, stroke=GOLD, lw=0.4, r=2.4, stroke_alpha=0.45)
     k.label(ML + 7, 44, "Operating principle", GOLD, 6.0, 1.8)
     k.block(ML + 7, 38, "Nothing is described as live unless it is live, and nothing is described as "
                         "secure unless the control is written down and enforced on the server.",
-            "DisplayM", 9.4, 13.4, PAPER, CONTENT_W - 14)
+            "DisplayM", 9.4, 13.4, INK, CONTENT_W - 14)
 
     k.footer(PAGE + 1, "The studio")
 
 
-# ===========================================================================
-# 07 — Platform
-# ===========================================================================
 def page_platform(k):
     full_bg(k, "bg_page")
-    k.label(ML, H - MT - 2, "The platform layer", CYAN, 6.6, 2.2)
-    k.text(ML, H - 34, "What is already built", "DisplayB", 21, WHITE)
-    k.text(ML, H - 43, "Five products share these rails. A sixth launches on them in weeks.",
+    k.label(ML, H - MT - 2, "The platform layer", VIOLET, 6.6, 2.2)
+    k.text(ML, H - 34, "What is already built", "DisplayB", 21, INK)
+    k.text(ML, H - 43, "Every product in this book shares these rails.",
            "BodyR", 8.6, MUTED)
 
     y = 148
     for i, (layer, stack) in enumerate(C.PLATFORM):
-        accent = [VIOLET, CYAN, GOLD, EMERALD, ROSE, VIOLET, CYAN][i]
-        k.hline(ML, y + 8.6, CONTENT_W, HAIR, 0.25, 0.8)
-        k.text(ML, y + 2.4, layer.upper(), "BodySB", 6.4, accent, tracking=1.7)
+        a = [VIOLET, CYAN, GOLD, EMERALD, ROSE, VIOLET, CYAN][i]
+        k.hline(ML, y + 8.6, CONTENT_W, HAIR, 0.35)
+        k.text(ML, y + 2.4, layer.upper(), "BodySB", 6.4, a, tracking=1.7)
         k.block(ML + 34, y + 7, stack, "BodyR", 8.0, 11.4, MUTED, CONTENT_W - 34)
         y -= 19.5
 
     k.footer(PAGE + 1, "The studio")
 
 
-# ===========================================================================
-# 08 — Standards
-# ===========================================================================
 def page_standards(k):
     full_bg(k, "bg_quiet")
-    k.label(ML, H - MT - 2, "Standards & posture", CYAN, 6.6, 2.2)
-    k.text(ML, H - 34, "Security and honesty, written down", "DisplayB", 21, WHITE)
+    k.label(ML, H - MT - 2, "Standards & posture", VIOLET, 6.6, 2.2)
+    k.text(ML, H - 34, "Security and honesty, written down", "DisplayB", 21, INK)
 
     col_w = (CONTENT_W - 8) / 2
     for i, (title, body) in enumerate(C.STANDARDS):
         cx = ML + (i % 2) * (col_w + 8)
         cy_top = 140 - (i // 2) * 52
-        accent = [EMERALD, CYAN, VIOLET, GOLD][i]
-        k.rect(cx, cy_top - 42, col_w, 42, fill=WHITE, alpha=0.055, r=2.4)
-        k.rect(cx, cy_top - 42, col_w, 42, fill=None, stroke=accent, lw=0.3, r=2.4, stroke_alpha=0.22)
-        k.circle(cx + 9, cy_top - 11, 3.4, accent, alpha=0.12)
-        k.circle(cx + 9, cy_top - 11, 1.15, accent)
-        k.text(cx + 16, cy_top - 9.6, title, "DisplaySB", 10.0, WHITE)
+        a = [EMERALD, CYAN, VIOLET, GOLD][i]
+        k.rect(cx, cy_top - 42, col_w, 42, fill=WHITE, alpha=0.92, r=2.4)
+        k.rect(cx, cy_top - 42, col_w, 42, fill=None, stroke=PAGE_EDGE, lw=0.4, r=2.4)
+        k.circle(cx + 9, cy_top - 11, 3.4, a, alpha=0.16)
+        k.circle(cx + 9, cy_top - 11, 1.15, a)
+        k.text(cx + 16, cy_top - 9.6, title, "DisplaySB", 10.0, INK)
         k.block(cx + 7, cy_top - 21, body, "BodyR", 7.7, 11.4, MUTED, col_w - 14)
 
     k.text(ML, 24, "Full security model documented in each repository README.",
@@ -298,203 +281,285 @@ def page_standards(k):
     k.footer(PAGE + 1, "The studio")
 
 
-# ===========================================================================
-# 09 — Divider: the portfolio
-# ===========================================================================
 def page_portfolio_divider(k):
     full_bg(k, "bg_divider")
     k.label(ML, H - MT - 2, "II · The portfolio", GOLD, 6.8, 2.4)
-    k.text(ML, 118, "Eight products", "DisplayB", 40, WHITE)
+    k.text(ML, 118, "Products", "DisplayB", 40, INK)
     k.text(ML, 103, "in production or pilot", "DisplayB", 40, CYAN)
     k.rule_gradient(ML, 94, 70, 0.8, VIOLET, CYAN)
 
     k.block(ML, 84, "Each product occupies two pages: the proposition and the engineering. "
-                    "Four run on live custom domains today; the remainder are pilots with a "
-                    "written path to commercial launch.", "BodyR", 8.8, 13.0, MUTED, 120)
+                    "Live custom domains are noted per product; the remainder are pilots with "
+                    "a written path to commercial launch.", "BodyR", 8.8, 13.0, MUTED, 122)
 
-    # index list
-    x = W - MR - 98
-    y = 150
-    for i, (name, sector, _, accent) in enumerate(C.AT_A_GLANCE):
-        k.text(x, y, f"{i + 1:02d}", "DisplayB", 7.4, acc(accent))
-        k.text(x + 10, y, name, "BodySB", 8.0, PAPER)
-        k.text(x + 10, y - 4.4, sector.upper(), "BodyM", 5.4, MUTED_D, tracking=1.2)
-        y -= 14.5
-    k.vline(x - 5, y + 6, 112, HAIR, 0.3, 0.8)
+    x = W - MR - 96
+    y = 152
+    for i, pr in enumerate(C.PRODUCTS):
+        k.text(x, y, f"{i + 1:02d}", "DisplayB", 7.4, acc(pr["accent"]))
+        k.text(x + 10, y, pr["name"], "BodySB", 8.0, INK)
+        k.text(x + 10, y - 4.4, pr["sector"].upper(), "BodyM", 5.2, MUTED_D, tracking=1.2)
+        y -= 12.4
+    k.vline(x - 5, y + 6, 152 - y, HAIR, 0.35)
 
     k.footer(PAGE + 1, "The portfolio")
 
 
-# ===========================================================================
-# Product spreads
-# ===========================================================================
 def page_product_story(k, p, idx):
-    full_bg(k, f"story_{p['art']}")
-    accent = acc(p["accent"])
+    full_bg(k, "bg_page")
+    a = acc(p["accent"])
 
-    k.label(ML, H - MT - 2, f"{idx:02d} · {p['kicker']}", accent, 6.6, 2.2)
-    k.text(ML, H - 34, p["name"], "DisplayB", 27, WHITE)
-    k.hline(ML, H - 38.5, 40, accent, 0.8, 0.9)
+    # art inset on the right
+    k.image_frame(plate(k, f"story_{p['art']}"), 152, 40, 108, 132, r=3.0)
+    k.caption(152, 35, f"{idx:02d} — {p['name']}", a)
 
-    k.block(ML, H - 47, p["tagline"], "DisplayM", 11.4, 15.6, PAPER, 128)
+    k.label(ML, H - MT - 2, f"{idx:02d} · {p['kicker']}", a, 6.6, 2.2)
+    k.text(ML, H - 34, p["name"], "DisplayB", 26, INK)
+    k.rule_gradient(ML, H - 39, 36, 0.8, a, mix(a, WHITE, 0.35))
 
-    k.block(ML, H - 72, p["summary"], "BodyR", 8.4, 12.6, MUTED, 126)
+    k.block(ML, H - 48, p["tagline"], "DisplayM", 11.2, 15.4, PAPER, 122)
+    k.block(ML, H - 60, p["summary"], "BodyR", 8.3, 12.2, MUTED, 122)
 
-    # status row
-    y = 96
-    k.chip(ML, y, p["status"], accent, size=6.0, h=4.8)
-    w = pdfmetrics.stringWidth(p["status"], "BodySB", 6.0) + 7.2
-    k.text(ML + w + 3, y + 1.5, p["url"], "BodyM", 6.8, MUTED_D)
+    y = 92
+    w = k.chip(ML, y, p["status"], a, size=6.0, h=4.8, fill_alpha=0.12)
+    k.text(ML + w + 4, y + 1.6, p["url"], "BodyM", 6.8, MUTED_D)
 
-    # metrics
-    y = 78
-    k.hline(ML, y + 10, 128, HAIR, 0.3, 0.85)
+    if p.get("inferred"):
+        k.rect(ML, 100, 122, 9, fill=GOLD, alpha=0.09, r=1.6)
+        k.text(ML + 4, 103, "Positioning inferred from product naming — confirm against the "
+                            "repository.", "BodyR", 6.6, GOLD_D)
+
+    y = 74
+    k.hline(ML, y + 10, 126, HAIR, 0.4)
     for i, (value, cap) in enumerate(p["metrics"]):
-        k.stat(ML + i * 43, y, value, cap, accent, vsize=16, w=40)
+        k.stat(ML + i * 42, y, value, cap, a, vsize=16, w=40)
 
-    # sector / sector line
-    k.text(ML, 46, "SECTOR", "BodySB", 5.6, MUTED_D, tracking=1.5)
-    k.text(ML, 40, p["sector"], "BodyM", 8.0, PAPER)
-    k.text(ML + 52, 46, "STAGE", "BodySB", 5.6, MUTED_D, tracking=1.5)
-    k.text(ML + 52, 40, p["status"].split("·")[0].strip(), "BodyM", 8.0, PAPER)
+    k.text(ML, 44, "SECTOR", "BodySB", 5.6, MUTED_D, tracking=1.5)
+    k.text(ML, 38, p["sector"], "BodyM", 8.0, INK)
+    k.text(ML + 52, 44, "STAGE", "BodySB", 5.6, MUTED_D, tracking=1.5)
+    k.text(ML + 52, 38, p["status"].split("·")[0].strip(), "BodyM", 8.0, INK)
 
     k.footer(PAGE + 1, p["name"])
 
 
 def page_product_engineering(k, p, idx):
-    full_bg(k, f"eng_{p['art']}")
-    accent = acc(p["accent"])
+    full_bg(k, "bg_quiet")
+    a = acc(p["accent"])
 
-    k.hline(ML, H - 66, CONTENT_W, accent, 0.35, 0.30)
-    k.label(ML, H - 74, "What it does", accent, 6.2, 2.0)
+    k.image_frame(plate(k, f"eng_{p['art']}"), W - MR - 108, 122, 108, 66, r=2.8)
+    k.label(ML, H - MT - 2, f"{p['name']} · engineering", a, 6.4, 2.1)
+    k.text(ML, H - 32, "What it does, and how it is built", "DisplayB", 20, INK)
 
-    col_w = (CONTENT_W - 9) / 2
+    left_w = W - MR - 108 - ML - 9
+    col_w = (left_w - 8) / 2
     for i, (title, body) in enumerate(p["highlights"]):
-        cx = ML + (i % 2) * (col_w + 9)
-        cy_top = 128 - (i // 2) * 36
-        k.circle(cx + 1.2, cy_top + 1.6, 0.75, accent)
-        k.text(cx + 6, cy_top, title, "DisplaySB", 9.6, WHITE)
-        k.block(cx + 6, cy_top - 6.5, body, "BodyR", 7.5, 11.2, MUTED, col_w - 8)
-        k.hline(cx, cy_top - 30, col_w, HAIR, 0.25, 0.7)
+        cx = ML + (i % 2) * (col_w + 8)
+        cy_top = 128 if i < 2 else 74
+        k.circle(cx + 1.2, cy_top + 1.6, 0.75, a)
+        k.text(cx + 6, cy_top, title, "DisplaySB", 9.2, INK)
+        k.block(cx + 6, cy_top - 6.5, body, "BodyR", 7.2, 10.8, MUTED, col_w - 6)
 
     # architecture strip
-    k.rect(ML, 20, CONTENT_W, 32, fill=WHITE, alpha=0.04, r=2.2)
-    k.rect(ML, 20, CONTENT_W, 32, fill=None, stroke=accent, lw=0.3, r=2.2, stroke_alpha=0.16)
-    k.label(ML + 6, 45.5, "How it is built", accent, 5.9, 1.8)
+    k.rect(ML, 18, CONTENT_W, 30, fill=WHITE, alpha=0.92, r=2.2)
+    k.rect(ML, 18, CONTENT_W, 30, fill=None, stroke=PAGE_EDGE, lw=0.4, r=2.2)
+    k.label(ML + 6, 42, "How it is built", a, 5.9, 1.8)
     aw = (CONTENT_W - 12) / 4
     for i, (layer, body) in enumerate(p["arch"]):
         ax = ML + 6 + i * aw
-        k.text(ax, 39.5, layer.upper(), "BodySB", 5.8, PAPER, tracking=1.4)
-        k.block(ax, 35.5, body, "BodyR", 6.6, 9.4, MUTED_D, aw - 4)
+        k.text(ax, 36.5, layer.upper(), "BodySB", 5.8, INK, tracking=1.4)
+        k.block(ax, 32.5, body, "BodyR", 6.6, 9.4, MUTED, aw - 4)
 
-    # note
-    k.text(ML, 12.5, p["note"], "DisplayM", 8.2, accent, alpha=0.85)
+    k.text(ML, 12.5, p["note"], "DisplayM", 8.2, a)
     k.footer(PAGE + 1, p["name"])
 
 
-# ===========================================================================
-# 25 — Traction / at a glance
-# ===========================================================================
+def page_econ_intro(k):
+    full_bg(k, "bg_page")
+    k.label(ML, H - MT - 2, "III · The economics", GOLD, 6.6, 2.2)
+    k.text(ML, H - 34, "Where the revenue comes from", "DisplayB", 22, INK)
+    k.text(ML, H - 45, "Six products with a pricing basis today.", "DisplayB", 22, MUTED)
+
+    k.block(ML, H - 62, C.REVENUE_INTRO, "BodyR", 8.4, 12.6, MUTED, 176)
+
+    # model table
+    y = 118
+    k.hline(ML, y + 6, CONTENT_W, INK, 0.7, 0.55)
+    heads = [("Product", ML), ("Model", ML + 34), ("Price basis", ML + 88),
+             ("Cost note", ML + 140), ("Annual potential", ML + 196)]
+    for h, x in heads:
+        k.text(x, y, h.upper(), "BodySB", 5.6, MUTED_D, tracking=1.5)
+    k.hline(ML, y - 2, CONTENT_W, HAIR, 0.4)
+
+    y -= 9
+    for name, model, price, margin, potential, accent in C.REVENUE_TABLE:
+        a = acc(accent)
+        k.text(ML, y, name, "BodySB", 8.0, INK)
+        k.text(ML + 34, y, model, "BodyR", 7.2, MUTED)
+        k.text(ML + 88, y, price, "BodyM", 7.2, INK)
+        k.text(ML + 140, y, margin, "BodyR", 6.9, MUTED_D)
+        k.text(ML + 196, y, potential, "BodyM", 7.2, a)
+        k.hline(ML, y - 4.0, CONTENT_W, HAIR, 0.3)
+        y -= 11.8
+
+    k.rect(ML, 23, CONTENT_W, 24, fill=GOLD, alpha=0.07, r=2.2)
+    k.rect(ML, 23, CONTENT_W, 24, fill=None, stroke=GOLD, lw=0.4, r=2.2, stroke_alpha=0.4)
+    k.label(ML + 7, 41, "Read this first", GOLD, 5.8, 1.8)
+    k.text(ML + 7, 35, "Modelled unit economics, not reported revenue — no figure here has been billed.",
+           "BodyM", 8.2, INK)
+    k.text(ML + 7, 29, "Each input is an assumption that should be replaced with live trading data "
+                       "before this section is shown outside the studio.",
+           "BodyR", 7.2, MUTED)
+
+    k.footer(PAGE + 1, "The economics")
+
+
+def page_econ_unit(k):
+    full_bg(k, "bg_quiet")
+    k.label(ML, H - MT - 2, "Unit economics", CYAN, 6.6, 2.2)
+    k.text(ML, H - 34, "How each line actually earns", "DisplayB", 21, INK)
+
+    col_w = (CONTENT_W - 10) / 3
+    for i, (name, why, proof, accent) in enumerate(C.REVENUE_UNIT):
+        cx = ML + i * (col_w + 5)
+        a = acc(accent)
+        k.hline(cx, 152, col_w, a, 1.2, 1.0)
+        k.text(cx, 144, name, "DisplaySB", 12, INK)
+        k.block(cx, 137, why, "BodyR", 7.5, 11.2, MUTED, col_w)
+        k.text(cx, 98, "WHAT SUPPORTS IT", "BodySB", 5.4, MUTED_D, tracking=1.4)
+        k.block(cx, 92, proof, "BodyR", 6.9, 10.4, MUTED_D, col_w)
+
+    # market rows
+    k.hline(ML, 72, CONTENT_W, HAIR, 0.4)
+    k.label(ML, 65, "Who pays", GOLD, 6.0, 1.8)
+    y = 57
+    for who, desc, products in C.MARKET:
+        k.text(ML, y, who, "BodySB", 7.8, INK)
+        k.block(ML + 44, y + 2.6, desc, "BodyR", 7.2, 10.4, MUTED, 118)
+        k.text(ML + 170, y, products, "BodyM", 6.9, VIOLET)
+        k.hline(ML, y - 6.4, CONTENT_W, HAIR, 0.3)
+        y -= 15
+
+    k.footer(PAGE + 1, "The economics")
+
+
+def page_econ_cost(k):
+    full_bg(k, "bg_page")
+    k.label(ML, H - MT - 2, "Cost base & assumptions", VIOLET, 6.6, 2.2)
+    k.text(ML, H - 34, "What it costs to run, and what to check", "DisplayB", 20, INK)
+
+    col_w = (CONTENT_W - 10) / 2
+    for i, (title, body) in enumerate(C.COST_BASE):
+        cx = ML + (i % 2) * (col_w + 10)
+        cy_top = 136 - (i // 2) * 30
+        k.text(cx, cy_top, f"0{i + 1}", "DisplayB", 11, VIOLET)
+        k.text(cx + 9, cy_top, title, "DisplaySB", 10.0, INK)
+        k.block(cx + 9, cy_top - 7, body, "BodyR", 7.6, 11.2, MUTED, col_w - 10)
+        k.hline(cx, cy_top - 23, col_w, HAIR, 0.3)
+
+    k.label(ML, 74, "Assumptions register", GOLD, 6.0, 1.8)
+    y = 67
+    for note in C.ECON_NOTES:
+        k.circle(ML + 1.2, y + 1.4, 0.7, GOLD)
+        k.text(ML + 6, y, note, "BodyR", 7.6, MUTED)
+        y -= 8.6
+
+    k.rect(ML, 18, CONTENT_W, 24, fill=VIOLET, alpha=0.05, r=2.2)
+    k.rect(ML, 18, CONTENT_W, 24, fill=None, stroke=VIOLET, lw=0.4, r=2.2, stroke_alpha=0.3)
+    k.label(ML + 7, 36, "Why we present it this way", CYAN, 5.8, 1.8)
+    k.block(ML + 7, 31, "An investor document that invents revenue is worth nothing. "
+                        "This section is deliberately conservative and auditable.",
+            "DisplayM", 8.6, 11.6, INK, CONTENT_W - 14)
+
+    k.footer(PAGE + 1, "The economics")
+
+
 def page_traction(k):
     full_bg(k, "bg_page")
-    k.label(ML, H - MT - 2, "III · The business", GOLD, 6.6, 2.2)
-    k.text(ML, H - 34, "Where the portfolio stands", "DisplayB", 21, WHITE)
+    k.label(ML, H - MT - 2, "IV · The business", GOLD, 6.6, 2.2)
+    k.text(ML, H - 34, "Where the portfolio stands", "DisplayB", 21, INK)
 
-    # metric band
     y = 152
     for i, (value, cap) in enumerate(C.TRACTION):
         cx = ML + i * (CONTENT_W / 5)
-        k.text(cx, y, value, "DisplayB", 20, [CYAN, VIOLET, GOLD, EMERALD, PAPER][i])
+        k.text(cx, y, value, "DisplayB", 20, [CYAN, VIOLET, GOLD, EMERALD, INK][i])
         k.block(cx, y - 4, cap, "BodyR", 6.8, 9.4, MUTED_D, CONTENT_W / 5 - 5)
         if i:
-            k.vline(cx - 4, y - 1, 16, HAIR, 0.25, 0.7)
-    k.hline(ML, y - 16, CONTENT_W, HAIR, 0.3, 0.85)
+            k.vline(cx - 4, y - 1, 16, HAIR, 0.35)
+    k.hline(ML, y - 16, CONTENT_W, HAIR, 0.4)
 
-    # table
     k.label(ML, 122, "Product · market · what is live", MUTED_D, 6.0, 1.8)
     y = 115
-    k.hline(ML, y, CONTENT_W, HAIR, 0.3, 0.85)
-    for i, (name, sector, detail, accent) in enumerate(C.AT_A_GLANCE):
-        k.text(ML, y - 8, f"{i + 1:02d}", "DisplaySB", 7.2, acc(accent), alpha=0.9)
-        k.text(ML + 9, y - 8, name, "BodySB", 8.2, PAPER)
-        k.text(ML + 74, y - 8, sector.upper(), "BodyM", 5.8, acc(accent), tracking=1.3)
-        k.text(ML + 104, y - 8, detail, "BodyR", 7.6, MUTED)
-        k.hline(ML, y - 11.4, CONTENT_W, HAIR, 0.22, 0.55)
-        y -= 11.8
+    k.hline(ML, y, CONTENT_W, HAIR, 0.4)
+    for i, pr in enumerate(C.PRODUCTS):
+        k.text(ML, y - 8, f"{i + 1:02d}", "DisplaySB", 7.2, acc(pr["accent"]))
+        k.text(ML + 9, y - 8, pr["name"], "BodySB", 8.2, INK)
+        k.text(ML + 74, y - 8, pr["sector"].upper(), "BodyM", 5.8, acc(pr["accent"]), tracking=1.2)
+        k.text(ML + 104, y - 8, pr["status"], "BodyR", 7.4, MUTED)
+        k.hline(ML, y - 11.4, CONTENT_W, HAIR, 0.3)
+        y -= 10.6
 
     k.text(ML, 16.5, "Live status reflects the deployed build as documented in each repository.",
            "BodyR", 6.6, MUTED_D)
     k.footer(PAGE + 1, "The business")
 
 
-# ===========================================================================
-# 26 — Roadmap
-# ===========================================================================
 def page_roadmap(k):
     full_bg(k, "bg_quiet")
-    k.label(ML, H - MT - 2, "Roadmap", CYAN, 6.6, 2.2)
-    k.text(ML, H - 34, "From built, to commercial, to platform", "DisplayB", 20, WHITE)
+    k.label(ML, H - MT - 2, "Roadmap", VIOLET, 6.6, 2.2)
+    k.text(ML, H - 34, "From built, to commercial, to platform", "DisplayB", 20, INK)
 
-    # timeline rail
     rail_y = 100
-    k.hline(ML, rail_y, CONTENT_W, HAIR, 0.4, 0.9)
-
+    k.hline(ML, rail_y, CONTENT_W, HAIR, 0.5)
     for i, (when, title, body, accent) in enumerate(C.ROADMAP):
         cx = ML + i * (CONTENT_W / 4) + 2
         a = acc(accent)
-        k.circle(cx, rail_y, 2.2, a, alpha=0.18)
+        k.circle(cx, rail_y, 2.2, a, alpha=0.20)
         k.circle(cx, rail_y, 0.95, a)
-        k.vline(cx, rail_y + 2.2, 6, a, 0.4, 0.40)
+        k.vline(cx, rail_y + 2.2, 6, a, 0.5, 0.45)
         k.text(cx, rail_y + 32, when.upper(), "BodySB", 6.2, a, tracking=1.8)
-        k.text(cx, rail_y + 24, title, "DisplaySB", 10.0, WHITE)
+        k.text(cx, rail_y + 24, title, "DisplaySB", 10.0, INK)
         k.block(cx, rail_y + 18, body, "BodyR", 7.4, 11.0, MUTED, CONTENT_W / 4 - 8)
 
-        # lower half: deliverables
-    k.hline(ML, 86, CONTENT_W, HAIR, 0.25, 0.7)
-
+    k.hline(ML, 86, CONTENT_W, HAIR, 0.35)
     k.label(ML, 79, "Commercial focus", GOLD, 6.0, 1.8)
     focus = [
-        ("Rebuy", "Subscription per shop, with a platform take rate on messaging volume.",
-         "emerald"),
+        ("Rebuy", "Subscription per shop, with a platform take rate on messaging volume.", "emerald"),
         ("Tank Tickets", "A transparent fee per issued ticket, paid by the organiser.", "cyan"),
         ("Trampo", "Commission per completed trip once dispatch is licensed.", "violet"),
+        ("ProxiCore", "Per-location or per-device subscription for proximity infrastructure.", "gold"),
     ]
     y = 69
     for name, body, accent in focus:
         k.text(ML, y, name, "DisplaySB", 9.6, acc(accent))
         k.block(ML + 40, y + 3, body, "BodyR", 7.6, 11.0, MUTED, CONTENT_W - 40)
-        k.hline(ML, y - 8, CONTENT_W, HAIR, 0.22, 0.55)
-        y -= 19
+        k.hline(ML, y - 8, CONTENT_W, HAIR, 0.3)
+        y -= 17
 
     k.footer(PAGE + 1, "The business")
 
 
-# ===========================================================================
-# 27 — Engagement + back cover
-# ===========================================================================
 def page_engagement(k):
     full_bg(k, "bg_page")
     k.label(ML, H - MT - 2, "Engagement", GOLD, 6.6, 2.2)
-    k.text(ML, H - 34, "What we are asking for", "DisplayB", 21, WHITE)
+    k.text(ML, H - 34, "What we are asking for", "DisplayB", 21, INK)
 
     col_w = (CONTENT_W - 10) / 3
     for i, (title, body) in enumerate(C.ENGAGEMENT):
         cx = ML + i * (col_w + 5)
-        accent = [VIOLET, CYAN, GOLD][i]
-        k.hline(cx, 150, col_w, accent, 0.9, 0.9)
-        k.text(cx, 142, f"0{i + 1}", "DisplayB", 12, accent, alpha=0.8)
-        k.text(cx, 132, title, "DisplaySB", 9.8, WHITE)
+        a = [VIOLET, CYAN, GOLD][i]
+        k.hline(cx, 150, col_w, a, 1.1, 1.0)
+        k.text(cx, 142, f"0{i + 1}", "DisplayB", 12, a)
+        k.text(cx, 132, title, "DisplaySB", 9.8, INK)
         k.block(cx, 125, body, "BodyR", 7.6, 11.2, MUTED, col_w)
 
-    # closing statement
-    k.rect(ML, 46, CONTENT_W, 52, fill=VIOLET, alpha=0.07, r=2.6)
-    k.rect(ML, 46, CONTENT_W, 52, fill=None, stroke=VIOLET, lw=0.35, r=2.6, stroke_alpha=0.30)
+    k.rect(ML, 46, CONTENT_W, 52, fill=VIOLET, alpha=0.05, r=2.6)
+    k.rect(ML, 46, CONTENT_W, 52, fill=None, stroke=VIOLET, lw=0.5, r=2.6, stroke_alpha=0.35)
     k.label(ML + 9, 88, "In closing", CYAN, 6.0, 1.9)
-    k.text(ML + 9, 76, "Eight products, one practice, one city.", "DisplayB", 16, WHITE)
+    k.text(ML + 9, 76, "One practice, one city, a portfolio already shipping.",
+           "DisplayB", 16, INK)
     k.block(ML + 9, 68,
             "Great Lakes Technology has already answered the hardest question for an early "
             "investor: can this team take an idea all the way to a live, secure, well-crafted "
-            "product? Eight times over, from Kampala.",
+            "product? Repeatedly, from Kampala.",
             "BodyR", 8.0, 11.8, MUTED, CONTENT_W - 22)
 
     k.footer(PAGE + 1, "Engagement")
@@ -502,28 +567,26 @@ def page_engagement(k):
 
 def page_back(k):
     full_bg(k, "bg_back")
-    k.image(plate(k, "orn_back.png"), W - 128, -26, 152, 152, mask="auto")
-    k.rule_gradient(ML, H - 24, 46, 0.7, VIOLET, CYAN, alpha=0.95)
-    k.label(ML, H - 33, "Portfolio · Investor Edition · 2026", CYAN, 6.8, 2.3)
+    k.rule_gradient(ML, H - 24, 52, 0.9, VIOLET, CYAN)
 
-    k.text(ML, 112, "Great Lakes", "DisplayB", 34, WHITE)
-    k.text(ML, 97, "Technology", "DisplayB", 34, WHITE)
-    k.text(ML, 84, "Kampala, Uganda", "DisplayM", 12, CYAN)
+    k.text(ML, 118, "Great Lakes", "DisplayB", 34, INK)
+    k.text(ML, 103, "Technology", "DisplayB", 34, INK)
+    k.text(ML, 90, "Kampala, Uganda", "DisplayM", 12, CYAN)
 
-    k.hline(ML, 68, 96, HAIR, 0.3, 0.9)
-    x = ML
-    k.text(x, 60, "DIRECTOR", "BodySB", 5.6, MUTED_D, tracking=1.5)
-    k.text(x, 54, C.DIRECTOR, "BodyM", 8.4, PAPER)
-    k.text(x + 46, 60, "LINKEDIN", "BodySB", 5.6, MUTED_D, tracking=1.5)
-    k.text(x + 46, 54, C.LINKEDIN, "BodyM", 8.4, CYAN)
-    k.text(x, 44, "OFFICE", "BodySB", 5.6, MUTED_D, tracking=1.5)
-    k.text(x, 38, ", ".join(C.ADDRESS), "BodyM", 8.4, PAPER)
+    k.hline(ML, 74, 108, HAIR, 0.4)
+    for i, (cap, val) in enumerate([("Director", C.DIRECTOR),
+                                    ("Email", C.EMAIL),
+                                    ("LinkedIn", C.LINKEDIN)]):
+        cx = ML + i * 42
+        k.text(cx, 66, cap.upper(), "BodySB", 5.6, MUTED_D, tracking=1.5)
+        k.text(cx, 60, val, "BodyM", 8.0, INK if i < 1 else CYAN)
+    k.text(ML, 50, "OFFICE", "BodySB", 5.6, MUTED_D, tracking=1.5)
+    k.text(ML, 44, ", ".join(C.ADDRESS), "BodyM", 8.0, INK)
 
-    k.text(ML, 75, "Design, engineering and product strategy by the founding team.",
-           "BodyR", 6.8, MUTED_D)
+    k.text(ML, 20, "© 2026 Great Lakes Technology. All product names and builds described "
+                   "are the work of the studio.", "BodyR", 6.2, MUTED_D)
 
-    k.text(ML, 14, "© 2026 Great Lakes Technology. All product names and builds described are the "
-                   "work of the studio.", "BodyR", 6.2, MUTED_D)
+    k.image_frame(plate(k, "cover_full.jpg"), 170, 60, 107, 100, r=3.0)
 
 
 # ===========================================================================
@@ -534,9 +597,10 @@ def build():
     c = canvas.Canvas(OUT, pagesize=(W * PT, H * PT))
     c.setTitle("Great Lakes Technology — Portfolio 2026")
     c.setAuthor("Great Lakes Technology")
-    c.setSubject("Investor portfolio brochure: eight products built in Kampala, Uganda")
+    c.setSubject("Investor portfolio brochure: eleven products built in Kampala, Uganda")
     c.setCreator("Great Lakes Technology")
-    c.setKeywords("Great Lakes Technology, Kampala, Uganda, portfolio, investor, SaaS, fintech")
+    c.setKeywords("Great Lakes Technology, Kampala, Uganda, portfolio, investor, "
+                  "ProxiCore, Rebuy, Tank Tickets, Trampo")
 
     k = Kit(c)
     global PAGE
@@ -544,60 +608,69 @@ def build():
     c.setPageSize((W * PT, H * PT))
     c.scale(PT, PT)
 
-    def bookmark(title, level=0, key=None, parent=None):
-        nonlocal c
-        nm = key or f"pg{PAGE}"
+    def bookmark(title, level=0):
+        nm = f"pg{PAGE}"
         c.bookmarkPage(nm)
         c.addOutlineEntry(title, nm, level=level, closed=False)
 
-    page_cover(k)                                    # 01
+    page_cover(k)
     bookmark("Cover")
     new_page(c)
-    page_contents(k)                                 # 02
+    page_contents(k)
     bookmark("Contents")
     new_page(c)
-    page_mission(k)                                  # 03
-    bookmark("The studio", 0)
+    page_mission(k)
+    bookmark("I — The studio")
     bookmark("Mission", 1)
     new_page(c)
-    page_positioning(k)                              # 04
+    page_positioning(k)
     bookmark("Why we are different", 1)
     new_page(c)
-    page_capabilities(k)                             # 05
+    page_capabilities(k)
     bookmark("Capabilities", 1)
     new_page(c)
-    page_method(k)                                   # 06
+    page_method(k)
     bookmark("How we work", 1)
     new_page(c)
-    page_platform(k)                                 # 07
+    page_platform(k)
     bookmark("The platform layer", 1)
     new_page(c)
-    page_standards(k)                                # 08
+    page_standards(k)
     bookmark("Standards & posture", 1)
     new_page(c)
-    page_portfolio_divider(k)                        # 09
-    bookmark("The portfolio", 0)
+    page_portfolio_divider(k)
+    bookmark("II — The portfolio")
     new_page(c)
 
     for i, p in enumerate(C.PRODUCTS, start=1):
         page_product_story(k, p, i)
-        bookmark(p["name"], 1)
+        bookmark(f"{i:02d} {p['name']}", 1)
         new_page(c)
         page_product_engineering(k, p, i)
-        bookmark(f"{p['name']} — engineering", 2)
         new_page(c)
 
-    page_traction(k)                                 # 25
-    bookmark("The business", 0)
+    page_econ_intro(k)
+    bookmark("III — The economics")
+    bookmark("Revenue model", 1)
+    new_page(c)
+    page_econ_unit(k)
+    bookmark("Unit economics & who pays", 1)
+    new_page(c)
+    page_econ_cost(k)
+    bookmark("Cost base & assumptions", 1)
+    new_page(c)
+
+    page_traction(k)
+    bookmark("IV — The business")
     bookmark("Where the portfolio stands", 1)
     new_page(c)
-    page_roadmap(k)                                  # 26
+    page_roadmap(k)
     bookmark("Roadmap & commercial focus", 1)
     new_page(c)
-    page_engagement(k)                               # 27
+    page_engagement(k)
     bookmark("Engagement", 1)
     new_page(c)
-    page_back(k)                                     # 28
+    page_back(k)
     bookmark("Contact")
     c.save()
     return OUT, PAGE

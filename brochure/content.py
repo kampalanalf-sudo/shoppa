@@ -4,6 +4,7 @@
 STUDIO = "Great Lakes Technology"
 DIRECTOR = "Alfred Idusso"
 ADDRESS = ["Plot 14 Martyrs Drive", "Ntinda, Kampala", "Uganda"]
+EMAIL = "kampalanalf@gmail.com"
 LINKEDIN = "linkedin.com/kampalan"
 EDITION = "Investor Edition · 2026"
 
@@ -384,6 +385,116 @@ PRODUCTS = [
         ],
         note="Institutional trust is earned in the details a visitor never notices.",
     ),
+    dict(
+        key="proxicore", art="proxicore", name="ProxiCore",
+        kicker="PROXIMITY PLATFORM",
+        tagline="The core layer that knows where people and devices are.",
+        sector="Proximity & location",
+        accent="violet", status="In build · private repository",
+        url="Core platform",
+        summary=(
+            "ProxiCore is the platform layer underneath the Proxi family: identity for people, "
+            "devices and locations, plus the services that decide what should happen when they "
+            "come close to each other. Proxicore-Point and ProxiCast are built as applications "
+            "on top of it rather than as separate systems."
+        ),
+        highlights=[
+            ("One spatial record",
+             "People, devices and venues modelled once, so every Proxi product reads the same "
+             "source of truth instead of maintaining parallel lists."),
+            ("Event-based, not polled",
+             "Arrival, dwell and departure are treated as events that other services subscribe "
+             "to, which keeps downstream behaviour cheap and predictable."),
+            ("Multi-tenant from the start",
+             "Organisations, their sites and their staff are scoped in the data model, with "
+             "row-level security rather than application-side filtering."),
+            ("Security-first boundary",
+             "Location data is personal data. Consent, retention and per-role visibility are "
+             "part of the platform contract, not an afterthought."),
+        ],
+        metrics=[("1", "shared core"), ("3", "products on it"), ("RLS", "by default")],
+        arch=[
+            ("Model", "Organisations → sites → zones → devices, with people attached by consent."),
+            ("Services", "Presence, proximity evaluation and event dispatch as separate concerns."),
+            ("Access", "Row-level security scoped per organisation; secrets kept server-side."),
+            ("Delivery", "Vercel-hosted application surface with a private source repository."),
+        ],
+        note="Positioning inferred from product naming — to be confirmed against the repository.",
+        inferred=True,
+    ),
+    dict(
+        key="proxipoint", art="proxipoint", name="Proxicore-Point",
+        kicker="PROXIMITY POINTS & COMMERCE",
+        tagline="Every entrance, counter and shelf becomes a measurable point.",
+        sector="Retail & venues",
+        accent="cyan", status="In build · private repository",
+        url="Point-of-presence product",
+        summary=(
+            "Proxicore-Point puts a ProxiCore endpoint where commerce actually happens: doors, "
+            "counters, queues and shelves. It answers who arrived, how long they stayed and "
+            "whether they came back — turning footfall into a number a shop can plan against."
+        ),
+        highlights=[
+            ("Points, not guesses",
+             "Each location is a registered point with its own presence history, so reporting "
+             "is per door or per counter rather than per building."),
+            ("Dwell and return",
+             "Dwell time and repeat-visit rates are first-class metrics, the two numbers that "
+             "separate passing traffic from real intent."),
+            ("Works with the retail stack",
+             "Designed to complement a retention engine such as Rebuy: footfall explains the "
+             "visit, purchase history explains the basket."),
+            ("Merchant-readable",
+             "Output is a dashboard a shop owner can act on without a data analyst, aligned to "
+             "mobile-first and low-bandwidth use."),
+        ],
+        metrics=[("per point", "reporting"), ("dwell", "tracked"), ("repeat", "visits")],
+        arch=[
+            ("Sensor layer", "ProxiCore endpoints or beacons registered per site and per zone."),
+            ("Presence", "Arrival and dwell events resolved into sessions, not raw reads."),
+            ("Reporting", "Merchant-facing metrics per point, per day, with trend comparison."),
+            ("Adjacent", "Complements Rebuy's customer record to connect visit to purchase."),
+        ],
+        note="Positioning inferred from product naming — to be confirmed against the repository.",
+        inferred=True,
+    ),
+    dict(
+        key="proxicast", art="proxicast", name="ProxiCast",
+        kicker="PROXIMITY BROADCAST",
+        tagline="The right message, in the moment someone is actually there.",
+        sector="Messaging & media",
+        accent="gold", status="In build · private repository",
+        url="Proximity broadcast product",
+        summary=(
+            "ProxiCast delivers content to a defined place and moment rather than to a mailing "
+            "list: a promotion at the entrance, an offer at the counter, an announcement at the "
+            "gate. It reuses the delivery discipline already proven in Rebuy — templates, "
+            "scheduling, quiet hours and opt-outs — scoped by proximity instead of by segment."
+        ),
+        highlights=[
+            ("Proximity as the trigger",
+             "Campaigns attach to a point or zone, so delivery is gated by real presence "
+             "rather than a timer that hopes the person is nearby."),
+            ("Fair-use by design",
+             "Frequency caps, quiet hours and explicit opt-out are inherited requirements, "
+             "because proximity messaging fails the moment it feels like spam."),
+            ("One delivery core",
+             "WhatsApp, SMS and in-app surfaces share the same template and audit path already "
+             "operating in Rebuy."),
+            ("Measurable",
+             "Impressions, engagement and redemption recorded per campaign and per point, so "
+             "spend can be justified against footfall."),
+        ],
+        metrics=[("proximity", "trigger"), ("capped", "frequency"), ("audited", "sends")],
+        arch=[
+            ("Trigger", "Zone entry or dwell threshold published by ProxiCore as an event."),
+            ("Content", "Templates and compliance rules shared with the messaging core."),
+            ("Delivery", "WhatsApp Cloud API, SMS and in-app, with per-channel fallback."),
+            ("Audit", "Every send recorded against campaign, point and consent state."),
+        ],
+        note="Positioning inferred from product naming — to be confirmed against the repository.",
+        inferred=True,
+    ),
 ]
 
 # ---------------------------------------------------------------------------
@@ -398,14 +509,17 @@ AT_A_GLANCE = [
     ("IUEA Community Radio", "Media", "Live campus radio platform", "gold"),
     ("BioPay", "Fintech", "Passkey payment approval", "cyan"),
     ("Gateway Revival Glory", "Institution", "Church platform + tracker", "rose"),
+    ("ProxiCore", "Proximity", "Spatial core for the Proxi family", "violet"),
+    ("Proxicore-Point", "Retail & venues", "Presence per point, dwell and return", "cyan"),
+    ("ProxiCast", "Messaging", "Proximity-triggered broadcast", "gold"),
 ]
 
 TRACTION = [
-    ("8", "products designed, built and shipped"),
+    ("11", "products designed and built in-house"),
     ("4", "live custom domains on paid TLS"),
-    ("6", "vertical markets addressed"),
+    ("9", "vertical markets addressed"),
     ("3", "cloud platforms operated on"),
-    ("100%", "of products built by the founding team"),
+    ("100%", "built by the founding team"),
 ]
 
 ROADMAP = [
@@ -433,4 +547,81 @@ ENGAGEMENT = [
     ("What a partner gets",
      "A portfolio already built, a documented platform layer, four live domains and a founding "
      "team that ships end to end without outsourcing."),
+]
+
+# ---------------------------------------------------------------------------
+# III · The economics
+# All figures below are MODELLED unit economics, not reported revenue.
+# Every input is an assumption to be validated against live trading data.
+# ---------------------------------------------------------------------------
+REVENUE_INTRO = (
+    "Six of the eleven products carry a clear revenue model today. The table below states the "
+    "pricing basis for each of them and the volume a market has to reach for the line to work. "
+    "Figures are modelled unit economics used for planning — no live revenue is claimed, and "
+    "each input should be re-based against real trading data before it is relied on."
+)
+
+# name, model, price basis, margin note, annual potential at a stated scale, accent
+REVENUE_TABLE = [
+    ("Rebuy", "Subscription per shop",
+     "UGX 120k / month per shop", "Software margin ~85%",
+     "UGX 1.4bn at 1,000 shops", "emerald"),
+    ("Tank Tickets", "Fee per issued ticket",
+     "5% of face value + UGX 500", "Payment costs passed through",
+     "UGX 900m at 60k tickets / yr", "cyan"),
+    ("Trampo", "Commission per trip",
+     "12% of completed fare", "Driver payout carried by fare",
+     "UGX 2.2bn at 90k trips / mo", "violet"),
+    ("ProxiCore", "Platform licence",
+     "UGX 400k / month per organisation", "Multi-tenant, one core",
+     "UGX 480m at 100 organisations", "violet"),
+    ("Proxicore-Point", "Per location, per month",
+     "UGX 60k / month per point", "Hardware sold separately",
+     "UGX 720m at 1,000 points", "cyan"),
+    ("ProxiCast", "Campaign volume",
+     "UGX 25 per delivered message", "Shared delivery core",
+     "UGX 300m at 1m messages / yr", "gold"),
+]
+
+REVENUE_UNIT = [
+    ("Rebuy", "Revenue per shop rises with retention, not with seats. A shop that recovers two "
+              "extra baskets a month covers the subscription several times over, which is the "
+              "argument that closes the sale.", "Daily and weekly restock schedules; quiet hours; "
+              "conversion attributed for 21 days.", "emerald"),
+    ("Tank Tickets", "Take rate is deliberately small and transparent, because organisers "
+                     "compare it directly to the cash they currently lose at the gate. Capacity-"
+                     "safe issuance is the product.", "Verified DGateway collection; PDF ticket "
+                     "with QR; automatic email and WhatsApp delivery.", "cyan"),
+    ("Proxi family", "Priced as infrastructure: the core is a platform licence, and each point "
+                     "or campaign is a metered extension of it. One core, three billing surfaces.",
+     "Presence events from ProxiCore; per-point presence; proximity-triggered campaigns.", "gold"),
+]
+
+MARKET = [
+    ("Retail merchants", "Kampala and the wider Greater Kampala retail base — thousands of "
+                         "independent shops that already sell on WhatsApp.", "Rebuy, Proxicore-Point"),
+    ("Event organisers", "Promoters and venues running paid events with gate reconciliation "
+                         "problems and no reliable ticket audit trail.", "Tank Tickets"),
+    ("Fleets & riders", "Boda and car fleets that need dispatch, tracking and a settlement "
+                        "record before they can scale beyond phone calls.", "Trampo"),
+    ("Venues & campuses", "Malls, campuses and institutions that want footfall and messaging "
+                          "control in one place rather than three vendors.", "ProxiCore, ProxiCast"),
+]
+
+COST_BASE = [
+    ("Infrastructure", "Vercel, Supabase, domains and TLS — scales with usage, currently "
+                       "absorbed inside free and low tiers."),
+    ("Delivery", "WhatsApp, SMS and email are metered per message and are the dominant "
+                 "variable cost in any messaging-led product."),
+    ("Payments", "Provider fees are charged per transaction; pricing is set so they are "
+                 "passed through rather than absorbed."),
+    ("People", "A single in-house engineering practice. The principal cost is time, not "
+               "licences — the stack deliberately avoids per-seat tooling."),
+]
+
+ECON_NOTES = [
+    "Modelled from published pricing assumptions, not from billed revenue.",
+    "Volumes shown are the scale at which each line becomes material, not forecasts.",
+    "Currency: Ugandan shilling. USD conversion at the prevailing rate at time of reading.",
+    "Replace every input with live figures before presenting to a lender or auditor.",
 ]

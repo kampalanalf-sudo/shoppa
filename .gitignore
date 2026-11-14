@@ -7,3 +7,5 @@ smoke/dist
 .env.*
 !.env.example
 npm-debug.log*
+brochure/.venv/
+brochure/cache*/

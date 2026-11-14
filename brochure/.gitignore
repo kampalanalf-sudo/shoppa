@@ -1,4 +1,7 @@
-# Generated at build time by prep_assets.py
+# Build environment and generated plates
+.venv/
 cache/
+cache_light/
 cache_web/
+cache_light_web/
 __pycache__/
