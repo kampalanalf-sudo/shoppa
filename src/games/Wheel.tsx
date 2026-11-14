@@ -1,0 +1,288 @@
+import React, { useCallback, useMemo, useRef, useState } from 'react'
+import { useStore } from '../lib/store'
+import { sfx } from '../lib/sound'
+import { money, mult } from '../lib/format'
+import { gameById } from '../lib/games'
+import { BetAmount, BetButton, useHotkey } from '../components/BetControls'
+import { GameShell, PayoutRow } from '../components/GameShell'
+
+/**
+ * Fortune Wheel — 80 physical slices with an audited layout.
+ * EV = Σ (multiplier × slices) / 80 = 0.99 exactly (99% RTP).
+ *   0×  ×19   ·   0.5× ×10   ·   1.2× ×26   ·   1.5× ×22   ·   2× ×1   ·   3× ×1   ·   5× ×1
+ */
+const LAYOUT: [number, number][] = [
+  [0, 19],
+  [0.5, 10],
+  [1.2, 26],
+  [1.5, 22],
+  [2, 1],
+  [3, 1],
+  [5, 1],
+]
+
+const SLICES: number[] = (() => {
+  const TOTAL = 80
+  const NULLS = 19
+  const wins: number[] = []
+  LAYOUT.forEach(([m, n]) => {
+    if (m > 0) for (let i = 0; i < n; i++) wins.push(m)
+  })
+
+  // deterministic Fisher–Yates so the wheel looks different every load,
+  // but the slice *counts* (and therefore the RTP) are always identical.
+  let seed = 1337
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648)
+  for (let i = wins.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1))
+    ;[wins[i], wins[j]] = [wins[j], wins[i]]
+  }
+
+  const out: number[] = []
+  let nullsUsed = 0
+  let wi = 0
+  for (let p = 0; p < TOTAL; p++) {
+    if (p % 4 === 0 && nullsUsed < NULLS) {
+      out.push(0)
+      nullsUsed++
+    } else if (wi < wins.length) {
+      out.push(wins[wi++])
+    }
+  }
+  while (out.length < TOTAL) out.push(0)
+
+  // finish on the top jackpot for a satisfying spin
+  const big = out.lastIndexOf(5)
+  if (big >= 0 && big !== out.length - 1) {
+    out[big] = out[out.length - 1]
+    out[out.length - 1] = 5
+  }
+  return out
+})()
+
+const COLOR = (m: number) => {
+  if (m === 0) return '#333b50'
+  if (m === 0.5) return '#78839d'
+  if (m === 1.2) return '#b6ee3f'
+  if (m === 1.5) return '#2ee6a8'
+  if (m === 2) return '#3ad7ff'
+  if (m === 3) return '#a06bff'
+  return '#ffcf5c'
+}
+
+export const WHEEL_RTP = SLICES.reduce((a, m) => a + m, 0) / SLICES.length
+
+const SEG = 360 / SLICES.length
+
+export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
+  const game = gameById('wheel')!
+  const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
+  const [bet, setBet] = useState(10)
+  const [spinning, setSpinning] = useState(false)
+  const [angle, setAngle] = useState(0)
+  const [last, setLast] = useState<number | null>(null)
+  const [history, setHistory] = useState<number[]>([1.2, 0, 2, 1.5, 0.4, 0, 3, 0, 1.2])
+  const timer = useRef<number>(0)
+
+  const potential = useMemo(() => Math.round(bet * 5 * 100) / 100, [bet])
+  const payoutTable = useMemo(() => {
+    const counts = new Map<number, number>()
+    for (const m of SLICES) counts.set(m, (counts.get(m) ?? 0) + 1)
+    return [...counts.entries()].filter(([m]) => m > 0).sort((a, b) => a[0] - b[0])
+  }, [])
+
+  const spin = useCallback(async () => {
+    if (spinning) return
+    if (!(bet > 0)) return
+    if (bet > balance) {
+      toast({ kind: 'error', title: 'Insufficient balance', body: 'Lower your bet to continue.' })
+      return
+    }
+    if (!placeBet('wheel', bet)) return
+    sfx.place()
+    setSpinning(true)
+    const [u] = await nextFloats(1)
+    const idx = Math.min(SLICES.length - 1, Math.floor(u * SLICES.length))
+    const m = SLICES[idx]
+    const targetCenter = idx * SEG + SEG / 2
+    const turns = 6 + Math.floor(Math.random() * 2)
+    const current = ((angle % 360) + 360) % 360
+    const desired = (360 - targetCenter + 360) % 360
+    const delta = turns * 360 + ((desired - current + 360) % 360)
+    setAngle((a) => a + delta)
+    sfx.spin()
+
+    timer.current = window.setTimeout(() => {
+      setSpinning(false)
+      setLast(idx)
+      setHistory((h) => [m, ...h].slice(0, 16))
+      const payout = settleBet({
+        game: 'wheel',
+        wager: bet,
+        multiplier: m,
+        detail: m > 0 ? `Landed ${mult(m)}` : 'Landed on a losing slice',
+      })
+      if (sound) {
+        if (m >= 5) sfx.bigwin()
+        else if (m > 0) sfx.win()
+        else sfx.lose()
+      }
+      if (m === 0) flashLoss()
+      if (m >= 3) toast({ kind: 'win', title: `Wheel jackpot ${mult(m)}!`, body: `+${money(payout)} FB paid out.` })
+    }, 5400)
+  }, [spinning, bet, balance, placeBet, nextFloats, angle, settleBet, sound, toast])
+
+  useHotkey(() => void spin())
+  const landed = last !== null ? SLICES[last] : null
+
+  return (
+    <GameShell
+      game={game}
+      onBack={onBack}
+      onFair={onFair}
+      aside={
+        <div className="space-y-3.5">
+          <BetAmount value={bet} onChange={setBet} disabled={spinning} />
+          <BetButton onClick={() => void spin()} loading={spinning} sub={`Max win ${money(potential)} FB`}>
+            {spinning ? 'Spinning…' : 'Spin wheel'}
+          </BetButton>
+          {landed !== null && (
+            <div className={`animate-popIn rounded-xl border px-3 py-2 text-center ${
+              landed > 0 ? 'border-neon-lime/30 bg-neon-lime/10' : 'border-white/[0.07] bg-white/[0.02]'
+            }`}>
+              <p className="text-[10px] uppercase tracking-wider text-slate-500">Landed on</p>
+              <p className={`num text-xl font-black ${landed > 0 ? 'text-neon-lime' : 'text-slate-400'}`}>
+                {landed > 0 ? mult(landed) : 'No win'}
+              </p>
+            </div>
+          )}
+          <div>
+            <p className="mb-1.5 text-[11px] font-bold uppercase tracking-[.14em] text-slate-400">Payout table</p>
+            <div className="grid grid-cols-3 gap-1">
+              {payoutTable.map(([m, n]) => (
+                <div key={m} className="flex flex-col items-center rounded-lg border border-white/[0.06] bg-white/[0.02] py-1">
+                  <span className="num text-[11px] font-bold" style={{ color: COLOR(m) }}>{mult(m)}</span>
+                  <span className="text-[9px] text-slate-500">{((n / SLICES.length) * 100).toFixed(1)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <PayoutRow label="Slices" value={String(SLICES.length)} />
+            <PayoutRow label="Exact RTP" value={`${(WHEEL_RTP * 100).toFixed(2)}%`} highlight />
+            <PayoutRow label="Losing slices" value={`${SLICES.filter((m) => m === 0).length} / ${SLICES.length}`} />
+          </div>
+        </div>
+      }
+      mobileAction={
+        <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-ink-900/90 px-2">
+            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Bet</span>
+            <input
+              inputMode="decimal"
+              value={bet}
+              onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
+              className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
+            />
+            <span className="text-[9px] font-bold text-neon-lime/70">FB</span>
+          </div>
+          <button type="button" onClick={() => void spin()} disabled={spinning} className="btn-primary h-10 flex-1 !text-[13px]">
+            {spinning ? 'Spinning…' : 'Spin wheel'}
+          </button>
+        </div>
+      }
+      footer={
+        <div className="panel p-3.5">
+          <p className="mb-2 text-[11px] font-bold uppercase tracking-[.14em] text-slate-400">Previous spins</p>
+          <div className="flex flex-wrap gap-1">
+            {history.map((h, i) => (
+              <span key={i} className={`num rounded-md px-1.5 py-0.5 text-[10px] font-bold ${h > 0 ? 'bg-neon-lime/15 text-neon-lime' : 'bg-white/[0.06] text-slate-400'}`}>
+                {h > 0 ? `${h}×` : '–'}
+              </span>
+            ))}
+          </div>
+        </div>
+      }
+    >
+      <div className="relative mx-auto aspect-square w-full max-w-[420px] py-3">
+        <div className="absolute left-1/2 top-0 z-20 -translate-x-1/2">
+          <div className="h-0 w-0 border-x-[11px] border-t-[18px] border-x-transparent border-t-neon-lime drop-shadow-[0_0_10px_rgba(198,242,78,.9)]" />
+        </div>
+
+        <div className="absolute inset-3 rounded-full bg-gradient-to-br from-ink-700 to-ink-900 p-[6px] shadow-[0_0_0_1px_rgba(255,255,255,.08),0_24px_60px_-24px_#000]">
+          <svg
+            viewBox="0 0 200 200"
+            className="h-full w-full"
+            style={{ transform: `rotate(${angle}deg)`, transition: spinning ? 'transform 5.4s cubic-bezier(.12,.72,.1,1)' : 'none' }}
+            role="img"
+            aria-label="Fortune wheel"
+          >
+            <defs>
+              <radialGradient id="wheelHub" cx="40%" cy="35%">
+                <stop offset="0" stopColor="#fff6d0" /><stop offset="0.5" stopColor="#ffcf5c" /><stop offset="1" stopColor="#b8860b" />
+              </radialGradient>
+            </defs>
+            {SLICES.map((m, i) => {
+              const a0 = (i * SEG - 90 - SEG / 2) * (Math.PI / 180)
+              const a1 = ((i + 1) * SEG - 90 - SEG / 2) * (Math.PI / 180)
+              const r = 93
+              const x0 = 100 + r * Math.cos(a0)
+              const y0 = 100 + r * Math.sin(a0)
+              const x1 = 100 + r * Math.cos(a1)
+              const y1 = 100 + r * Math.sin(a1)
+              const mid = (i * SEG + SEG / 2 - 90 - SEG / 2) * (Math.PI / 180)
+              const lx = 100 + r * 0.7 * Math.cos(mid)
+              const ly = 100 + r * 0.7 * Math.sin(mid)
+              return (
+                <g key={i}>
+                  <path
+                    d={`M100,100 L${x0},${y0} A${r},${r} 0 0,1 ${x1},${y1} Z`}
+                    fill={COLOR(m)}
+                    stroke="rgba(8,9,15,.5)"
+                    strokeWidth={0.6}
+                  />
+                  {m > 0 && (
+                    <text
+                      x={lx}
+                      y={ly}
+                      transform={`rotate(${i * SEG}, ${lx}, ${ly})`}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fontSize={m >= 10 ? 5.4 : 6}
+                      fontWeight={800}
+                      fill="#0b0d15"
+                      fontFamily="JetBrains Mono, monospace"
+                    >
+                      {m}×
+                    </text>
+                  )}
+                </g>
+              )
+            })}
+            <circle cx="100" cy="100" r="19" fill="url(#wheelHub)" stroke="rgba(0,0,0,.35)" strokeWidth="1.5" />
+            <circle cx="100" cy="100" r="7" fill="#0b0d15" opacity="0.5" />
+          </svg>
+        </div>
+
+        <div className="pointer-events-none absolute inset-3 rounded-full">
+          {Array.from({ length: 24 }, (_, i) => {
+            const a = (i / 24) * Math.PI * 2
+            return (
+              <span
+                key={i}
+                className="absolute h-1.5 w-1.5 rounded-full"
+                style={{
+                  left: `${50 + 49.4 * Math.cos(a)}%`,
+                  top: `${50 + 49.4 * Math.sin(a)}%`,
+                  background: spinning ? (i % 2 ? '#c6f24e' : '#3ad7ff') : 'rgba(255,255,255,.18)',
+                  boxShadow: spinning ? '0 0 8px rgba(198,242,78,.9)' : 'none',
+                  animation: spinning ? `pulseGlow 1.1s ${i * 0.05}s ease-in-out infinite` : 'none',
+                }}
+              />
+            )
+          })}
+        </div>
+      </div>
+    </GameShell>
+  )
+}
