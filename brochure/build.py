@@ -19,6 +19,10 @@ OUT = os.environ.get("BROCHURE_OUT") or os.path.join(
 
 PAGE = 0
 
+# PRICED = the edition that states the ask in dollars. BROCHURE_EDITION=noprice
+# produces the same book with the amounts withheld (shares only).
+PRICED = os.environ.get("BROCHURE_EDITION", "priced").lower() != "noprice"
+
 
 def acc(name):
     return ACCENTS[name]
@@ -107,7 +111,9 @@ def page_contents(k):
         ("I", "The studio", "Mission, positioning, how we work, platform and standards", "03"),
         ("II", "The portfolio", f"{len(C.PRODUCTS)} products, each on a spread", "10"),
         ("III", "The economics", "Revenue model, pricing and market opportunity", "32"),
-        ("IV", "The ask", "USD 85,000 to 200,000, allocated by product", "35"),
+        ("IV", "The ask",
+         ("USD 85,000 to 200,000, allocated by product" if PRICED else
+          "Use of funds and how it is allocated by product"), "35"),
         ("V", "The business", "Roadmap, commercial focus and engagement", "37"),
     ]
     y = 150
@@ -478,28 +484,47 @@ def page_ask_summary(k):
     k.label(ML, H - MT - 2, "IV · The ask", GOLD, 6.6, 2.2)
     k.text(ML, H - 36, "The raise", "DisplayB", 24, INK)
 
-    # headline figures
     pb, pc, sb, sc = C.ask_totals()
 
-    k.rect(ML, 118, 104, 52, fill=VIOLET, alpha=0.06, r=3)
-    k.rect(ML, 118, 104, 52, fill=None, stroke=VIOLET, lw=0.5, r=3, stroke_alpha=0.35)
-    k.label(ML + 8, 160, "Base case · 18 months", VIOLET, 6.0, 1.9)
-    k.text(ML + 8, 142, "USD 85,000", "DisplayB", 26, INK)
-    k.text(ML + 8, 133, "Two hires and compliance only where revenue is already possible.",
-           "BodyR", 7.4, MUTED)
-    k.text(ML + 8, 124, f"Product lines {pb:,}   ·   Shared {sb:,}", "BodyM", 7.0, VIOLET)
+    if PRICED:
+        k.rect(ML, 118, 104, 52, fill=VIOLET, alpha=0.06, r=3)
+        k.rect(ML, 118, 104, 52, fill=None, stroke=VIOLET, lw=0.5, r=3, stroke_alpha=0.35)
+        k.label(ML + 8, 160, "Base case · 18 months", VIOLET, 6.0, 1.9)
+        k.text(ML + 8, 142, f"USD {C.ASK_BASE:,}", "DisplayB", 26, INK)
+        k.text(ML + 8, 133, "Two hires and compliance only where revenue is already possible.",
+               "BodyR", 7.4, MUTED)
+        k.text(ML + 8, 124, f"Product lines {pb:,}   ·   Shared {sb:,}", "BodyM", 7.0, VIOLET)
 
-    k.rect(ML + 112, 118, 104, 52, fill=CYAN, alpha=0.06, r=3)
-    k.rect(ML + 112, 118, 104, 52, fill=None, stroke=CYAN, lw=0.5, r=3, stroke_alpha=0.35)
-    k.label(ML + 120, 160, "Ceiling · 18 months", CYAN, 6.0, 1.9)
-    k.text(ML + 120, 142, "USD 200,000", "DisplayB", 26, INK)
-    k.text(ML + 120, 133, "Adds ProxiCore engineering, field kits and wider go-to-market.",
-           "BodyR", 7.4, MUTED)
-    k.text(ML + 120, 124, f"Product lines {pc:,}   ·   Shared {sc:,}", "BodyM", 7.0, CYAN)
+        k.rect(ML + 112, 118, 104, 52, fill=CYAN, alpha=0.06, r=3)
+        k.rect(ML + 112, 118, 104, 52, fill=None, stroke=CYAN, lw=0.5, r=3, stroke_alpha=0.35)
+        k.label(ML + 120, 160, "Ceiling · 18 months", CYAN, 6.0, 1.9)
+        k.text(ML + 120, 142, f"USD {C.ASK_CEIL:,}", "DisplayB", 26, INK)
+        k.text(ML + 120, 133, "Adds ProxiCore engineering, field kits and wider go-to-market.",
+               "BodyR", 7.4, MUTED)
+        k.text(ML + 120, 124, f"Product lines {pc:,}   ·   Shared {sc:,}", "BodyM", 7.0, CYAN)
+    else:
+        cy0, chh = 116, 46
+        k.rect(ML, cy0, 104, chh, fill=VIOLET, alpha=0.06, r=3)
+        k.rect(ML, cy0, 104, chh, fill=None, stroke=VIOLET, lw=0.5, r=3, stroke_alpha=0.35)
+        k.label(ML + 8, cy0 + chh - 9, "Base plan · 18 months", VIOLET, 6.0, 1.9)
+        k.text(ML + 8, cy0 + chh - 24, "Two hires", "DisplayB", 15.5, INK)
+        k.text(ML + 8, cy0 + chh - 33, "and compliance only where revenue is already possible.",
+               "BodyR", 7.4, MUTED)
+        k.text(ML + 8, cy0 + chh - 41, "Eleven product lines on one shared platform plank.",
+               "BodyR", 7.4, MUTED)
+
+        k.rect(ML + 112, cy0, 104, chh, fill=CYAN, alpha=0.06, r=3)
+        k.rect(ML + 112, cy0, 104, chh, fill=None, stroke=CYAN, lw=0.5, r=3, stroke_alpha=0.35)
+        k.label(ML + 120, cy0 + chh - 9, "Ceiling · 18 months", CYAN, 6.0, 1.9)
+        k.text(ML + 120, cy0 + chh - 24, "The full build", "DisplayB", 15.5, INK)
+        k.text(ML + 120, cy0 + chh - 33, "Adds ProxiCore engineering, field kits and wider go-to-market.",
+               "BodyR", 7.4, MUTED)
+        k.text(ML + 120, cy0 + chh - 41, "Priced on request — figures are shared under NDA.",
+               "BodyR", 7.4, MUTED)
 
     # use of funds
-    k.label(ML, 102, "Use of funds", GOLD, 6.0, 1.8)
-    y = 95
+    k.label(ML, 106 if PRICED else 106, "Use of funds", GOLD, 6.0, 1.8)
+    y = 99
     for name, pct, note in C.USE_OF_FUNDS:
         bar_w = 96 * pct / 55.0
         k.text(ML, y, name, "BodySB", 7.8, INK)
@@ -509,9 +534,10 @@ def page_ask_summary(k):
         y -= 9.4
 
     # terms — stacked, label column then body column
-    k.hline(ML, 46, CONTENT_W, HAIR, 0.4)
-    y = 40
-    for title, body in C.ASK_TERMS:
+    k.hline(ML, 50, CONTENT_W, HAIR, 0.4)
+    y = 44
+    terms = C.ASK_TERMS if PRICED else C.ASK_TERMS_NOPRICE
+    for title, body in terms:
         k.text(ML, y, title.upper(), "BodySB", 5.8, VIOLET, tracking=1.4)
         k.block(ML + 62, y + 2.6, body, "BodyR", 6.9, 9.6, MUTED, CONTENT_W - 62)
         y -= 8.6
@@ -522,16 +548,26 @@ def page_ask_summary(k):
 def page_ask_breakdown(k):
     full_bg(k, "bg_quiet")
     k.label(ML, H - MT - 2, "Allocation by product", CYAN, 6.6, 2.2)
-    k.text(ML, H - 33, "Where every dollar goes", "DisplayB", 21, INK)
-    k.text(ML, H - 42, "18-month allocation. Base case and ceiling both reconcile exactly to "
-                       "the headline ask.", "BodyR", 8.2, MUTED)
+    k.text(ML, H - 33, "How the allocation splits", "DisplayB", 21, INK)
+    k.text(ML, H - 42,
+           ("18-month allocation. Base case and ceiling both reconcile exactly to the headline "
+            "ask." if PRICED else
+            "18-month allocation, shown as each line's share of the total. Amounts are not "
+            "printed in this edition."), "BodyR", 8.2, MUTED)
 
     pb, pc, sb, sc = C.ask_totals()
+    tot_b, tot_c = pb + sb, pc + sc
+    pb_pct = lambda v: f"{100.0 * v / tot_b:.0f}%"
+    pc_pct = lambda v: f"{100.0 * v / tot_c:.0f}%"
 
     y = 148
     k.hline(ML, y + 5, CONTENT_W, INK, 0.7, 0.5)
-    for h, x, al in [("Product", ML, "left"), ("USD base", ML + 108, "right"),
-                     ("USD ceiling", ML + 138, "right"), ("What it buys", ML + 146, "left")]:
+    hdrs = ([("Product", ML, "left"), ("USD base", ML + 108, "right"),
+             ("USD ceiling", ML + 138, "right"), ("What it buys", ML + 146, "left")]
+            if PRICED else
+            [("Product", ML, "left"), ("Share · base", ML + 108, "right"),
+             ("Share · ceiling", ML + 138, "right"), ("What it buys", ML + 146, "left")])
+    for h, x, al in hdrs:
         k.text(x, y, h.upper(), "BodySB", 5.5, MUTED_D, tracking=1.4, align=al)
     k.hline(ML, y - 2, CONTENT_W, HAIR, 0.4)
 
@@ -539,9 +575,11 @@ def page_ask_breakdown(k):
     for name, base, ceil, what in C.ASK_ROWS:
         zero = ceil == 0
         k.text(ML, y, name, "BodySB", 7.6, INK if not zero else MUTED_D)
-        k.text(ML + 108, y, f"{base:,}" if not zero else "—", "BodyM", 7.4,
+        b_txt = f"{base:,}" if PRICED else pb_pct(base)
+        c_txt = f"{ceil:,}" if PRICED else pc_pct(ceil)
+        k.text(ML + 108, y, b_txt if not zero else "—", "BodyM", 7.4,
                INK if not zero else MUTED_D, align="right")
-        k.text(ML + 138, y, f"{ceil:,}" if not zero else "—", "BodyM", 7.4,
+        k.text(ML + 138, y, c_txt if not zero else "—", "BodyM", 7.4,
                CYAN if not zero else MUTED_D, align="right")
         k.block(ML + 146, y + 2.2, what, "BodyR", 6.2, 8.0, MUTED_D, CONTENT_W - 146)
         k.hline(ML, y - 3.6, CONTENT_W, HAIR, 0.25)
@@ -550,18 +588,24 @@ def page_ask_breakdown(k):
     # shared rows
     for name, base, ceil, what in C.ASK_SHARED:
         k.text(ML, y, name, "BodySB", 7.6, GOLD)
-        k.text(ML + 108, y, f"{base:,}", "BodyM", 7.4, GOLD, align="right")
-        k.text(ML + 138, y, f"{ceil:,}", "BodyM", 7.4, GOLD, align="right")
+        k.text(ML + 108, y, f"{base:,}" if PRICED else pb_pct(base), "BodyM", 7.4,
+               GOLD, align="right")
+        k.text(ML + 138, y, f"{ceil:,}" if PRICED else pc_pct(ceil), "BodyM", 7.4,
+               GOLD, align="right")
         k.block(ML + 146, y + 2.2, what, "BodyR", 6.2, 8.0, MUTED_D, CONTENT_W - 146)
         k.hline(ML, y - 3.6, CONTENT_W, HAIR, 0.25)
         y -= 8.4
 
     # totals row
     k.hline(ML, y + 3.4, CONTENT_W, INK, 0.8, 0.6)
-    k.text(ML, y - 1, "TOTAL ASK", "DisplaySB", 9.4, INK)
-    k.text(ML + 108, y - 1, f"{pb + sb:,}", "DisplaySB", 9.4, INK, align="right")
-    k.text(ML + 138, y - 1, f"{pc + sc:,}", "DisplaySB", 9.4, CYAN, align="right")
-    k.text(ML + 146, y - 1, "Reconciles to the headline figure in both cases.",
+    k.text(ML, y - 1, "TOTAL ASK" if PRICED else "TOTAL", "DisplaySB", 9.4, INK)
+    k.text(ML + 108, y - 1, f"{pb + sb:,}" if PRICED else "100%",
+           "DisplaySB", 9.4, INK, align="right")
+    k.text(ML + 138, y - 1, f"{pc + sc:,}" if PRICED else "100%",
+           "DisplaySB", 9.4, CYAN, align="right")
+    k.text(ML + 146, y - 1,
+           ("Reconciles to the headline figure in both cases." if PRICED else
+            "Absolute amounts are stated in the priced edition only."),
            "BodyM", 6.8, MUTED)
 
     k.footer(PAGE + 1, "The ask")

@@ -693,12 +693,22 @@ USE_OF_FUNDS = [
     ("Contingency", 4, "Held back for regulatory or platform surprises."),
 ]
 
+ASK_TERMS_NOPRICE = [
+    ("Horizon", "An 18-month runway to take the two commercial verticals from pilot to "
+                "paying, and to finish the fixed-site Proxi products."),
+    ("Why two plans", "Base funds two hires and compliance where revenue already exists. "
+                      "Ceiling adds ProxiCore engineering, kits and go-to-market."),
+    ("What we will not spend it on", "No office expansion, no rebrand, and no new product "
+                                     "verticals until an existing one is billing."),
+    ("Reporting", "Monthly written update against these line items, with a revenue note per "
+                  "commercial product."),
+]
+
 ASK_TERMS = [
     ("Horizon", "An 18-month runway to take the two commercial verticals from pilot to "
                      "paying, and to finish the fixed-site Proxi products."),
-    ("Why this range", "USD 85,000 funds the base plan: two hires and compliance only where "
-                       "revenue is already possible. USD 200,000 adds ProxiCore engineering and "
-                       "field kits, plus wider go-to-market."),
+    ("Why two plans", "Base funds two hires and compliance where revenue already exists. "
+                      "Ceiling adds ProxiCore engineering, kits and go-to-market."),
     ("What we will not spend it on", "No office expansion, no rebrand, and no new product "
                                      "verticals until an existing one is billing."),
     ("Reporting", "Monthly written update against these line items, with a revenue note per "
