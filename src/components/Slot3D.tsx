@@ -145,42 +145,55 @@ function Reel({ reel, target, spinning, stopping, highlight, winCells, delay, fa
     return out
   }, [strip, index])
 
-  const radius = (face + gap) / 1.15
+  const step = face + gap
+  // The three landed symbols stack in a real column. Each face is offset by a
+  // full (face + gap) -- previously every face sat at the same vertical centre
+  // and relied on a translateZ that only moved it ~23px against a 72px face,
+  // so the symbols overlapped and squashed into strips.
+  const stackH = face * 3 + gap * 2
 
   return (
     <div
       className="relative h-full flex-1"
-      style={{ perspective: `${face * 3.2}px` }}
+      style={{ perspective: `${face * 4}px` }}
       aria-hidden
     >
       <div
-        className="absolute inset-0"
+        className="absolute left-0 right-0 top-1/2"
         style={{
+          height: stackH,
+          marginTop: -stackH / 2,
           transformStyle: 'preserve-3d',
-          transform: `translateZ(-${radius}px) rotateX(0deg)`,
-          transition: transitioning ? `transform ${900 + delay}ms cubic-bezier(.16,.84,.2,1)` : 'none',
         }}
       >
-        {visible.map(({ id, pos }, k) => (
-          <div
-            key={`${reel}-${k}-${id}-${index}`}
-            className="absolute left-0 right-0 grid place-items-center overflow-hidden rounded-[14%] border border-white/10"
-            style={{
-              height: `${face}px`,
-              top: `calc(50% - ${face / 2}px)`,
-              transform: `rotateX(${(pos * 180) / Math.PI * 0.62}deg) translateZ(${radius * 0.62}px) scale(0.94)`,
-              background:
-                'linear-gradient(180deg, rgba(38,46,66,.96) 0%, rgba(22,27,41,.98) 55%, rgba(15,19,30,1) 100%)',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,.10), inset 0 -14px 22px -14px rgba(0,0,0,.9)',
-              opacity: k === 1 ? 1 : 0.72,
-            }}
-          >
-            <SymbolFace id={id} priority className="h-full w-full" />
-            {winCells.has(`${reel}-${k}`) && (
-              <span className="pointer-events-none absolute inset-0 rounded-[14%] bg-[radial-gradient(circle,rgba(198,242,78,.32),transparent_70%)] ring-2 ring-inset ring-neon-lime/70" />
-            )}
-          </div>
-        ))}
+        {visible.map(({ id, pos }, k) => {
+          // pos is -1 / 0 / 1 -> rows 0 / 1 / 2
+          const row = k
+          return (
+            <div
+              key={`${reel}-${k}-${id}-${index}`}
+              className="absolute left-0 right-0 grid place-items-center overflow-hidden rounded-[16%] border border-white/10"
+              style={{
+                height: face,
+                top: row * step,
+                // a gentle rotation away from the viewer on the outer rows keeps
+                // the drum feel without distorting the symbol
+                transform: `rotateX(${pos * 5}deg) translateZ(${pos === 0 ? 0 : -6}px)`,
+                transformOrigin: 'center center',
+                background:
+                  'linear-gradient(180deg, rgba(38,46,66,.96) 0%, rgba(22,27,41,.98) 55%, rgba(15,19,30,1) 100%)',
+                boxShadow:
+                  'inset 0 1px 0 rgba(255,255,255,.12), inset 0 -10px 16px -12px rgba(0,0,0,.9), 0 2px 6px -3px rgba(0,0,0,.7)',
+                opacity: pos === 0 ? 1 : 0.9,
+              }}
+            >
+              <SymbolFace id={id} priority className="h-full w-full" />
+              {winCells.has(`${reel}-${k}`) && (
+                <span className="pointer-events-none absolute inset-0 rounded-[16%] bg-[radial-gradient(circle,rgba(198,242,78,.32),transparent_70%)] ring-2 ring-inset ring-neon-lime/70" />
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
