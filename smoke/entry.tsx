@@ -2,6 +2,8 @@ import { renderToString } from 'react-dom/server'
 import App from '../src/App'
 import { StoreProvider } from '../src/lib/store'
 import { Home } from '../src/pages/Home'
+import { ProxiCash } from '../src/pages/ProxiCash'
+import { ASSETS, ASSET_IDS, quote, validPhone, railForPhone, normalisePhone } from '../src/lib/proxicash'
 import { Plinko } from '../src/games/Plinko'
 import { Crash } from '../src/games/Crash'
 import { Mines } from '../src/games/Mines'
@@ -39,6 +41,7 @@ const run = (name: string, node: any) => {
 
 run('App', <App />)
 run('Home', <Home onPlay={noop} onSearch={noop} onFair={noop} />)
+run('ProxiCash', <ProxiCash onBack={noop} />)
 for (const [id, C] of games) run(`Game:${id}`, <C onBack={noop} onFair={noop} />)
 run('Chrome', <><Header view="home" onNavigate={noop} onSearch={noop} /><BottomBar view="home" onNavigate={noop} /><Footer /><WinFlash /><Toasts /><ChatDock /></>)
 run('Modal:wallet', <WalletModal forceOpen />)
@@ -63,6 +66,23 @@ check('slot grid is 5 reels x 3 rows', (() => {
   return g.length === 5 && g.every((c) => c.length === 3)
 })())
 check('slot paytable covers all 8 paying symbols', SYMBOL_POOL.filter((id) => SYMBOLS[id].pay).length === 8, `(${SYMBOL_POOL.length} ids)`)
+// ProxiCash exchange invariants
+check('proxicash quotes are net of both fees', (() => {
+  const q = quote('USDT', 100)
+  const expected = 100 * ASSETS.USDT.ugxRate - ASSETS.USDT.networkFee * ASSETS.USDT.ugxRate
+  return Math.abs(q.net - expected * 0.99) < 1e-6
+})())
+check('proxicash net never exceeds gross', ASSET_IDS.every((id) => {
+  const q = quote(id, ASSETS[id].min * 10)
+  return q.net > 0 && q.net < q.gross
+}))
+check('proxicash phone validation', (() => {
+  const good = ['0772123456', '0700123456', '+256772123456', '256772123456']
+  const bad = ['12345', '0872123456', '07721234567']
+  return good.every(validPhone) && bad.every((b) => !validPhone(b))
+})(), `(${normalisePhone('+256772123456')})`)
+check('proxicash rail detection', railForPhone('0772123456') === 'MTN' && railForPhone('0700123456') === 'Airtel')
+
 check('slot RTP ~96.2%', (() => {
   let s = 0x51ed2701
   const rnd = () => { s = (s + 0x9e3779b9) | 0; let t = s ^ (s >>> 16); t = Math.imul(t, 0x21f0aaad); t = t ^ (t >>> 15); t = Math.imul(t, 0x735a2d97); return ((t = t ^ (t >>> 15)) >>> 0) / 4294967296 }

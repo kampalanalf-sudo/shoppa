@@ -4,7 +4,7 @@ import { useStore } from '../lib/store'
 import { sfx } from '../lib/sound'
 import { IconBolt } from './Icons'
 
-const CHIPS = [1, 5, 25, 100, 500]
+const CHIPS = [1000, 5000, 25000, 100000, 500000]
 
 type Props = {
   value: number
@@ -18,16 +18,16 @@ type Props = {
 
 export function BetAmount({ value, onChange, disabled, allowHalf = true, allowDouble = true, label = 'Bet amount' }: Props) {
   const { balance, balanceHidden } = useStore()
-  const maxBudget = 100000
+  const maxBudget = 10000000
 
   const step = (delta: number) => {
     sfx.click()
-    onChange(Math.max(0, Math.min(maxBudget, Math.round((value + delta) * 100) / 100)))
+    onChange(Math.max(0, Math.min(maxBudget, Math.round(value + delta))))
   }
 
   const set = (v: string) => {
     const n = parseFloat(v.replace(/[^0-9.]/g, ''))
-    onChange(Number.isFinite(n) ? Math.min(maxBudget, n) : 0)
+    onChange(Number.isFinite(n) ? Math.min(maxBudget, Math.round(n)) : 0)
   }
 
   return (
@@ -54,11 +54,11 @@ export function BetAmount({ value, onChange, disabled, allowHalf = true, allowDo
             value={value === 0 ? '' : String(value)}
             onChange={(e) => set(e.target.value)}
             disabled={disabled}
-            placeholder="0.00"
+            placeholder="0"
             aria-label={label}
             className="num w-full bg-transparent px-1 text-center text-lg font-bold text-white placeholder:text-slate-600 focus:outline-none"
           />
-          <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[11px] font-bold text-neon-lime/70">FB</span>
+          <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[11px] font-bold text-neon-lime/70">PX</span>
         </div>
         <button
           type="button"

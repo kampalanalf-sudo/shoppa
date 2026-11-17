@@ -59,7 +59,7 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
   const { placeBet, settleBet, nextFloats, balance, sound, flashLoss } = useStore()
   const [risk, setRisk] = useState<Risk>('medium')
   const [rows, setRows] = useState(12)
-  const [bet, setBet] = useState(10)
+  const [bet, setBet] = useState(1000)
   const [balls, setBalls] = useState<Ball[]>([])
   const [auto, setAuto] = useState(false)
   const [last, setLast] = useState<{ mult: number; payout: number } | null>(null)
@@ -206,7 +206,7 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
             <div className={`animate-popIn rounded-xl border px-3 py-2 text-center ${last.mult >= 1 ? 'border-neon-lime/30 bg-neon-lime/10' : 'border-white/[0.07] bg-white/[0.02]'}`}>
               <p className="text-[10px] uppercase tracking-wider text-slate-500">Last drop</p>
               <p className={`num text-lg font-black ${last.mult >= 1 ? 'text-neon-lime' : 'text-slate-400'}`}>{mult(last.mult)}</p>
-              <p className="num text-[11px] text-slate-400">{money(last.payout)} FB</p>
+              <p className="num text-[11px] text-slate-400">{money(last.payout)} PX</p>
             </div>
           )}
           <div className="space-y-1.5">
@@ -225,7 +225,7 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">FB</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
           </div>
           <button type="button" onClick={() => void drop()} className="btn-primary h-10 flex-1 !text-[13px]">
             Drop {mult(Math.max(...table))}

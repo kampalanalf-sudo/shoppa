@@ -78,9 +78,9 @@ export function GameShell({ game, onBack, children, aside, footer, onFair, mobil
 
       <div className="mt-3 grid grid-cols-3 gap-2 md:hidden">
         {[
-          { l: 'Wagered', v: money(stats.wagered, 0) },
-          { l: 'Profit', v: `${stats.profit >= 0 ? '+' : ''}${money(stats.profit, 0)}` },
-          { l: 'Biggest', v: money(stats.biggestWin, 0) },
+          { l: 'Wagered', v: money(stats.wagered) },
+          { l: 'Profit', v: `${stats.profit >= 0 ? '+' : ''}${money(stats.profit)}` },
+          { l: 'Biggest', v: money(stats.biggestWin) },
         ].map((s) => (
           <div key={s.l} className="panel-tight px-2 py-1.5 text-center">
             <p className="text-[9px] uppercase tracking-wider text-slate-500">{s.l}</p>

@@ -13,7 +13,7 @@ const EDGE = 0.99
 export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('dice')!
   const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(10)
+  const [bet, setBet] = useState(1000)
   const [target, setTarget] = useState(50)
   const [mode, setMode] = useState<'over' | 'under'>('under')
   const [roll, setRoll] = useState<number | null>(null)
@@ -117,7 +117,7 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
             </div>
           </div>
 
-          <BetButton onClick={() => void play()} loading={rolling} sub={`Pays ${mult(multVal)} · ${money(potential)} FB`}>
+          <BetButton onClick={() => void play()} loading={rolling} sub={`Pays ${mult(multVal)} · ${money(potential)} PX`}>
             {rolling ? 'Rolling…' : 'Roll dice'}
           </BetButton>
 
@@ -125,7 +125,7 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
             {[
               { l: 'Win chance', v: `${winChance.toFixed(2)}%`, c: 'text-white' },
               { l: 'Payout', v: mult(multVal), c: 'text-neon-lime' },
-              { l: 'Profit', v: money(potential - bet, 0), c: 'text-neon-cyan' },
+              { l: 'Profit', v: money(potential - bet), c: 'text-neon-cyan' },
             ].map((s) => (
               <div key={s.l} className="panel-tight py-2">
                 <p className="text-[9px] uppercase tracking-wider text-slate-500">{s.l}</p>
@@ -149,7 +149,7 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">FB</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
           </div>
           <button type="button" onClick={() => void play()} disabled={rolling} className="btn-primary h-10 flex-1 !text-[13px]">
             {rolling ? 'Rolling…' : `Roll ${mode} ${mult(multVal)}`}
@@ -179,7 +179,7 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
             {bar.toFixed(2)}
           </p>
           <p className="mt-1 text-[10.5px] font-bold uppercase tracking-[.2em] text-slate-500">
-            {rolling ? 'Rolling…' : last ? (last.won ? `Won ${money(last.payout)} FB` : 'No win this time') : `Roll ${mode} ${target.toFixed(2)}`}
+            {rolling ? 'Rolling…' : last ? (last.won ? `Won ${money(last.payout)} PX` : 'No win this time') : `Roll ${mode} ${target.toFixed(2)}`}
           </p>
         </div>
 
@@ -254,7 +254,7 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
           </div>
           <div className="panel-tight p-2.5 text-center">
             <p className="text-[9px] uppercase tracking-wider text-slate-500">Potential</p>
-            <p className="num text-[13px] font-bold text-neon-cyan">{money(potential, 0)}</p>
+            <p className="num text-[13px] font-bold text-neon-cyan">{money(potential)}</p>
           </div>
         </div>
       </div>

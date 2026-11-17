@@ -12,8 +12,8 @@ import {
 /* ------------------------------------------------------------------ Header */
 
 type HeaderProps = {
-  view: 'home' | 'game'
-  onNavigate: (v: 'home' | 'game', id?: GameId) => void
+  view: 'home' | 'game' | 'proxicash'
+  onNavigate: (v: 'home' | 'game' | 'proxicash', id?: GameId) => void
   onSearch: () => void
 }
 
@@ -52,6 +52,7 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
             Casino
           </NavItem>
           <NavItem onClick={onSearch} icon={<IconGamepad size={17} />}>Originals</NavItem>
+          <NavItem active={view === 'proxicash'} onClick={() => onNavigate('proxicash')} icon={<IconBolt size={17} />}>ProxiCash</NavItem>
           <NavItem onClick={() => setFairOpen(true)} icon={<IconShield size={17} />}>Fairness</NavItem>
           <NavItem onClick={() => setRewardsOpen(true)} icon={<IconGift size={17} />}>Rewards</NavItem>
           <NavItem onClick={() => setHistoryOpen(true)} icon={<IconTrophy size={17} />}>Leaderboard</NavItem>
@@ -103,7 +104,7 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
               onClick={() => setWalletOpen(true)}
               className="flex items-center gap-1.5 pl-3 pr-2.5 text-[13px] font-bold text-white transition hover:bg-white/[0.06]"
             >
-              <span className="grid h-5 w-5 place-items-center rounded-full bg-gradient-to-br from-neon-lime to-neon-green text-[9px] font-black text-ink-950">FB</span>
+              <span className="grid h-5 w-5 place-items-center rounded-full bg-gradient-to-br from-neon-lime to-neon-green text-[9px] font-black text-ink-950">PX</span>
               <span className="num">{balanceHidden ? '••••••' : money(balance)}</span>
             </button>
             <button
@@ -309,7 +310,7 @@ export function WinTicker() {
             </span>
             <span className="text-[11px] text-slate-400">{w.user}</span>
             <span className="text-[11px] text-slate-600">won</span>
-            <span className="num text-[11px] font-bold text-white">{money(w.amount, 0)} FB</span>
+            <span className="num text-[11px] font-bold text-white">{money(w.amount)} PX</span>
             <span className="num rounded bg-neon-lime/15 px-1.5 py-0.5 text-[10px] font-bold text-neon-lime">{mult(w.mult)}</span>
             <span className="hidden text-[11px] text-slate-600 sm:inline">on {w.game}</span>
           </div>
@@ -367,7 +368,7 @@ export function ChatDock() {
                 <span className="ml-1 text-slate-400">{m.msg}</span>
                 {m.attached && (
                   <div className="mt-1 flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2 py-1.5 text-[10.5px] text-slate-400">
-                    <IconCheck size={12} className="text-emerald-400" /> Withdrawal completed · 4,210 FB
+                    <IconCheck size={12} className="text-emerald-400" /> Withdrawal completed · 4,210 PX
                   </div>
                 )}
               </div>
@@ -455,13 +456,13 @@ export function Footer() {
 
 /* ------------------------------------------------------------------ Bottom bar (mobile) */
 
-export function BottomBar({ view, onNavigate }: { view: 'home' | 'game'; onNavigate: HeaderProps['onNavigate'] }) {
+export function BottomBar({ view, onNavigate }: { view: 'home' | 'game' | 'proxicash'; onNavigate: HeaderProps['onNavigate'] }) {
   const { setWalletOpen, setHistoryOpen, setRewardsOpen } = useStore()
   const items: { label: string; icon: React.ReactNode; onClick: () => void; active?: boolean }[] = [
     { label: 'Home', icon: <IconHome size={19} />, onClick: () => onNavigate('home'), active: view === 'home' },
     { label: 'Wallet', icon: <IconWallet size={19} />, onClick: () => setWalletOpen(true) },
     { label: 'Rewards', icon: <IconGift size={19} />, onClick: () => setRewardsOpen(true) },
-    { label: 'Stats', icon: <IconHistory size={19} />, onClick: () => setHistoryOpen(true) },
+    { label: 'ProxiCash', icon: <IconBolt size={19} />, onClick: () => onNavigate('proxicash'), active: view === 'proxicash' },
   ]
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-4 border-t border-white/[0.07] glass pb-[env(safe-area-inset-bottom)] md:hidden">
@@ -500,7 +501,7 @@ export function WinFlash() {
       <div className="absolute inset-0 animate-popIn bg-gradient-to-b from-neon-lime/[0.07] via-transparent to-neon-violet/[0.07]" />
       <div className="relative animate-popIn rounded-3xl border border-neon-lime/30 bg-ink-900/90 px-8 py-5 text-center shadow-glow backdrop-blur-xl">
         <p className="text-[11px] font-bold uppercase tracking-[.28em] text-neon-lime/80">Big win</p>
-        <p className="num mt-1 text-4xl font-black text-white glow-text">+{money(winFlash)} FB</p>
+        <p className="num mt-1 text-4xl font-black text-white glow-text">+{money(winFlash)} PX</p>
       </div>
     </div>
   )

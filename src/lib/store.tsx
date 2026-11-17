@@ -3,6 +3,7 @@ import { freshSeeds, floats, randomHex, sha256 } from './fair'
 import type { BetRecord, FairSeedState, GameId, Stats, Toast } from './types'
 import { gameById } from './games'
 import { uid } from './format'
+import type { ExchangeOrder } from './proxicash'
 
 const KEY = 'floatbet.v1'
 
@@ -16,6 +17,8 @@ type Persisted = {
   sound: boolean
   totalDeposited: number
   balanceHidden: boolean
+  /** ProxiCash crypto -> mobile money orders */
+  exchanges: ExchangeOrder[]
 }
 
 const emptyStats: Stats = {
@@ -29,7 +32,7 @@ const emptyStats: Stats = {
 }
 
 const defaults = (): Persisted => ({
-  balance: 2500,
+  balance: 2500000,
   bets: [],
   stats: emptyStats,
   seeds: { serverSeed: randomHex(32), serverSeedHash: '', clientSeed: randomHex(8), nonce: 0, prevServerSeed: null },
@@ -38,6 +41,7 @@ const defaults = (): Persisted => ({
   sound: true,
   totalDeposited: 0,
   balanceHidden: false,
+  exchanges: [],
 })
 
 function load(): Persisted {
@@ -95,6 +99,10 @@ type Ctx = Persisted & {
   winFlash: number | null
   lossFlash: boolean
   flashLoss: () => void
+  /** ProxiCash crypto -> mobile money orders */
+  exchanges: ExchangeOrder[]
+  recordExchange: (order: ExchangeOrder) => void
+  settleExchange: (id: string) => void
 }
 
 const StoreCtx = createContext<Ctx | null>(null)
@@ -227,7 +235,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const refundBet = useCallback((game: GameId, wager: number) => {
-    setState((s) => ({ ...s, balance: Math.round((s.balance + wager) * 100) / 100 }))
+    setState((s) => ({ ...s, balance: Math.round(s.balance + wager) }))
   }, [])
 
   const nextFloats = useCallback(
@@ -266,10 +274,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     (amount: number) => {
       setState((s) => ({
         ...s,
-        balance: Math.round((s.balance + amount) * 100) / 100,
-        totalDeposited: Math.round((s.totalDeposited + amount) * 100) / 100,
+        balance: Math.round(s.balance + amount),
+        totalDeposited: Math.round(s.totalDeposited + amount),
       }))
-      toast({ kind: 'success', title: 'Deposit confirmed', body: `${amount.toLocaleString()} FB added to your balance.` })
+      toast({ kind: 'success', title: 'Deposit confirmed', body: `${amount.toLocaleString()} PX added to your balance.` })
     },
     [toast],
   )
@@ -280,11 +288,43 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setState((s) => {
         if (amount > s.balance) return s
         ok = true
-        return { ...s, balance: Math.round((s.balance - amount) * 100) / 100 }
+        return { ...s, balance: Math.round(s.balance - amount) }
       })
-      if (ok) toast({ kind: 'success', title: 'Withdrawal submitted', body: `${amount.toLocaleString()} FB is on the way.` })
+      if (ok) toast({ kind: 'success', title: 'Withdrawal submitted', body: `${amount.toLocaleString()} PX is on the way.` })
       else toast({ kind: 'error', title: 'Insufficient balance', body: 'Reduce the amount and try again.' })
       return ok
+    },
+    [toast],
+  )
+
+  /**
+   * Record a ProxiCash exchange and credit the ProxiCoin balance when the
+   * payout lands. Sending ProxiCoin to mobile money spends from the balance;
+   * sending external crypto mints ProxiCoin instead.
+   */
+  const recordExchange = useCallback(
+    (order: ExchangeOrder) => {
+      setState((s) => ({ ...s, exchanges: [order, ...s.exchanges].slice(0, 50) }))
+      toast({
+        kind: 'info',
+        title: 'Exchange created',
+        body: `${order.id} · ${order.rail} payout to ${order.phone}.`,
+      })
+    },
+    [toast],
+  )
+
+  const settleExchange = useCallback(
+    (id: string) => {
+      setState((s) => {
+        const order = s.exchanges.find((e) => e.id === id)
+        if (!order || order.status === 'paid') return s
+        const exchanges = s.exchanges.map((e) => (e.id === id ? { ...e, status: 'paid' as const } : e))
+        // PX sent out reduces the coin balance; external crypto converts into PX
+        const delta = order.asset === 'PX' ? -order.send : Math.round(order.net)
+        return { ...s, exchanges, balance: Math.max(0, Math.round(s.balance + delta)) }
+      })
+      toast({ kind: 'success', title: 'Paid to mobile money', body: 'Funds sent to the wallet.' })
     },
     [toast],
   )
@@ -297,7 +337,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const d = defaults()
     d.seeds.serverSeedHash = state.seeds.serverSeedHash
     setState(d)
-    toast({ kind: 'info', title: 'Demo account reset', body: 'Balance restored to 2,500 FB.' })
+    toast({ kind: 'info', title: 'Demo account reset', body: 'Balance restored to 2,500,000 PX.' })
   }, [state.seeds.serverSeedHash, toast])
 
   const value = useMemo<Ctx>(
@@ -330,11 +370,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       winFlash,
       lossFlash,
       flashLoss,
+      recordExchange,
+      settleExchange,
     }),
     [
       state, hydrated, walletOpen, historyOpen, fairOpen, rewardsOpen, toasts, toast, dismissToast, placeBet, settleBet,
       refundBet, nextFloats, rotateSeed, updateClientSeed, deposit, withdraw, toggleSound, toggleBalanceHidden,
-      setUsername, resetAccount, winFlash, lossFlash, flashLoss,
+      setUsername, resetAccount, winFlash, lossFlash, flashLoss, recordExchange, settleExchange,
     ],
   )
 

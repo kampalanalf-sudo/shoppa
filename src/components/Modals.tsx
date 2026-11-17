@@ -116,19 +116,19 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
       open={forceOpen ?? walletOpen}
       onClose={() => { setWalletOpen(false); setDone(null) }}
       title="Wallet"
-      subtitle={`Balance ${money(balance)} FB · ${username}`}
+      subtitle={`Balance ${money(balance)} PX · ${username}`}
       icon={<IconWallet size={18} />}
     >
       <div className="mb-4 overflow-hidden rounded-2xl border border-neon-lime/20 bg-gradient-to-br from-neon-lime/[0.12] via-ink-800 to-ink-850 p-4">
         <p className="text-[10.5px] font-bold uppercase tracking-[.18em] text-neon-lime/70">Available balance</p>
         <div className="mt-1 flex items-end gap-2">
           <span className="num text-3xl font-black text-white">{money(balance)}</span>
-          <span className="mb-1 text-[12px] font-bold text-slate-400">FB</span>
+          <span className="mb-1 text-[12px] font-bold text-slate-400">PX</span>
         </div>
         <div className="mt-3 grid grid-cols-3 gap-2 text-center">
           {[
-            { l: 'Deposited', v: money(totalDeposited, 0) },
-            { l: 'Profit', v: `${stats.profit >= 0 ? '+' : ''}${money(stats.profit, 0)}` },
+            { l: 'Deposited', v: money(totalDeposited) },
+            { l: 'Profit', v: `${stats.profit >= 0 ? '+' : ''}${money(stats.profit)}` },
             { l: 'Rounds', v: String(stats.rounds) },
           ].map((x) => (
             <div key={x.l} className="rounded-lg bg-black/25 px-2 py-1.5">
@@ -153,7 +153,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
           <p className="mt-3 text-[15px] font-bold text-white">
             {done.kind === 'deposit' ? 'Deposit confirmed' : 'Withdrawal sent'}
           </p>
-          <p className="num mt-1 text-[13px] text-slate-400">{money(done.amt)} FB {done.kind === 'deposit' ? 'credited' : 'on the way'}</p>
+          <p className="num mt-1 text-[13px] text-slate-400">{money(done.amt)} PX {done.kind === 'deposit' ? 'credited' : 'on the way'}</p>
           <p className="mt-1 text-[11px] text-slate-500">Demo environment — settled instantly, no chain transaction.</p>
           <div className="mt-4 flex gap-2">
             <button type="button" onClick={() => setDone(null)} className="btn-ghost flex-1">New transaction</button>
@@ -183,11 +183,11 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
           <div className="grid grid-cols-2 gap-2">
             <div className="panel-tight p-3">
               <p className="text-[10px] uppercase tracking-wider text-slate-500">Wagered</p>
-              <p className="num text-[15px] font-bold text-white">{money(stats.wagered, 0)}</p>
+              <p className="num text-[15px] font-bold text-white">{money(stats.wagered)}</p>
             </div>
             <div className="panel-tight p-3">
               <p className="text-[10px] uppercase tracking-wider text-slate-500">Biggest win</p>
-              <p className="num text-[15px] font-bold text-neon-lime">{money(stats.biggestWin, 0)}</p>
+              <p className="num text-[15px] font-bold text-neon-lime">{money(stats.biggestWin)}</p>
             </div>
           </div>
           <button
@@ -221,9 +221,9 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
 
           <div>
             <label className="label" htmlFor="amt">
-              <span>Amount (FB)</span>
+              <span>Amount (PX)</span>
               <span className="normal-case tracking-normal text-slate-500">
-                ≈ {money(amt * coinMeta.rate, 6)} {coinMeta.s}
+                ≈ {money(amt * coinMeta.rate)} {coinMeta.s}
               </span>
             </label>
             <div className="relative">
@@ -234,7 +234,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-neon-lime/70">FB</span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-neon-lime/70">PX</span>
             </div>
             <div className="mt-1.5 flex gap-1.5">
               {[50, 100, 500, 1000].map((v) => (
@@ -283,9 +283,9 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink-950/30 border-t-ink-950" /> Processing…
               </span>
             ) : tab === 'deposit' ? (
-              <>Deposit {money(amt)} FB <IconBolt size={15} /></>
+              <>Deposit {money(amt)} PX <IconBolt size={15} /></>
             ) : (
-              <>Withdraw {money(amt)} FB <IconExternal size={14} /></>
+              <>Withdraw {money(amt)} PX <IconExternal size={14} /></>
             )}
           </button>
           <p className="text-center text-[10px] text-slate-600">
@@ -419,7 +419,7 @@ export function FairModal({ forceOpen }: { forceOpen?: boolean } = {}) {
 const REWARDS = [
   { id: 'daily', title: 'Daily login', desc: 'Streak day 3 of 7', amount: 250, icon: '📅', ready: true },
   { id: 'rakeback', title: 'Rakeback', desc: '2.4% of your last 24h volume', amount: 640, icon: '♻️', ready: true },
-  { id: 'race', title: 'Weekly race', desc: 'Rank #48 · pool 5,000,000 FB', amount: 1200, icon: '🏁', ready: true },
+  { id: 'race', title: 'Weekly race', desc: 'Rank #48 · pool 5,000,000 PX', amount: 1200, icon: '🏁', ready: true },
   { id: 'vip', title: 'VIP airdrop', desc: 'Platinum tier · unlocks Friday', amount: 5000, icon: '💎', ready: false },
 ]
 
@@ -434,13 +434,13 @@ export function RewardsModal({ forceOpen }: { forceOpen?: boolean } = {}) {
       open={forceOpen ?? rewardsOpen}
       onClose={() => setRewardsOpen(false)}
       title="Rewards hub"
-      subtitle={`${money(totalReady, 0)} FB ready to collect`}
+      subtitle={`${money(totalReady)} PX ready to collect`}
       icon={<IconGift size={18} />}
     >
       <div className="relative mb-4 overflow-hidden rounded-2xl border border-gold/25 bg-gradient-to-br from-gold/15 via-ink-800 to-ink-850 p-4">
         <div className="pointer-events-none absolute -right-6 -top-8 h-28 w-28 rounded-full bg-gold/20 blur-2xl" />
         <p className="text-[10px] font-bold uppercase tracking-[.2em] text-gold/80">Available now</p>
-        <p className="num mt-1 text-3xl font-black text-white">{money(totalReady, 0)} <span className="text-[13px] font-bold text-slate-400">FB</span></p>
+        <p className="num mt-1 text-3xl font-black text-white">{money(totalReady)} <span className="text-[13px] font-bold text-slate-400">PX</span></p>
         <button
           type="button"
           disabled={totalReady === 0}
@@ -448,7 +448,7 @@ export function RewardsModal({ forceOpen }: { forceOpen?: boolean } = {}) {
             deposit(totalReady)
             setClaimed(REWARDS.filter((r) => r.ready).map((r) => r.id))
             sfx.deposit()
-            toast({ kind: 'success', title: 'Rewards collected', body: `${money(totalReady, 0)} FB credited.` })
+            toast({ kind: 'success', title: 'Rewards collected', body: `${money(totalReady)} PX credited.` })
           }}
           className="btn-primary mt-3 h-10 w-full !text-[12.5px]"
         >
@@ -473,13 +473,13 @@ export function RewardsModal({ forceOpen }: { forceOpen?: boolean } = {}) {
                   deposit(r.amount)
                   setClaimed((c) => [...c, r.id])
                   sfx.deposit()
-                  toast({ kind: 'success', title: `${r.title} claimed`, body: `+${money(r.amount, 0)} FB` })
+                  toast({ kind: 'success', title: `${r.title} claimed`, body: `+${money(r.amount)} PX` })
                 }}
                 className={`num shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${
                   done ? 'bg-white/[0.04] text-slate-500' : 'bg-neon-lime/15 text-neon-lime hover:bg-neon-lime/25'
                 }`}
               >
-                {done ? (r.ready ? 'Claimed' : 'Locked') : `+${money(r.amount, 0)}`}
+                {done ? (r.ready ? 'Claimed' : 'Locked') : `+${money(r.amount)}`}
               </button>
             </div>
           )
@@ -489,13 +489,13 @@ export function RewardsModal({ forceOpen }: { forceOpen?: boolean } = {}) {
       <div className="mt-4 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
         <div className="flex items-center justify-between text-[11px]">
           <span className="text-slate-500">30-day volume</span>
-          <span className="num font-bold text-white">{money(stats.wagered, 0)} FB</span>
+          <span className="num font-bold text-white">{money(stats.wagered)} PX</span>
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
           <div className="h-full rounded-full bg-gradient-to-r from-neon-lime to-gold" style={{ width: `${Math.min(100, (stats.wagered / 50000) * 100)}%` }} />
         </div>
         <p className="mt-1.5 text-[10px] text-slate-600">
-          {stats.wagered >= 50000 ? 'Gold tier unlocked — 15% rakeback' : `Wager ${money(50000 - stats.wagered, 0)} FB more to unlock Gold tier`}
+          {stats.wagered >= 50000 ? 'Gold tier unlocked — 15% rakeback' : `Wager ${money(50000 - stats.wagered)} PX more to unlock Gold tier`}
         </p>
       </div>
     </Sheet>
@@ -530,8 +530,8 @@ export function HistoryModal({ forceOpen }: { forceOpen?: boolean } = {}) {
     >
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
-          { l: 'Wagered', v: money(stats.wagered, 0), c: 'text-white' },
-          { l: 'Net profit', v: `${stats.profit >= 0 ? '+' : ''}${money(stats.profit, 0)}`, c: stats.profit >= 0 ? 'text-neon-lime' : 'text-rose-400' },
+          { l: 'Wagered', v: money(stats.wagered), c: 'text-white' },
+          { l: 'Net profit', v: `${stats.profit >= 0 ? '+' : ''}${money(stats.profit)}`, c: stats.profit >= 0 ? 'text-neon-lime' : 'text-rose-400' },
           { l: 'Win rate', v: pct(winRate), c: 'text-neon-cyan' },
           { l: 'Best streak', v: `${stats.bestStreak}×`, c: 'text-gold' },
         ].map((s) => (
@@ -557,14 +557,14 @@ export function HistoryModal({ forceOpen }: { forceOpen?: boolean } = {}) {
                     <div className="flex items-center justify-between gap-2">
                       <p className="truncate text-[12px] font-semibold text-white">{g?.name ?? id}</p>
                       <p className={`num text-[11.5px] font-bold ${net >= 0 ? 'text-neon-lime' : 'text-rose-400'}`}>
-                        {net >= 0 ? '+' : ''}{money(net, 0)}
+                        {net >= 0 ? '+' : ''}{money(net)}
                       </p>
                     </div>
                     <div className="mt-1 flex items-center gap-2">
                       <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/10">
                         <div className="h-full rounded-full bg-gradient-to-r from-neon-lime/80 to-neon-cyan/70" style={{ width: `${Math.max(6, share * 100)}%` }} />
                       </div>
-                      <span className="num shrink-0 text-[10px] text-slate-500">{money(r.wagered, 0)} wagered · {r.rounds} bets</span>
+                      <span className="num shrink-0 text-[10px] text-slate-500">{money(r.wagered)} wagered · {r.rounds} bets</span>
                     </div>
                   </div>
                 </div>
@@ -636,7 +636,7 @@ export function PromoModal({ open, onClose }: { open: boolean; onClose: () => vo
         <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-neon-lime/20 blur-2xl" />
         <p className="text-[10.5px] font-bold uppercase tracking-[.24em] text-neon-lime/80">Deposit bonus</p>
         <p className="mt-1 text-4xl font-black text-white">+200%</p>
-        <p className="mt-1 text-[12px] text-slate-400">on your first deposit, up to 5,000 FB</p>
+        <p className="mt-1 text-[12px] text-slate-400">on your first deposit, up to 5,000 PX</p>
         <div className="mt-3 flex items-center justify-center gap-1.5">
           {['Instant', 'Zero fee', 'No wagering on demo'].map((t) => (
             <span key={t} className="rounded-full bg-black/30 px-2 py-0.5 text-[10px] font-semibold text-slate-300">{t}</span>
@@ -649,11 +649,11 @@ export function PromoModal({ open, onClose }: { open: boolean; onClose: () => vo
         onClick={() => {
           deposit(5000)
           setClaimed(true)
-          toast({ kind: 'success', title: 'Bonus claimed', body: '5,000 FB welcome bonus credited.' })
+          toast({ kind: 'success', title: 'Bonus claimed', body: '5,000 PX welcome bonus credited.' })
         }}
         className="btn-primary mt-4 h-12 w-full text-[14px]"
       >
-        {claimed ? <><IconCheck size={16} /> Bonus credited</> : <><IconGift size={16} /> Claim 5,000 FB bonus</>}
+        {claimed ? <><IconCheck size={16} /> Bonus credited</> : <><IconGift size={16} /> Claim 5,000 PX bonus</>}
       </button>
       <p className="mt-2 text-center text-[10.5px] text-slate-600">Simulated demo bonus · no real currency involved</p>
     </Sheet>
