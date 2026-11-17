@@ -18,9 +18,9 @@ function fillStrip(seed: number): SymbolId[] {
 
 /* ------------------------------------------------------------------ Siren (SVG) */
 
-export function Siren({ size = 64, lit = false }: { size?: number; lit?: boolean }) {
+export function Siren({ size = 64, lit = false }: { size?: number | string; lit?: boolean }) {
   return (
-    <svg viewBox="0 0 100 100" width={size} height={size} className="drop-shadow-[0_0_18px_rgba(198,242,78,.55)]">
+    <svg viewBox="0 0 100 100" width={typeof size === 'number' ? size : undefined} height={typeof size === 'number' ? size : undefined} className={`drop-shadow-[0_0_18px_rgba(198,242,78,.55)] ${typeof size === 'string' ? size : ''}`}>
       <defs>
         <linearGradient id="sirenBase" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#4b5566" /><stop offset="1" stopColor="#1d2331" />
@@ -53,7 +53,7 @@ export function SymbolFace({
   if (id === 'siren') {
     return (
       <span className={`grid place-items-center ${className}`}>
-        <Siren size={92} lit />
+        <Siren size="h-full w-full" lit />
       </span>
     )
   }
@@ -175,7 +175,7 @@ function Reel({ reel, target, spinning, stopping, highlight, winCells, delay, fa
               opacity: k === 1 ? 1 : 0.72,
             }}
           >
-            <SymbolFace id={id} priority className="h-[86%] w-[86%]" />
+            <SymbolFace id={id} priority className="h-full w-full" />
             {winCells.has(`${reel}-${k}`) && (
               <span className="pointer-events-none absolute inset-0 rounded-[14%] bg-[radial-gradient(circle,rgba(198,242,78,.32),transparent_70%)] ring-2 ring-inset ring-neon-lime/70" />
             )}
@@ -208,7 +208,9 @@ export function Slot3D({ grid, spinning, stopping, winCells, glow = 'none', clas
     [],
   )
   const board = grid ?? fallback
-  const [face, setFace] = useState(92)
+  // Start small and let the observer size the board: guessing a large default
+  // produces an oversized board on the first paint on a phone.
+  const [face, setFace] = useState(56)
   const wrap = useRef<HTMLDivElement>(null)
 
   // The reel row is measured directly (it has no padding), so the face is the
@@ -217,16 +219,24 @@ export function Slot3D({ grid, spinning, stopping, winCells, glow = 'none', clas
   // collapsed the board to ~54px symbols with dead space either side.
   useEffect(() => {
     const measure = () => {
-      const w = wrap.current?.clientWidth ?? 0
-      if (!w) return
-      const g = w < 420 ? 3 : 5
-      const f = Math.max(40, Math.min(132, Math.floor((w - g * 4) / 5)))
+      const el = wrap.current
+      if (!el) return
+      // clientWidth is the whole row and already contains the flex gaps,
+      // so subtract them to get the space the 5 reels actually share.
+      const rowW = el.clientWidth || 0
+      if (rowW <= 0) return
+      const g = rowW < 400 ? 3 : 5
+      const f = Math.max(30, Math.min(150, Math.floor((rowW - g * 4) / 5)))
       setFace(f)
     }
     measure()
     const ro = new ResizeObserver(measure)
     if (wrap.current) ro.observe(wrap.current)
-    return () => ro.disconnect()
+    window.addEventListener('orientationchange', measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('orientationchange', measure)
+    }
   }, [])
 
   const gap = face < 90 ? 3 : 5
