@@ -13,7 +13,11 @@ import { Wheel, WHEEL_RTP } from '../src/games/Wheel'
 import { Tower } from '../src/games/Tower'
 import { Roulette } from '../src/games/Roulette'
 import { BonniClyve } from '../src/games/BonniClyve'
-import { SYMBOLS, SYMBOL_POOL, buildGrid, resolve } from '../src/lib/slot'
+import { EngineSlot } from '../src/games/EngineSlot'
+import { CHAPE, BLUE_MOUNTAIN } from '../src/lib/slots/games'
+import { BAZAAR, BODA } from '../src/lib/slots/games2'
+import { simulate, resolve, buildGrid, countSymbol } from '../src/lib/slots/engine'
+import { SYMBOLS, SYMBOL_POOL, buildGrid as bonniGrid, resolve as bonniResolve } from '../src/lib/slot'
 import { Header, Footer, WinFlash, Toasts, ChatDock, BottomBar } from '../src/components/Chrome'
 import { WalletModal, FairModal, HistoryModal, SearchModal, RewardsModal } from '../src/components/Modals'
 
@@ -22,6 +26,9 @@ const games: [string, any][] = [
   ['plinko', Plinko], ['crash', Crash], ['mines', Mines], ['dice', Dice],
   ['limbo', Limbo], ['wheel', Wheel], ['tower', Tower], ['roulette', Roulette],
   ['bonni', BonniClyve],
+]
+const engineGames: [any, any][] = [
+  ['chape', CHAPE], ['bluemountain', BLUE_MOUNTAIN], ['bazaar', BAZAAR], ['boda', BODA],
 ]
 
 let fails = 0
@@ -43,6 +50,7 @@ run('App', <App />)
 run('Home', <Home onPlay={noop} onSearch={noop} onFair={noop} />)
 run('ProxiCash', <ProxiCash onBack={noop} />)
 for (const [id, C] of games) run(`Game:${id}`, <C onBack={noop} onFair={noop} />)
+for (const [id, cfg] of engineGames) run(`Game:${id}`, <EngineSlot config={cfg} id={id} onBack={noop} onFair={noop} />)
 run('Chrome', <><Header view="home" onNavigate={noop} onSearch={noop} /><BottomBar view="home" onNavigate={noop} /><Footer /><WinFlash /><Toasts /><ChatDock /></>)
 run('Modal:wallet', <WalletModal forceOpen />)
 run('Modal:fair', <FairModal forceOpen />)
@@ -62,7 +70,7 @@ check('wheel RTP is 99%', Math.abs(WHEEL_RTP - 0.99) < 1e-9, `(${(WHEEL_RTP * 10
 check('slot grid is 5 reels x 3 rows', (() => {
   let s = 0x51ed2701
   const rnd = () => { s = (s + 0x9e3779b9) | 0; let t = s ^ (s >>> 16); t = Math.imul(t, 0x21f0aaad); t = t ^ (t >>> 15); t = Math.imul(t, 0x735a2d97); return ((t = t ^ (t >>> 15)) >>> 0) / 4294967296 }
-  const g = buildGrid(Array.from({ length: 15 }, rnd))
+  const g = bonniGrid(Array.from({ length: 15 }, rnd))
   return g.length === 5 && g.every((c) => c.length === 3)
 })())
 check('slot paytable covers all 8 paying symbols', SYMBOL_POOL.filter((id) => SYMBOLS[id].pay).length === 8, `(${SYMBOL_POOL.length} ids)`)
@@ -83,12 +91,46 @@ check('proxicash phone validation', (() => {
 })(), `(${normalisePhone('+256772123456')})`)
 check('proxicash rail detection', railForPhone('0772123456') === 'MTN' && railForPhone('0700123456') === 'Airtel')
 
+// engine slot invariants
+for (const [id, cfg] of engineGames) {
+  const r = simulate(cfg, 400000)
+  check(`${id} RTP in band`, Math.abs(r.rtp - 0.962) < 0.02, `(${(r.rtp * 100).toFixed(2)}%)`)
+  check(`${id} grid shape`, (() => {
+    const g = buildGrid(cfg, Array.from({ length: cfg.reels * cfg.rows }, (_, i) => (i * 0.137) % 1))
+    return g.length === cfg.reels && g.every((c) => c.length === cfg.rows)
+  })())
+}
+// Build a grid of a fixed shape from a per-cell id function
+const mk = (cfg: any, fn: (reel: number, row: number) => string) =>
+  Array.from({ length: cfg.reels }, (_, r) =>
+    Array.from({ length: cfg.rows }, (_, c) => ({ id: fn(r, c), reel: r, row: c })),
+  )
+
+check('Chape omen fines on 3+ Faith', (() => {
+  const g = mk(CHAPE, (r) => (r < 3 ? 'faith' : 'bottle'))
+  const o = resolve(CHAPE, g as any)
+  return countSymbol(g as any, 'faith') === 9 && o.fine === CHAPE.omen!.fine && o.totalMultiplier === 0
+})(), `(fine ${CHAPE.omen!.fine}×)`)
+
+check('Blue Mountain: 3 Georgies trigger free spins', (() => {
+  const g = mk(BLUE_MOUNTAIN, (r) => (r < 3 ? 'georgie' : 'cigar'))
+  const o = resolve(BLUE_MOUNTAIN, g as any)
+  return o.triggered && o.freeSpins === BLUE_MOUNTAIN.freeSpins
+})(), `(${BLUE_MOUNTAIN.freeSpins} spins)`)
+
+check('Chape wild substitutes for the Baron', (() => {
+  const g = mk(CHAPE, (r) => (r === 4 ? 'stash' : 'baron'))
+  const o = resolve(CHAPE, g as any)
+  const w = o.wins.find((x) => x.symbol === 'baron')
+  return !!w && w.reels === 5
+})())
+
 check('slot RTP ~96.2%', (() => {
   let s = 0x51ed2701
   const rnd = () => { s = (s + 0x9e3779b9) | 0; let t = s ^ (s >>> 16); t = Math.imul(t, 0x21f0aaad); t = t ^ (t >>> 15); t = Math.imul(t, 0x735a2d97); return ((t = t ^ (t >>> 15)) >>> 0) / 4294967296 }
   const N = 400000
   let sum = 0
-  for (let i = 0; i < N; i++) sum += resolve(buildGrid(Array.from({ length: 15 }, rnd))).totalMultiplier
+  for (let i = 0; i < N; i++) sum += bonniResolve(bonniGrid(Array.from({ length: 15 }, rnd))).totalMultiplier
   const rtp = sum / N
   console.log(`     slot sim RTP = ${(rtp * 100).toFixed(2)}%`)
   return Math.abs(rtp - 0.962) < 0.006

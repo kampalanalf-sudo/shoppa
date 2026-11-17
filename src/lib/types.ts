@@ -8,6 +8,10 @@ export type GameId =
   | 'wheel'
   | 'tower'
   | 'roulette'
+  | 'chape'
+  | 'bluemountain'
+  | 'bazaar'
+  | 'boda'
 
 export type GameMeta = {
   id: GameId
