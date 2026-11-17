@@ -308,7 +308,8 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
         </div>
       </div>
 
-      <div className="mx-auto w-full max-w-[720px]">
+      {/* on phones break out of the shell's px-3 so the board is full-bleed */}
+      <div className="-mx-3 w-auto sm:mx-auto sm:w-full sm:max-w-[720px]">
         <Slot3D
           grid={grid}
           spinning={spinning}
