@@ -11,7 +11,7 @@ import { IconFlame } from '../components/Icons'
 export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('limbo')!
   const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(10)
+  const [bet, setBet] = useState(1000)
   const [target, setTarget] = useState(2)
   const [running, setRunning] = useState(false)
   const [display, setDisplay] = useState(1)
@@ -64,7 +64,7 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
             else sfx.win()
           } else sfx.lose()
         }
-        if (won) toast({ kind: 'win', title: `Hit ${mult(point)}`, body: `+${money(payout)} FB won.` })
+        if (won) toast({ kind: 'win', title: `Hit ${mult(point)}`, body: `+${money(payout)} PX won.` })
       }
     }
     raf.current = requestAnimationFrame(anim)
@@ -118,11 +118,11 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
           <div className="grid grid-cols-2 gap-2">
             <div className="panel-tight py-2 text-center">
               <p className="text-[9px] uppercase tracking-wider text-slate-500">Payout</p>
-              <p className="num text-[13px] font-bold text-neon-lime">{money(potential, 0)}</p>
+              <p className="num text-[13px] font-bold text-neon-lime">{money(potential)}</p>
             </div>
             <div className="panel-tight py-2 text-center">
               <p className="text-[9px] uppercase tracking-wider text-slate-500">Profit</p>
-              <p className="num text-[13px] font-bold text-neon-cyan">{money(potential - bet, 0)}</p>
+              <p className="num text-[13px] font-bold text-neon-cyan">{money(potential - bet)}</p>
             </div>
           </div>
           <div className="space-y-1.5">
@@ -141,7 +141,7 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">FB</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
           </div>
           <button type="button" onClick={() => void play()} disabled={running} className="btn-primary h-10 flex-1 !text-[13px]">
             {running ? 'Rolling…' : `Roll ${mult(target)}`}

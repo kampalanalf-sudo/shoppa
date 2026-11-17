@@ -77,7 +77,7 @@ const SEG = 360 / SLICES.length
 export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('wheel')!
   const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(10)
+  const [bet, setBet] = useState(1000)
   const [spinning, setSpinning] = useState(false)
   const [angle, setAngle] = useState(0)
   const [last, setLast] = useState<number | null>(null)
@@ -128,7 +128,7 @@ export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => vo
         else sfx.lose()
       }
       if (m === 0) flashLoss()
-      if (m >= 3) toast({ kind: 'win', title: `Wheel jackpot ${mult(m)}!`, body: `+${money(payout)} FB paid out.` })
+      if (m >= 3) toast({ kind: 'win', title: `Wheel jackpot ${mult(m)}!`, body: `+${money(payout)} PX paid out.` })
     }, 5400)
   }, [spinning, bet, balance, placeBet, nextFloats, angle, settleBet, sound, toast])
 
@@ -143,7 +143,7 @@ export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       aside={
         <div className="space-y-3.5">
           <BetAmount value={bet} onChange={setBet} disabled={spinning} />
-          <BetButton onClick={() => void spin()} loading={spinning} sub={`Max win ${money(potential)} FB`}>
+          <BetButton onClick={() => void spin()} loading={spinning} sub={`Max win ${money(potential)} PX`}>
             {spinning ? 'Spinning…' : 'Spin wheel'}
           </BetButton>
           {landed !== null && (
@@ -184,7 +184,7 @@ export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => vo
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">FB</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
           </div>
           <button type="button" onClick={() => void spin()} disabled={spinning} className="btn-primary h-10 flex-1 !text-[13px]">
             {spinning ? 'Spinning…' : 'Spin wheel'}

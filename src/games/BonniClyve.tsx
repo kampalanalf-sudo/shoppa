@@ -17,7 +17,7 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
   const game = gameById('bonni')!
   const { placeBet, settleBet, nextFloats, balance, toast, sound } = useStore()
 
-  const [bet, setBet] = useState(10)
+  const [bet, setBet] = useState(1000)
   const [grid, setGrid] = useState<Grid | null>(null)
   const [spinning, setSpinning] = useState(false)
   const [outcome, setOutcome] = useState<SlotOutcome | null>(null)
@@ -276,7 +276,7 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">FB</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
           </div>
           <button type="button" onClick={spin} disabled={spinning || freeSpins > 0} className="btn-primary h-10 flex-1 !text-[13px]">
             {spinning ? 'Spinning…' : freeSpins > 0 ? `${freeSpins} free spins` : 'Spin'}
@@ -343,7 +343,7 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
       <p className="mt-1 text-center text-[9.5px] text-slate-700">
         Demo slot · characters are fictional caricatures · 18+
       </p>
-      <span className="sr-only">Max win {money(potential)} FB</span>
+      <span className="sr-only">Max win {money(potential)} PX</span>
     </GameShell>
   )
 }

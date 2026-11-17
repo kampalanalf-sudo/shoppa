@@ -4,6 +4,7 @@ import { setSoundEnabled } from './lib/sound'
 import { Header, Footer, BottomBar, ChatDock, Toasts, WinFlash } from './components/Chrome'
 import { SearchModal, WalletModal, FairModal, HistoryModal, RewardsModal } from './components/Modals'
 import { Home } from './pages/Home'
+import { ProxiCash } from './pages/ProxiCash'
 import { BonniClyve } from './games/BonniClyve'
 import { Plinko } from './games/Plinko'
 import { Crash } from './games/Crash'
@@ -15,7 +16,7 @@ import { Tower } from './games/Tower'
 import { Roulette } from './games/Roulette'
 import type { GameId } from './lib/types'
 
-type View = { name: 'home' } | { name: 'game'; id: GameId }
+type View = { name: 'home' } | { name: 'game'; id: GameId } | { name: 'proxicash' }
 
 function Shell() {
   const { sound, setFairOpen, setWalletOpen, hydrated } = useStore()
@@ -38,6 +39,7 @@ function Shell() {
   useEffect(() => {
     const apply = () => {
       const h = window.location.hash.replace('#', '')
+      if (h === 'proxicash') { setView({ name: 'proxicash' }); return }
       if (h && h !== 'home') {
         const known = ['bonni', 'plinko', 'crash', 'mines', 'dice', 'limbo', 'wheel', 'tower', 'roulette']
         if (known.includes(h)) setView({ name: 'game', id: h as GameId })
@@ -52,6 +54,12 @@ function Shell() {
     openGame(id)
     try { window.history.replaceState(null, '', `#${id}`) } catch { /* noop */ }
   }
+
+  const openProxiCash = useCallback(() => {
+    setView({ name: 'proxicash' })
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+    try { window.history.replaceState(null, '', '#proxicash') } catch { /* noop */ }
+  }, [])
 
   const home = () => {
     goHome()
@@ -81,11 +89,16 @@ function Shell() {
   }
 
   const current = view.name === 'game' ? view.id : null
+  const isProxiCash = view.name === 'proxicash'
   const shared = { onBack: home, onFair: () => setFairOpen(true) }
 
   return (
     <div className="min-h-screen">
-      <Header view={view.name === 'game' ? 'game' : 'home'} onNavigate={(v, id) => (v === 'game' && id ? play(id) : home())} onSearch={() => setSearch(true)} />
+      <Header
+        view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : 'home'}
+        onNavigate={(v, id) => (v === 'game' && id ? play(id) : v === 'proxicash' ? openProxiCash() : home())}
+        onSearch={() => setSearch(true)}
+      />
 
       <main>
         {current === 'bonni' && <BonniClyve {...shared} />}
@@ -97,12 +110,16 @@ function Shell() {
         {current === 'wheel' && <Wheel {...shared} />}
         {current === 'tower' && <Tower {...shared} />}
         {current === 'roulette' && <Roulette {...shared} />}
-        {!current && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} />}
+        {isProxiCash && <ProxiCash onBack={home} />}
+        {!current && !isProxiCash && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} />}
       </main>
 
       <Footer />
       <div className="h-16 md:hidden" />
-      <BottomBar view={view.name === 'game' ? 'game' : 'home'} onNavigate={(v, id) => (v === 'game' && id ? play(id) : home())} />
+      <BottomBar
+        view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : 'home'}
+        onNavigate={(v, id) => (v === 'game' && id ? play(id) : v === 'proxicash' ? openProxiCash() : home())}
+      />
       <ChatDock />
       <WinFlash />
       <Toasts />
@@ -119,7 +136,7 @@ function Shell() {
         className="fixed bottom-20 right-4 z-30 grid h-12 w-12 place-items-center rounded-full bg-gradient-to-br from-neon-lime to-neon-green text-ink-950 shadow-glow md:hidden"
         aria-label="Open wallet"
       >
-        <span className="text-[10px] font-black leading-none">FB</span>
+        <span className="text-[10px] font-black leading-none">PX</span>
       </button>
     </div>
   )
