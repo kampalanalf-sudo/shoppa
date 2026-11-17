@@ -76,14 +76,28 @@ export function SymbolFace({
     )
   }
   return (
-    <span className={`relative grid place-items-center ${className}`}>
-      <span className="absolute inset-[12%] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,.14),transparent_70%)]" />
+    <span className={`relative grid place-items-center overflow-hidden ${className}`}>
+      {/* inner glow + rim so each symbol reads as a solid 3D piece */}
+      <span className="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(198,242,78,.16),transparent_68%)]" />
       <img
         src={meta.art}
         alt={meta.name}
         draggable={false}
         loading={priority ? 'eager' : 'lazy'}
-        className="relative h-full w-full select-none object-contain drop-shadow-[0_6px_14px_rgba(0,0,0,.55)]"
+        className="relative h-full w-full select-none object-cover drop-shadow-[0_8px_18px_rgba(0,0,0,.6)]"
+      />
+      {/* specular sheen across the top-left of the tile */}
+      <span
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'linear-gradient(148deg, rgba(255,255,255,.24) 0%, rgba(255,255,255,.06) 22%, transparent 44%)',
+        }}
+      />
+      {/* contact shadow at the base */}
+      <span
+        className="pointer-events-none absolute inset-x-0 bottom-0"
+        style={{ height: '22%', background: 'linear-gradient(to top, rgba(0,0,0,.5), transparent)' }}
       />
     </span>
   )
