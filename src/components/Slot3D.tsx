@@ -211,11 +211,16 @@ export function Slot3D({ grid, spinning, stopping, winCells, glow = 'none', clas
   const [face, setFace] = useState(92)
   const wrap = useRef<HTMLDivElement>(null)
 
+  // The reel row is measured directly (it has no padding), so the face is the
+  // largest whole pixel value that lets 5 reels + 4 gutters fill it exactly.
+  // Previously this subtracted a hardcoded 56px, which on a ~350px phone
+  // collapsed the board to ~54px symbols with dead space either side.
   useEffect(() => {
     const measure = () => {
-      const w = wrap.current?.clientWidth ?? 600
-      // 5 reels + gutters, capped so tall screens don't get giant faces
-      const f = Math.max(52, Math.min(108, Math.floor((w - 56) / 5 / 1.02)))
+      const w = wrap.current?.clientWidth ?? 0
+      if (!w) return
+      const g = w < 420 ? 3 : 5
+      const f = Math.max(40, Math.min(132, Math.floor((w - g * 4) / 5)))
       setFace(f)
     }
     measure()
@@ -224,13 +229,16 @@ export function Slot3D({ grid, spinning, stopping, winCells, glow = 'none', clas
     return () => ro.disconnect()
   }, [])
 
-  const gap = Math.round(face * 0.12)
+  const gap = face < 90 ? 3 : 5
+  // the drum needs an explicit height: the three faces are absolutely
+  // positioned, so without this the flex row collapses to 0px.
+  const boardH = face * 3 + gap * 2
 
   return (
     <div className={`relative ${className}`}>
       {/* cabinet frame */}
       <div
-        className="relative rounded-[26px] p-[10px] sm:p-[14px]"
+        className="relative rounded-[16px] p-[5px] sm:rounded-[26px] sm:p-[14px]"
         style={{
           background: 'linear-gradient(160deg,#2b3b2c 0%,#16241c 30%,#0d1612 70%,#22301f 100%)',
           boxShadow:
@@ -263,8 +271,12 @@ export function Slot3D({ grid, spinning, stopping, winCells, glow = 'none', clas
           )}
 
           {/* reels */}
-          <div ref={wrap} className="relative px-2 py-2 sm:px-3 sm:py-3">
-            <div className="flex gap-[3px] sm:gap-[5px]" style={{ perspective: '1200px' }}>
+          <div className="relative px-1 py-1 sm:px-3 sm:py-3">
+            <div
+              ref={wrap}
+              className="flex w-full"
+              style={{ perspective: '1200px', gap: `${gap}px`, height: `${boardH}px` }}
+            >
               {[0, 1, 2, 3, 4].map((reel) => (
                 <Reel
                   key={reel}
