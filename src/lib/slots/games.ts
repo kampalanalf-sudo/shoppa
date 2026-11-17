@@ -73,7 +73,7 @@ export const BLUE_MOUNTAIN: SlotConfig = {
     { id: 'cash', name: 'Cash Roll', pay: [0.09966, 0.7308, 5.149], weight: 7, tier: 'mid', glyph: '💵', color: '#5cd68a', art: asset('/art/chape/cash.webp') },
     { id: 'bottle', name: 'Blue Label', pay: [0.06644, 0.4983, 3.322], weight: 9, tier: 'mid', glyph: '🥃', color: '#7aa2ff', art: asset('/art/chape/bottle.webp') },
     { id: 'dice', name: 'Lounge Dice', pay: [0.03322, 0.2325, 1.462], weight: 13, tier: 'low', glyph: '🎲', color: '#e0d5b1', art: asset('/art/chape/dice.webp') },
-    { id: 'cigar', name: 'Cigar', pay: [0.03322, 0.1661, 1.129], weight: 15, tier: 'low', glyph: '🚬', color: '#c98b5c' },
+    { id: 'cigar', name: 'Cigar', pay: [0.03322, 0.1661, 1.129], weight: 15, tier: 'low', glyph: '🚬', color: '#c98b5c', art: asset('/art/bluemountain/cigar.webp') },
     { id: 'bryan', name: 'Bryan (Snitch)', pay: [0.01661, 0.06644, 0.3322], weight: 3, tier: 'low', glyph: '👁️', color: '#ff5c78', art: asset('/art/chape/bryan.webp') },
     { id: 'allan', name: 'Allan (Snitch)', pay: [0.01661, 0.06644, 0.3322], weight: 3, tier: 'low', glyph: '👁️', color: '#ff5c78', art: asset('/art/chape/allan.webp') },
     { id: 'georgie', name: 'Georgie (Scatter)', weight: 2, tier: 'special', glyph: '🌺', color: '#ff8fb1', art: asset('/art/bluemountain/georgie.webp') },
