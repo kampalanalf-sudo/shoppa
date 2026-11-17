@@ -6,6 +6,9 @@ import { SearchModal, WalletModal, FairModal, HistoryModal, RewardsModal } from 
 import { Home } from './pages/Home'
 import { ProxiCash } from './pages/ProxiCash'
 import { BonniClyve } from './games/BonniClyve'
+import { EngineSlot } from './games/EngineSlot'
+import { CHAPE, BLUE_MOUNTAIN } from './lib/slots/games'
+import { BAZAAR, BODA } from './lib/slots/games2'
 import { Plinko } from './games/Plinko'
 import { Crash } from './games/Crash'
 import { Mines } from './games/Mines'
@@ -41,7 +44,7 @@ function Shell() {
       const h = window.location.hash.replace('#', '')
       if (h === 'proxicash') { setView({ name: 'proxicash' }); return }
       if (h && h !== 'home') {
-        const known = ['bonni', 'plinko', 'crash', 'mines', 'dice', 'limbo', 'wheel', 'tower', 'roulette']
+        const known = ['bonni', 'plinko', 'crash', 'mines', 'dice', 'limbo', 'wheel', 'tower', 'roulette', 'chape', 'bluemountain', 'bazaar', 'boda']
         if (known.includes(h)) setView({ name: 'game', id: h as GameId })
       } else setView({ name: 'home' })
     }
@@ -102,6 +105,10 @@ function Shell() {
 
       <main>
         {current === 'bonni' && <BonniClyve {...shared} />}
+        {current === 'chape' && <EngineSlot config={CHAPE} id="chape" {...shared} />}
+        {current === 'bluemountain' && <EngineSlot config={BLUE_MOUNTAIN} id="bluemountain" {...shared} />}
+        {current === 'bazaar' && <EngineSlot config={BAZAAR} id="bazaar" {...shared} />}
+        {current === 'boda' && <EngineSlot config={BODA} id="boda" {...shared} />}
         {current === 'plinko' && <Plinko {...shared} />}
         {current === 'crash' && <Crash {...shared} />}
         {current === 'mines' && <Mines {...shared} />}
