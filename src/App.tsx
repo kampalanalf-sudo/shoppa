@@ -129,15 +129,19 @@ function Shell() {
       <RewardsModal />
       <SearchModal open={search} onClose={() => setSearch(false)} onPick={(id) => play(id as GameId)} />
 
-      {/* mobile sticky wallet CTA */}
-      <button
-        type="button"
-        onClick={() => setWalletOpen(true)}
-        className="fixed bottom-20 right-4 z-30 grid h-12 w-12 place-items-center rounded-full bg-gradient-to-br from-neon-lime to-neon-green text-ink-950 shadow-glow md:hidden"
-        aria-label="Open wallet"
-      >
-        <span className="text-[10px] font-black leading-none">PX</span>
-      </button>
+      {/* mobile sticky wallet CTA. Hidden while a game is open: every game
+          renders its own action bar there, and this button used to sit on top
+          of the bet/Spin controls. */}
+      {view.name !== 'game' && view.name !== 'proxicash' && (
+        <button
+          type="button"
+          onClick={() => setWalletOpen(true)}
+          className="fixed bottom-20 right-4 z-30 grid h-12 w-12 place-items-center rounded-full bg-gradient-to-br from-neon-lime to-neon-green text-ink-950 shadow-glow md:hidden"
+          aria-label="Open wallet"
+        >
+          <span className="text-[10px] font-black leading-none">PX</span>
+        </button>
+      )}
     </div>
   )
 }
