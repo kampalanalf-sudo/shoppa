@@ -1,4 +1,5 @@
 export type GameId =
+  | 'bonni'
   | 'plinko'
   | 'crash'
   | 'mines'
@@ -18,7 +19,7 @@ export type GameMeta = {
   rtp: string
   maxWin: string
   players: number
-  category: 'Originals' | 'Instant' | 'Table'
+  category: 'Originals' | 'Instant' | 'Table' | 'Slots'
   hot?: boolean
   isNew?: boolean
 }

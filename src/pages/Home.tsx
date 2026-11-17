@@ -10,7 +10,7 @@ import { sfx } from '../lib/sound'
 
 type Props = { onPlay: (id: GameId) => void; onSearch: () => void; onFair: () => void }
 
-const TABS = ['All', 'Originals', 'Instant', 'Table'] as const
+const TABS = ['All', 'Slots', 'Originals', 'Instant', 'Table'] as const
 
 export function Home({ onPlay, onSearch, onFair }: Props) {
   const { balance, stats, username } = useStore()
@@ -218,14 +218,28 @@ export function Home({ onPlay, onSearch, onFair }: Props) {
               key={g.id}
               type="button"
               onClick={() => onPlay(g.id)}
-              className="group relative overflow-hidden rounded-2xl border border-white/[0.07] bg-ink-850 text-left transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:shadow-card"
+              className="group relative overflow-hidden rounded-2xl border border-white/[0.07] bg-ink-850 text-left transition duration-300 hover:-translate-y-1.5 hover:border-white/20"
+              style={{ transformStyle: 'preserve-3d' }}
             >
+              {/* 3D card body — bevel + lift shadow */}
+              <span
+                aria-hidden
+                className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition duration-300 group-hover:opacity-100"
+                style={{ boxShadow: `0 22px 48px -18px ${g.accent}88, inset 0 1px 0 rgba(255,255,255,.22), inset 0 -2px 0 rgba(0,0,0,.6)` }}
+              />
               <div className="relative aspect-[4/3] overflow-hidden">
                 <img
                   src={g.art}
                   alt={g.name}
                   loading="lazy"
-                  className="h-full w-full object-cover transition duration-500 group-hover:scale-105"
+                  className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.07]"
+                  style={{ filter: 'saturate(1.08) contrast(1.04)' }}
+                />
+                {/* glass sheen across the art */}
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0 opacity-0 transition duration-500 group-hover:opacity-100"
+                  style={{ background: 'linear-gradient(115deg, rgba(255,255,255,.28) 0%, rgba(255,255,255,.06) 28%, transparent 46%)' }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-ink-950 via-ink-950/25 to-transparent" />
                 <div className="absolute left-2 top-2 flex gap-1">

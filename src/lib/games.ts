@@ -8,6 +8,20 @@ export const asset = (path: string) => `${import.meta.env.BASE_URL}${path.replac
 
 export const GAMES: GameMeta[] = [
   {
+    id: 'bonni',
+    name: 'Bonni & Clyve',
+    tagline: '3×5 ways slot · 243 ways to win',
+    art: asset('/art/bonni/bonita.webp'),
+    accent: '#ffcf5c',
+    accentSoft: 'rgba(255,207,92,.16)',
+    rtp: '96.2%',
+    maxWin: '5,000×',
+    players: 21480,
+    category: 'Slots',
+    hot: true,
+    isNew: true,
+  },
+  {
     id: 'plinko',
     name: 'Float Plinko',
     tagline: 'Drop, bounce, multiply',

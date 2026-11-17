@@ -4,6 +4,7 @@ import { setSoundEnabled } from './lib/sound'
 import { Header, Footer, BottomBar, ChatDock, Toasts, WinFlash } from './components/Chrome'
 import { SearchModal, WalletModal, FairModal, HistoryModal, RewardsModal } from './components/Modals'
 import { Home } from './pages/Home'
+import { BonniClyve } from './games/BonniClyve'
 import { Plinko } from './games/Plinko'
 import { Crash } from './games/Crash'
 import { Mines } from './games/Mines'
@@ -38,7 +39,7 @@ function Shell() {
     const apply = () => {
       const h = window.location.hash.replace('#', '')
       if (h && h !== 'home') {
-        const known = ['plinko', 'crash', 'mines', 'dice', 'limbo', 'wheel', 'tower', 'roulette']
+        const known = ['bonni', 'plinko', 'crash', 'mines', 'dice', 'limbo', 'wheel', 'tower', 'roulette']
         if (known.includes(h)) setView({ name: 'game', id: h as GameId })
       } else setView({ name: 'home' })
     }
@@ -87,6 +88,7 @@ function Shell() {
       <Header view={view.name === 'game' ? 'game' : 'home'} onNavigate={(v, id) => (v === 'game' && id ? play(id) : home())} onSearch={() => setSearch(true)} />
 
       <main>
+        {current === 'bonni' && <BonniClyve {...shared} />}
         {current === 'plinko' && <Plinko {...shared} />}
         {current === 'crash' && <Crash {...shared} />}
         {current === 'mines' && <Mines {...shared} />}

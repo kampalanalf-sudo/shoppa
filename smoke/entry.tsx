@@ -10,6 +10,8 @@ import { Limbo } from '../src/games/Limbo'
 import { Wheel, WHEEL_RTP } from '../src/games/Wheel'
 import { Tower } from '../src/games/Tower'
 import { Roulette } from '../src/games/Roulette'
+import { BonniClyve } from '../src/games/BonniClyve'
+import { SYMBOLS, SYMBOL_POOL, buildGrid, resolve } from '../src/lib/slot'
 import { Header, Footer, WinFlash, Toasts, ChatDock, BottomBar } from '../src/components/Chrome'
 import { WalletModal, FairModal, HistoryModal, SearchModal, RewardsModal } from '../src/components/Modals'
 
@@ -17,6 +19,7 @@ const noop = () => {}
 const games: [string, any][] = [
   ['plinko', Plinko], ['crash', Crash], ['mines', Mines], ['dice', Dice],
   ['limbo', Limbo], ['wheel', Wheel], ['tower', Tower], ['roulette', Roulette],
+  ['bonni', BonniClyve],
 ]
 
 let fails = 0
@@ -50,6 +53,26 @@ const check = (name: string, cond: boolean, extra = '') => {
   else console.log(`ok   invariant: ${name} ${extra}`)
 }
 check('wheel RTP is 99%', Math.abs(WHEEL_RTP - 0.99) < 1e-9, `(${(WHEEL_RTP * 100).toFixed(2)}%)`)
+
+// Bonni & Clyve slot math: 3x5 grid, every symbol resolvable, and the sim RTP
+// must land inside the advertised 96.2% +- 0.6 band over 400k spins.
+check('slot grid is 5 reels x 3 rows', (() => {
+  let s = 0x51ed2701
+  const rnd = () => { s = (s + 0x9e3779b9) | 0; let t = s ^ (s >>> 16); t = Math.imul(t, 0x21f0aaad); t = t ^ (t >>> 15); t = Math.imul(t, 0x735a2d97); return ((t = t ^ (t >>> 15)) >>> 0) / 4294967296 }
+  const g = buildGrid(Array.from({ length: 15 }, rnd))
+  return g.length === 5 && g.every((c) => c.length === 3)
+})())
+check('slot paytable covers all 8 paying symbols', SYMBOL_POOL.filter((id) => SYMBOLS[id].pay).length === 8, `(${SYMBOL_POOL.length} ids)`)
+check('slot RTP ~96.2%', (() => {
+  let s = 0x51ed2701
+  const rnd = () => { s = (s + 0x9e3779b9) | 0; let t = s ^ (s >>> 16); t = Math.imul(t, 0x21f0aaad); t = t ^ (t >>> 15); t = Math.imul(t, 0x735a2d97); return ((t = t ^ (t >>> 15)) >>> 0) / 4294967296 }
+  const N = 400000
+  let sum = 0
+  for (let i = 0; i < N; i++) sum += resolve(buildGrid(Array.from({ length: 15 }, rnd))).totalMultiplier
+  const rtp = sum / N
+  console.log(`     slot sim RTP = ${(rtp * 100).toFixed(2)}%`)
+  return Math.abs(rtp - 0.962) < 0.006
+})())
 
 console.log(fails ? `\n${fails} FAILURES` : '\nall render + invariant checks passed')
 process.exit(fails ? 1 : 0)

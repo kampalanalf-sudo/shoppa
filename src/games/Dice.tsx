@@ -6,6 +6,7 @@ import { money, mult } from '../lib/format'
 import { gameById } from '../lib/games'
 import { BetAmount, BetButton, useHotkey } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
+import { Dice3D } from '../components/Dice3D'
 
 const EDGE = 0.99
 
@@ -182,9 +183,19 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
           </p>
         </div>
 
+        {/* 3D die — face tracks the rolled value */}
+        <div className="mt-2 flex items-end justify-center">
+          <Dice3D
+            value={last ? Math.min(6, Math.max(1, Math.floor(last.v / (100 / 6)) + 1)) : null}
+            rolling={rolling}
+            tumble={history.length}
+          />
+        </div>
+
         <div className="relative mt-8">
           {/* track */}
-          <div className="relative h-3 w-full overflow-hidden rounded-full bg-white/[0.06]">
+          <div className="relative h-3 w-full overflow-hidden rounded-full bg-white/[0.06]"
+            style={{ boxShadow: 'inset 0 2px 4px rgba(0,0,0,.7), inset 0 -1px 0 rgba(255,255,255,.08)' }}>
             <div
               className="absolute inset-y-0 bg-gradient-to-r from-neon-lime/80 via-neon-green/60 to-neon-cyan/70 transition-all duration-300"
               style={{ left: `${lower}%`, width: `${Math.max(0, upper - lower)}%` }}
