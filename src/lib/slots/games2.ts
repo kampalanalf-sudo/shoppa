@@ -1,4 +1,5 @@
 import type { SlotConfig } from './engine'
+import { asset } from '../games'
 
 /**
  * Ghetto Bazaar — a 5x3 ways slot built around a Kampala market. Bargains pay,
@@ -19,16 +20,16 @@ export const BAZAAR: SlotConfig = {
   maxWin: 4000,
   volatility: 'medium',
   symbols: [
-    { id: 'queen', name: 'Market Queen', pay: [0.1764, 1.512, 11.34], weight: 2, tier: 'high', glyph: '👑', color: '#ffcf5c' },
-    { id: 'bargain', name: 'Bargain (Wild)', pay: [0.189, 1.638, 12.28], weight: 2, tier: 'special', glyph: '🏷️', color: '#c6f24e' },
-    { id: 'radio', name: 'Radio', pay: [0.1134, 0.9448, 7.244], weight: 3, tier: 'high', glyph: '📻', color: '#a06bff' },
-    { id: 'shoes', name: 'Sneakers', pay: [0.06928, 0.5669, 4.283], weight: 5, tier: 'mid', glyph: '👟', color: '#3ad7ff' },
-    { id: 'fruit', name: 'Matoke', pay: [0.05039, 0.4157, 3.087], weight: 7, tier: 'mid', glyph: '🍌', color: '#e8d44d' },
-    { id: 'fabric', name: 'Kitenge', pay: [0.03779, 0.2771, 2.078], weight: 9, tier: 'mid', glyph: '🧵', color: '#ff8fb1' },
-    { id: 'pot', name: 'Clay Pot', pay: [0.0189, 0.1386, 1.008], weight: 13, tier: 'low', glyph: '🏺', color: '#c98b5c' },
-    { id: 'basket', name: 'Basket', pay: [0.0189, 0.1134, 0.8188], weight: 15, tier: 'low', glyph: '🧺', color: '#d8b98a' },
-    { id: 'stall', name: 'Stall (Scatter)', weight: 2, tier: 'special', glyph: '⛺', color: '#3ad7ff' },
-    { id: 'jamb', name: 'Shortchanged', weight: 2, tier: 'special', glyph: '🪙', color: '#ff5c78' },
+    { id: 'queen', name: 'Market Queen', pay: [0.1764, 1.512, 11.34], weight: 2, tier: 'high', glyph: '👑', color: '#ffcf5c', art: asset('/art/bazaar/queen.webp') },
+    { id: 'bargain', name: 'Bargain (Wild)', pay: [0.189, 1.638, 12.28], weight: 2, tier: 'special', glyph: '🏷️', color: '#c6f24e', art: asset('/art/bazaar/bargain.webp') },
+    { id: 'radio', name: 'Radio', pay: [0.1134, 0.9448, 7.244], weight: 3, tier: 'high', glyph: '📻', color: '#a06bff', art: asset('/art/bazaar/radio.webp') },
+    { id: 'shoes', name: 'Sneakers', pay: [0.06928, 0.5669, 4.283], weight: 5, tier: 'mid', glyph: '👟', color: '#3ad7ff', art: asset('/art/bazaar/shoes.webp') },
+    { id: 'fruit', name: 'Matoke', pay: [0.05039, 0.4157, 3.087], weight: 7, tier: 'mid', glyph: '🍌', color: '#e8d44d', art: asset('/art/bazaar/fruit.webp') },
+    { id: 'fabric', name: 'Kitenge', pay: [0.03779, 0.2771, 2.078], weight: 9, tier: 'mid', glyph: '🧵', color: '#ff8fb1', art: asset('/art/bazaar/fabric.webp') },
+    { id: 'pot', name: 'Clay Pot', pay: [0.0189, 0.1386, 1.008], weight: 13, tier: 'low', glyph: '🏺', color: '#c98b5c', art: asset('/art/bazaar/pot.webp') },
+    { id: 'basket', name: 'Basket', pay: [0.0189, 0.1134, 0.8188], weight: 15, tier: 'low', glyph: '🧺', color: '#d8b98a', art: asset('/art/bazaar/basket.webp') },
+    { id: 'stall', name: 'Stall (Scatter)', weight: 2, tier: 'special', glyph: '⛺', color: '#3ad7ff', art: asset('/art/bazaar/stall.webp') },
+    { id: 'jamb', name: 'Shortchanged', weight: 2, tier: 'special', glyph: '🪙', color: '#ff5c78', art: asset('/art/bazaar/jamb.webp') },
   ],
 }
 
