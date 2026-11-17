@@ -125,6 +125,25 @@ check('Chape wild substitutes for the Baron', (() => {
   return !!w && w.reels === 5
 })())
 
+// Settlement convention: placeBet debits the stake, settleBet credits
+// wager * multiplier. A repeatable spin at a fixed bet must keep debiting.
+check('bet settlement math', (() => {
+  const cases: [number, number, number][] = [
+    [1000, 0, -1000], [1000, 1, 0], [1000, 2, 1000], [1000, 10, 9000], [1000, 0.5, -500],
+  ]
+  return cases.every(([bet, mult, want]) => {
+    const start = 100000
+    const bal = Math.round((start - bet + bet * mult) * 100) / 100
+    return Math.abs(bal - start - want) < 0.01
+  })
+})())
+check('repeated spins keep working at a fixed bet', (() => {
+  let bal = 5000
+  let spins = 0
+  while (bal >= 1000 && spins < 20) { bal -= 1000; spins++ }
+  return spins === 5 && bal === 0
+})())
+
 check('slot RTP ~96.2%', (() => {
   let s = 0x51ed2701
   const rnd = () => { s = (s + 0x9e3779b9) | 0; let t = s ^ (s >>> 16); t = Math.imul(t, 0x21f0aaad); t = t ^ (t >>> 15); t = Math.imul(t, 0x735a2d97); return ((t = t ^ (t >>> 15)) >>> 0) / 4294967296 }

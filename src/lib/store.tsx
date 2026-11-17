@@ -121,6 +121,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const nonceRef = useRef(0)
   const clientSeedRef = useRef('')
   const prevBetsRef = useRef<BetRecord[]>([])
+  /** Live mirror of persisted state. setState updaters run during render, so
+   *  an action cannot rely on a flag it sets inside one to read back. */
+  const stateRef = useRef<Persisted>(state)
   const nonceUsedRef = useRef(0)
   const flashTimer = useRef<number | null>(null)
 
@@ -153,6 +156,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   nonceRef.current = state.seeds.nonce
   clientSeedRef.current = state.clientSeed
   prevBetsRef.current = state.bets
+  stateRef.current = state
 
   const toast = useCallback((t: Omit<Toast, 'id'>) => {
     const id = uid()
@@ -168,15 +172,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         toast({ kind: 'error', title: 'Invalid bet', body: 'Enter a wager greater than zero.' })
         return false
       }
-      let ok = false
-      setState((s) => {
-        if (wager > s.balance) return s
-        ok = true
-        const key = `${game}:${Date.now()}:${uid()}`
-        pendingRef.current.set(key, { wager, game })
-        return { ...s, balance: Math.round((s.balance - wager) * 100) / 100 }
-      })
-      return ok
+      // Read the balance from the live ref, never from inside the updater: the
+      // updater is deferred, so a flag written in there is not visible by the
+      // time this function returns.
+      const balance = stateRef.current.balance
+      if (wager > balance) {
+        toast({ kind: 'error', title: 'Insufficient balance', body: 'Lower your bet or top up to keep playing.' })
+        return false
+      }
+      const key = `${game}:${Date.now()}:${uid()}`
+      pendingRef.current.set(key, { wager, game })
+      stateRef.current = { ...stateRef.current, balance: Math.round(balance - wager) }
+      setState((s) => ({ ...s, balance: Math.round((s.balance - wager) * 100) / 100 }))
+      return true
     },
     [toast],
   )
@@ -284,15 +292,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const withdraw = useCallback(
     (amount: number) => {
-      let ok = false
-      setState((s) => {
-        if (amount > s.balance) return s
-        ok = true
-        return { ...s, balance: Math.round(s.balance - amount) }
-      })
-      if (ok) toast({ kind: 'success', title: 'Withdrawal submitted', body: `${amount.toLocaleString()} PX is on the way.` })
-      else toast({ kind: 'error', title: 'Insufficient balance', body: 'Reduce the amount and try again.' })
-      return ok
+      const balance = stateRef.current.balance
+      if (!(amount > 0) || amount > balance) {
+        toast({ kind: 'error', title: 'Insufficient balance', body: 'Reduce the amount and try again.' })
+        return false
+      }
+      stateRef.current = { ...stateRef.current, balance: Math.round(balance - amount) }
+      setState((s) => ({ ...s, balance: Math.round(s.balance - amount) }))
+      toast({ kind: 'success', title: 'Withdrawal submitted', body: `${amount.toLocaleString()} PX is on the way.` })
+      return true
     },
     [toast],
   )

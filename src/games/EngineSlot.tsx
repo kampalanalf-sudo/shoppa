@@ -43,6 +43,7 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
       setFreeSpins((n) => n - 1)
     }
 
+    safe(() => sfx.spinStart())
     safe(() => sfx.place())
     setSpinning(true)
     setGlow('none')
@@ -61,6 +62,11 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
           ? `${out.wins[0].symbol} ×${out.wins[0].multiplier}`
           : 'No win'
 
+    // mechanical reel stops, staggered so the drums feel physical
+    for (let r = 0; r < config.reels; r++) {
+      window.setTimeout(() => safe(() => sfx.reelStop(r)), 380 + r * 90)
+    }
+
     window.setTimeout(() => {
       setGrid(out.grid)
       setSpinning(false)
@@ -75,7 +81,7 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
       if (out.fine > 0) {
         setGlow('omen')
         flashLoss()
-        safe(() => sfx.lose())
+        safe(() => sfx.omen())
         toast({
           kind: 'error',
           title: 'Faith appeared',
@@ -84,14 +90,20 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
       } else if (out.triggered) {
         setGlow('free')
         setFreeSpins((n) => n + out.freeSpins)
-        safe(() => sfx.win())
+        safe(() => sfx.scatter())
+        window.setTimeout(() => safe(() => sfx.freespin()), 320)
         toast({ kind: 'success', title: 'Free spins!', body: `${out.scatters} scatters — ${out.freeSpins} free spins awarded.` })
       } else if (out.totalMultiplier >= bet * 0.2) {
         setGlow('win')
       }
 
-      if (out.totalMultiplier > 0) safe(() => (out.totalMultiplier >= bet * 0.5 ? sfx.bigwin() : sfx.win()))
+      if (out.totalMultiplier > 0 && out.fine === 0) {
+        safe(() => (out.totalMultiplier >= 8 ? sfx.bigwin() : sfx.win()))
+      }
 
+      // settleBet credits wager * multiplier, i.e. the full return including
+      // the stake. placeBet already debited it, so passing the full bet here is
+      // correct and matches every other game's convention.
       settleBet({
         game: id,
         wager: free ? 0 : bet,

@@ -9,27 +9,88 @@ import type { SlotConfig, SlotSymbolDef, Grid } from '../lib/slots/engine'
  * render without bespoke art.
  */
 
-function SymbolFace({ sym, face }: { sym: SlotSymbolDef; face: number }) {
+/**
+ * Deep-3D symbol tile.
+ *
+ * Portraits use generated art. Everything else is drawn as a layered vector
+ * tile: bevelled edge, radial body gradient, specular streak, inset shadow and
+ * an embossed glyph. Flat emoji alone read cheap next to the portraits, which
+ * is what made the board look empty.
+ */
+export function SymbolFace({ sym, face }: { sym: SlotSymbolDef; face: number }) {
   if (sym.art) {
     return (
-      <img
-        src={sym.art}
-        alt={sym.name}
-        draggable={false}
-        className="h-full w-full select-none object-cover"
-      />
+      <span className="relative h-full w-full">
+        <img
+          src={sym.art}
+          alt={sym.name}
+          draggable={false}
+          className="h-full w-full select-none object-cover"
+        />
+        {/* glass sheen so portraits sit in the same lighting as the tiles */}
+        <span
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              'linear-gradient(150deg, rgba(255,255,255,.22) 0%, rgba(255,255,255,.05) 26%, transparent 48%)',
+          }}
+        />
+      </span>
     )
   }
+
+  const c = sym.color
   return (
     <span
-      className="grid h-full w-full place-items-center"
+      className="relative grid h-full w-full place-items-center overflow-hidden"
       style={{
-        background: `radial-gradient(circle at 50% 38%, ${sym.color}33, transparent 68%)`,
-        fontSize: face * 0.44,
-        lineHeight: 1,
+        background: [
+          `radial-gradient(120% 90% at 50% 18%, ${c}55 0%, ${c}22 38%, transparent 72%)`,
+          'linear-gradient(170deg, #2a3245 0%, #1a2132 46%, #101724 100%)',
+        ].join(','),
+        boxShadow: [
+          'inset 0 2px 0 rgba(255,255,255,.16)',
+          'inset 0 -6px 12px -6px rgba(0,0,0,.9)',
+          `inset 0 0 22px -8px ${c}88`,
+        ].join(','),
       }}
     >
-      <span style={{ filter: 'drop-shadow(0 3px 6px rgba(0,0,0,.6))' }}>{sym.glyph}</span>
+      {/* bevel ring */}
+      <span
+        className="pointer-events-none absolute inset-[6%] rounded-[18%]"
+        style={{
+          border: `1px solid ${c}44`,
+          boxShadow: `inset 0 1px 0 ${c}55, 0 0 14px -4px ${c}77`,
+        }}
+      />
+      {/* specular streak */}
+      <span
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'linear-gradient(145deg, rgba(255,255,255,.20) 0%, rgba(255,255,255,.04) 18%, transparent 40%)',
+        }}
+      />
+      {/* embossed glyph, with a 3D drop shadow and a lit top edge */}
+      <span
+        className="relative select-none"
+        style={{
+          fontSize: face * 0.46,
+          lineHeight: 1,
+          filter: `drop-shadow(0 4px 5px rgba(0,0,0,.75)) drop-shadow(0 0 10px ${c}66)`,
+          textShadow: `0 1px 0 ${c}aa, 0 -1px 0 rgba(0,0,0,.6)`,
+        }}
+      >
+        {sym.glyph}
+      </span>
+      {/* bottom contact shadow gives the tile physical depth */}
+      <span
+        className="pointer-events-none absolute inset-x-0 bottom-0"
+        style={{
+          height: '26%',
+          background: 'linear-gradient(to top, rgba(0,0,0,.55), transparent)',
+        }}
+      />
     </span>
   )
 }

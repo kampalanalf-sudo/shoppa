@@ -49,6 +49,7 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
         }
         if (!placeBet('bonni', stake)) return false
       }
+      sfx.spinStart()
       sfx.place()
       setSpinning(true)
       setGlow('none')
@@ -98,10 +99,16 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
             ? settleBet({ game: 'bonni', wager: 0, multiplier: 0, detail: 'free spin', silent: true })
             : 0
 
+        if (res.chase) window.setTimeout(() => sfx.freespin(), 260)
+        else if (res.scatters >= 3) window.setTimeout(() => sfx.scatter(), 260)
+
         if (res.totalMultiplier > 0) {
           setGlow(res.totalMultiplier >= 40 ? 'bigwin' : 'win')
           if (sound) (res.totalMultiplier >= 40 ? sfx.bigwin : sfx.win)()
-        } else if (sound) sfx.lose()
+        } else if (sound) sfx.omen()
+        if (sound) {
+          for (let r = 0; r < 5; r++) window.setTimeout(() => sfx.reelStop(r), 300 + r * 90)
+        }
 
         if (res.chase) {
           setGlow('chase')
