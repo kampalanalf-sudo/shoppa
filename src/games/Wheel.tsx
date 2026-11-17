@@ -204,12 +204,25 @@ export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => vo
         </div>
       }
     >
-      <div className="relative mx-auto aspect-square w-full max-w-[420px] py-3">
+      <div className="relative mx-auto aspect-square w-full max-w-[420px] py-3" style={{ perspective: '1100px' }}>
+        <div
+          className="pointer-events-none absolute inset-x-6 bottom-1 h-10 rounded-[50%] opacity-70"
+          style={{ background: 'radial-gradient(ellipse at center, rgba(198,242,78,.28), transparent 72%)', filter: 'blur(12px)' }}
+        />
         <div className="absolute left-1/2 top-0 z-20 -translate-x-1/2">
           <div className="h-0 w-0 border-x-[11px] border-t-[18px] border-x-transparent border-t-neon-lime drop-shadow-[0_0_10px_rgba(198,242,78,.9)]" />
         </div>
 
-        <div className="absolute inset-3 rounded-full bg-gradient-to-br from-ink-700 to-ink-900 p-[6px] shadow-[0_0_0_1px_rgba(255,255,255,.08),0_24px_60px_-24px_#000]">
+        <div
+          className="absolute inset-3 rounded-full p-[6px]"
+          style={{
+            transform: 'rotateX(16deg)',
+            transformStyle: 'preserve-3d',
+            background: 'conic-gradient(from 210deg, #3a4560, #131a28 25%, #46536f 50%, #101623 75%, #3a4560)',
+            boxShadow:
+              '0 0 0 1px rgba(255,255,255,.12), 0 30px 70px -26px #000, 0 12px 0 -3px #0a0f19, inset 0 2px 0 rgba(255,255,255,.18)',
+          }}
+        >
           <svg
             viewBox="0 0 200 200"
             className="h-full w-full"
@@ -262,9 +275,16 @@ export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => vo
             <circle cx="100" cy="100" r="19" fill="url(#wheelHub)" stroke="rgba(0,0,0,.35)" strokeWidth="1.5" />
             <circle cx="100" cy="100" r="7" fill="#0b0d15" opacity="0.5" />
           </svg>
+          <div
+            className="pointer-events-none absolute inset-[6px] rounded-full"
+            style={{
+              background: 'radial-gradient(circle at 32% 22%, rgba(255,255,255,.28), rgba(255,255,255,.05) 26%, transparent 52%)',
+              boxShadow: 'inset 0 0 42px 10px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.35)',
+            }}
+          />
         </div>
 
-        <div className="pointer-events-none absolute inset-3 rounded-full">
+        <div className="pointer-events-none absolute inset-3 rounded-full" style={{ transform: 'rotateX(16deg)' }}>
           {Array.from({ length: 24 }, (_, i) => {
             const a = (i / 24) * Math.PI * 2
             return (

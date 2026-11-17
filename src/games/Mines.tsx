@@ -177,40 +177,62 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
         </div>
       }
     >
-      <div className="mx-auto grid max-w-[520px] grid-cols-5 gap-1.5 sm:gap-2.5">
+      <div className="mx-auto grid max-w-[520px] grid-cols-5 gap-1.5 sm:gap-2.5" style={{ perspective: "900px" }}>
         {Array.from({ length: GRID }, (_, i) => {
           const shown = revealed.includes(i)
           const revealedMine = !active && mineSet.has(i) && !shown
           return (
-            <button
+            <div
               key={i}
-              type="button"
+              className={`flip3d aspect-square ${shown || revealedMine ? 'is-revealed' : ''} ${active && !shown ? 'cursor-pointer' : ''}`}
               onClick={() => pick(i)}
-              disabled={!active || shown}
+              role="button"
+              tabIndex={active && !shown ? 0 : -1}
               aria-label={`Tile ${i + 1}`}
-              className={`group relative aspect-square rounded-xl border transition-all duration-200 ${
-                shown
-                  ? 'border-neon-lime/50 bg-gradient-to-br from-neon-lime/25 to-neon-green/10 shadow-glow'
-                  : revealedMine
-                    ? 'border-rose-500/40 bg-gradient-to-br from-rose-500/25 to-rose-900/20'
-                    : 'border-white/[0.08] bg-gradient-to-b from-ink-700/80 to-ink-800 shadow-[inset_0_1px_0_rgba(255,255,255,.08),0_6px_14px_-8px_#000] hover:border-white/25 hover:from-ink-600/80'
-              } ${active && !shown ? 'cursor-pointer active:scale-95' : ''}`}
+              aria-disabled={!active || shown}
+              onKeyDown={(e) => {
+                if ((e.key === 'Enter' || e.key === ' ') && active && !shown) { e.preventDefault(); pick(i) }
+              }}
             >
-              <span className={`absolute inset-0 grid place-items-center transition ${
-                shown || revealedMine ? 'scale-100 opacity-100' : 'scale-75 opacity-0 group-hover:scale-90 group-hover:opacity-25'
-              }`}>
-                {shown ? (
-                  <IconDiamond size={26} className="text-neon-lime drop-shadow-[0_0_10px_rgba(198,242,78,.9)]" />
-                ) : revealedMine ? (
-                  <BombIcon />
-                ) : (
-                  <IconDiamond size={22} className="text-white/40" />
-                )}
-              </span>
-              {!shown && !revealedMine && (
-                <span className="absolute bottom-1 right-1.5 h-1 w-1 rounded-full bg-white/20" />
-              )}
-            </button>
+              <div className="flip3d-inner rounded-xl">
+                {/* face-down: embossed 3D plate */}
+                <div
+                  className={`flip3d-face border border-white/[0.09] rounded-xl transition-all duration-200 ${
+                    active ? 'hover:border-neon-lime/40 hover:brightness-125' : ''
+                  }`}
+                  style={{
+                    background:
+                      'linear-gradient(155deg, #2a3348 0%, #1a2132 42%, #131a28 62%, #202a3d 100%)',
+                    boxShadow:
+                      'inset 0 1px 0 rgba(255,255,255,.14), inset 0 -2px 3px rgba(0,0,0,.6), 0 8px 16px -10px rgba(0,0,0,.95)',
+                  }}
+                >
+                  <span className="absolute inset-[14%] rounded-md border border-white/[0.05]" />
+                  <IconDiamond size={20} className="text-white/[0.13]" />
+                  <span className="absolute bottom-1 right-1.5 h-1 w-1 rounded-full bg-white/25 shadow-[0_0_6px_rgba(255,255,255,.5)]" />
+                </div>
+                {/* face-up: gem or bomb */}
+                <div
+                  className={`flip3d-face flip3d-back rounded-xl border ${
+                    shown ? 'border-neon-lime/60' : 'border-rose-500/50'
+                  }`}
+                  style={{
+                    background: shown
+                      ? 'radial-gradient(circle at 40% 30%, rgba(198,242,78,.42), rgba(30,44,20,.95) 70%)'
+                      : 'radial-gradient(circle at 40% 30%, rgba(255,80,110,.42), rgba(46,14,22,.95) 70%)',
+                    boxShadow: shown
+                      ? 'inset 0 1px 0 rgba(255,255,255,.3), 0 0 26px -4px rgba(198,242,78,.75)'
+                      : 'inset 0 1px 0 rgba(255,255,255,.2), 0 0 26px -4px rgba(255,80,110,.7)',
+                  }}
+                >
+                  {shown ? (
+                    <IconDiamond size={30} className="text-neon-lime drop-shadow-[0_0_12px_rgba(198,242,78,1)]" />
+                  ) : (
+                    <BombIcon />
+                  )}
+                </div>
+              </div>
+            </div>
           )
         })}
       </div>

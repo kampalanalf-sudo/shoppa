@@ -184,7 +184,7 @@ export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => vo
               className={`grid gap-1.5 rounded-xl border p-1.5 transition ${
                 fi === level && active ? 'border-neon-lime/35 bg-neon-lime/[0.05]' : isCrashedRow ? 'border-rose-500/30 bg-rose-500/[0.06]' : 'border-white/[0.05] bg-white/[0.015]'
               }`}
-              style={{ gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))` }}
+              style={{ gridTemplateColumns: `repeat(${cols}, minmax(0,1fr))`, perspective: "700px" }}
             >
               <span className="col-span-full flex items-center justify-between px-1 text-[9px] font-bold uppercase tracking-wider text-slate-600">
                 <span>Floor {fi + 1}</span>
@@ -203,15 +203,25 @@ export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => vo
                     disabled={locked || !active}
                     className={`relative h-11 rounded-lg border text-[10px] font-bold transition-all duration-200 ${
                       isPicked
-                        ? 'border-neon-lime/50 bg-gradient-to-br from-neon-lime/25 to-neon-green/5 text-neon-lime shadow-glow'
+                        ? 'border-neon-lime/60 bg-gradient-to-br from-neon-lime/30 to-neon-green/10 text-neon-lime'
                         : isCrash
                           ? 'border-rose-500/50 bg-rose-500/20'
                           : isSafeHidden
                             ? 'border-white/[0.06] bg-white/[0.02] opacity-60'
                             : fi >= level && active
-                              ? 'border-white/[0.08] bg-gradient-to-b from-ink-700 to-ink-800 text-slate-500 hover:border-neon-lime/40 hover:from-ink-600 active:scale-95'
+                              ? 'border-white/[0.10] bg-gradient-to-b from-[#2b3449] via-[#1c2434] to-[#121926] text-slate-400 hover:border-neon-lime/50 hover:from-[#37425c] active:translate-y-[2px]'
                               : 'border-white/[0.06] bg-ink-800/50 text-slate-600'
                     }`}
+                    style={{
+                      transformStyle: 'preserve-3d',
+                      boxShadow: isPicked
+                        ? 'inset 0 2px 0 rgba(255,255,255,.35), inset 0 -3px 0 rgba(0,0,0,.45), 0 0 26px -4px rgba(198,242,78,.85), 0 6px 0 -1px #5d7d12'
+                        : isCrash
+                          ? 'inset 0 2px 0 rgba(255,255,255,.2), inset 0 -3px 0 rgba(0,0,0,.45), 0 6px 0 -1px #5c1327'
+                          : fi >= level && active
+                            ? 'inset 0 2px 0 rgba(255,255,255,.16), inset 0 -3px 0 rgba(0,0,0,.5), 0 5px 0 -1px #070b12, 0 10px 16px -8px rgba(0,0,0,.95)'
+                            : 'inset 0 1px 0 rgba(255,255,255,.05)',
+                    }}
                   >
                     {isPicked ? <IconDiamond size={16} className="mx-auto" /> : isCrash ? <span className="text-rose-300">💣</span> : isSafeHidden ? <IconDiamond size={12} className="mx-auto text-white/25" /> : '?'}
                   </button>

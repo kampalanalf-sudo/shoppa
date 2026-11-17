@@ -249,10 +249,22 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
               <stop offset="0.45" stopColor="#c6f24e" />
               <stop offset="1" stopColor="#7dd31c" />
             </radialGradient>
-            <linearGradient id="pegGrad" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#ffffff" stopOpacity="0.85" />
-              <stop offset="1" stopColor="#8892a8" stopOpacity="0.5" />
-            </linearGradient>
+            <radialGradient id="pegGrad" cx="34%" cy="28%">
+              <stop offset="0" stopColor="#ffffff" />
+              <stop offset="0.4" stopColor="#dfe7f5" />
+              <stop offset="0.75" stopColor="#8b97ae" />
+              <stop offset="1" stopColor="#4d5668" />
+            </radialGradient>
+            <radialGradient id="pegHalo" cx="50%" cy="50%">
+              <stop offset="0" stopColor="#c6f24e" stopOpacity="0.5" />
+              <stop offset="1" stopColor="#c6f24e" stopOpacity="0" />
+            </radialGradient>
+            <filter id="pegShadow" x="-60%" y="-60%" width="220%" height="220%">
+              <feDropShadow dx="0" dy="1.4" stdDeviation="1.1" floodColor="#000" floodOpacity="0.55" />
+            </filter>
+            <filter id="ballShadow" x="-70%" y="-70%" width="240%" height="240%">
+              <feDropShadow dx="0" dy="3" stdDeviation="2.4" floodColor="#000" floodOpacity="0.5" />
+            </filter>
             {table.map((m, i) => (
               <linearGradient key={i} id={`bk${i}`} x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0" stopColor={bucketColor(i, table.length, 1)} />
@@ -262,7 +274,14 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
           </defs>
 
           {geometry.map((p, i) => (
-            <circle key={i} cx={p.x} cy={p.y} r={2.6} fill="url(#pegGrad)" />
+            <circle key={`s${i}`} cx={p.x + 0.5} cy={p.y + 1.6} r={2.4} fill="#000" opacity={0.4} />
+          ))}
+          {geometry.map((p, i) => (
+            <g key={i} filter="url(#pegShadow)">
+              <circle cx={p.x} cy={p.y} r={4.6} fill="url(#pegHalo)" />
+              <circle cx={p.x} cy={p.y} r={2.6} fill="url(#pegGrad)" />
+              <circle cx={p.x - 0.75} cy={p.y - 0.85} r={0.62} fill="#fff" opacity={0.95} />
+            </g>
           ))}
 
           {/* buckets */}
@@ -278,8 +297,18 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
                   height={30}
                   rx={6}
                   fill={`url(#bk${i})`}
-                  stroke="rgba(255,255,255,.14)"
-                  strokeWidth={0.8}
+                  stroke="rgba(255,255,255,.35)"
+                  strokeWidth={0.9}
+                />
+                {/* glossy top edge for a moulded-plastic look */}
+                <rect
+                  x={x - stepX * 0.42 + 1.4}
+                  y={y + 1.4}
+                  width={stepX * 0.84 - 2.8}
+                  height={5}
+                  rx={3}
+                  fill="#fff"
+                  opacity={0.22}
                 />
                 <text
                   x={x}
@@ -390,11 +419,16 @@ function PlinkoBall({
   }, [])
 
   return (
-    <g style={{ filter: 'drop-shadow(0 0 8px rgba(198,242,78,.65))' }}>
-      <circle cx={pos.x} cy={pos.y} r={6.4} fill="url(#ballGrad)">
-        <animate attributeName="r" values="6.4;7;6.4" dur="0.4s" repeatCount="indefinite" />
-      </circle>
-      <circle cx={pos.x - 2} cy={pos.y - 2.2} r={2} fill="#ffffff" opacity={0.6} />
+    <g>
+      {/* cast shadow on the board */}
+      <ellipse cx={pos.x + 1.6} cy={pos.y + 5.2} rx={5.6} ry={2.4} fill="#000" opacity={0.4} />
+      <g filter="url(#ballShadow)">
+        <circle cx={pos.x} cy={pos.y} r={6.4} fill="url(#ballGrad)" />
+      </g>
+      {/* rim light + specular highlight make it read as a sphere */}
+      <circle cx={pos.x} cy={pos.y} r={6.4} fill="none" stroke="#f4ffd1" strokeWidth={0.9} opacity={0.55} />
+      <ellipse cx={pos.x - 2.2} cy={pos.y - 2.4} rx={2.1} ry={1.6} fill="#ffffff" opacity={0.8} transform={`rotate(-28 ${pos.x - 2.2} ${pos.y - 2.4})`} />
+      <circle cx={pos.x + 1.8} cy={pos.y + 2.2} r={1.2} fill="#7dd31c" opacity={0.5} />
     </g>
   )
 }
