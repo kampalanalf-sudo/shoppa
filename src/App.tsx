@@ -12,6 +12,7 @@ import { Cashout } from './pages/Cashout'
 import { ChatRoom } from './components/ChatRoom'
 import { TopUpPanel } from './components/TopUpPanel'
 import { TopUpSuccess } from './pages/TopUpSuccess'
+import { AdminParked } from './pages/AdminParked'
 import { BonniClyve } from './games/BonniClyve'
 import { EngineSlot } from './games/EngineSlot'
 import { CHAPE, BLUE_MOUNTAIN } from './lib/slots/games'
@@ -33,6 +34,7 @@ type View =
   | { name: 'cashout' }
   | { name: 'auth' }
   | { name: 'topup-success'; reference: string | null }
+  | { name: 'admin-parked' }
 
 function Shell() {
   const { sound, setFairOpen, setWalletOpen, hydrated } = useStore()
@@ -62,6 +64,7 @@ function Shell() {
       if (h === 'proxicash') { setView({ name: 'proxicash' }); return }
       if (h === 'cashout') { setView({ name: 'cashout' }); return }
       if (h === 'auth') { setView({ name: 'auth' }); return }
+      if (h === 'admin/parked') { setView({ name: 'admin-parked' }); return }
       if (h.startsWith('topup-success')) {
         const ref = new URLSearchParams(h.split('?')[1] || '').get('reference')
         setView({ name: 'topup-success', reference: ref })
@@ -199,6 +202,7 @@ function Shell() {
         {isProxiCash && <ProxiCash onBack={home} />}
         {view.name === 'cashout' && <Cashout onBack={home} />}
         {view.name === 'auth' && <Auth onDone={home} />}
+        {view.name === 'admin-parked' && <AdminParked onHome={home} />}
         {view.name === 'topup-success' && (
           <TopUpSuccess
             reference={view.reference}
