@@ -9,7 +9,11 @@
     "preview": "vite preview --host 0.0.0.0 --port 4173",
     "test": "vite build --config smoke/vite.smoke.config.ts && node smoke/dist/entry.js",
     "test:ui": "vite build --config smoke/vite.ui.config.ts && node smoke/dist-ui/ui.js",
-    "test:layout": "vite build --config smoke/vite.layout.config.ts && node smoke/dist-layout/layout.js"
+    "test:layout": "vite build --config smoke/vite.layout.config.ts && node smoke/dist-layout/layout.js",
+    "typecheck:api": "tsc -p tsconfig.api.json",
+    "test:dg": "vite build --config smoke/vite.dg.config.ts && node smoke/dist-dg/dg.js",
+    "test:routes": "vite build --config smoke/vite.routes.config.ts && node smoke/dist-routes/routes.js",
+    "test:webhook": "vite build --config smoke/vite.wh.config.ts && node smoke/dist-wh/wh.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",
@@ -17,6 +21,7 @@
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
+    "@types/node": "^22.20.5",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.0.4",

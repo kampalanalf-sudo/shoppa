@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../lib/auth'
-import { callFunction, supabase } from '../lib/supabase'
+import { supabase } from '../lib/supabase'
+import { disburse, usePaymentPoll } from '../lib/payments'
 import { money } from '../lib/format'
 import { pxToUgx, railForPhone, validPhone } from '../lib/proxicash'
 import { sfx } from '../lib/sound'
@@ -42,6 +43,8 @@ export function Cashout({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [rows, setRows] = useState<Row[]>([])
+  const [reference, setReference] = useState<string | null>(null)
+  const poll = usePaymentPoll(reference)
 
   const ugx = useMemo(() => pxToUgx(amount), [amount])
   const rail = useMemo(() => railForPhone(phone), [phone])
@@ -89,11 +92,21 @@ export function Cashout({ onBack }: { onBack: () => void }) {
       })
       if (rpcErr) throw new Error(rpcErr.message)
 
-      // 2. ask the edge function to move the money
-      const res = await callFunction<{ status: string; message?: string; reference?: string }>(
-        'cashout',
-        { cashoutId: data, asset },
-      )
+      // 2. move the money. Mobile money goes through our server route, which
+      //    holds the DGateway key; crypto stays on the ProxiCash desk.
+      let res: { message?: string; reference?: string }
+      if (tab === 'momo') {
+        res = await disburse({
+          amount: Math.round(ugx),
+          currency: 'UGX',
+          phone: phone.trim(),
+          description: `FloatBet payout ${String(data).slice(0, 8)}`,
+          cashoutId: String(data),
+        })
+        setReference(res.reference ?? null)
+      } else {
+        res = { message: 'Crypto payout recorded. Send the exact amount to be contacted by the ProxiCash desk.' }
+      }
 
       // 3. remember the phone for next time
       if (tab === 'momo' && !profile?.phone) void updateProfile({ phone })
@@ -224,6 +237,21 @@ export function Cashout({ onBack }: { onBack: () => void }) {
 
           {error && (
             <div className="mb-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-[11.5px] text-rose-200">{error}</div>
+          )}
+          {poll.state === 'pending' && (
+            <div className="mb-2 rounded-lg border border-neon-cyan/30 bg-neon-cyan/10 px-2.5 py-2 text-[11.5px] text-neon-cyan">
+              Check your phone and approve the prompt
+            </div>
+          )}
+          {poll.state === 'completed' && (
+            <div className="mb-2 flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-2 text-[11.5px] text-emerald-200">
+              <IconCheck size={12} /> Payout sent
+            </div>
+          )}
+          {poll.state === 'failed' && (
+            <div className="mb-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-[11.5px] text-rose-200">
+              Payout failed — the PX has been returned to your balance.
+            </div>
           )}
           {notice && (
             <div className="mb-2 flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-2 text-[11.5px] text-emerald-200">
