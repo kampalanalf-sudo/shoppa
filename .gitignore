@@ -13,3 +13,5 @@ smoke/dist-layout
 smoke/dist-dg
 smoke/dist-routes
 smoke/dist-wh
+smoke/dist-live
+smoke/dist-*
