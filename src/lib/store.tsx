@@ -7,6 +7,9 @@ import type { ExchangeOrder } from './proxicash'
 
 const KEY = 'floatbet.v1'
 
+/** Every new player is granted 10,000 PX, worth 1,000 UGX at 10 PX/UGX. */
+export const STARTING_PX = 10000
+
 type Persisted = {
   balance: number
   bets: BetRecord[]
@@ -32,12 +35,12 @@ const emptyStats: Stats = {
 }
 
 const defaults = (): Persisted => ({
-  balance: 2500000,
+  balance: STARTING_PX,
   bets: [],
   stats: emptyStats,
   seeds: { serverSeed: randomHex(32), serverSeedHash: '', clientSeed: randomHex(8), nonce: 0, prevServerSeed: null },
   clientSeed: randomHex(8),
-  username: 'FloatGuest',
+  username: '',
   sound: true,
   totalDeposited: 0,
   balanceHidden: false,
@@ -345,7 +348,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const d = defaults()
     d.seeds.serverSeedHash = state.seeds.serverSeedHash
     setState(d)
-    toast({ kind: 'info', title: 'Demo account reset', body: 'Balance restored to 2,500,000 PX.' })
+    toast({ kind: 'info', title: 'Account reset', body: `Balance restored to ${STARTING_PX.toLocaleString()} PX.` })
   }, [state.seeds.serverSeedHash, toast])
 
   const value = useMemo<Ctx>(
