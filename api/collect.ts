@@ -12,7 +12,8 @@
 //
 // The caller stores `reference` against the order and waits for the webhook.
 import {
-  GatewayError, collectPayment, isWholeAmount, normalizeCurrency, normalizePhone,
+  GatewayError, assertLiveSafety, collectPayment, isLiveMode, isWholeAmount,
+  normalizeCurrency, normalizePhone,
 } from './_lib/dgateway'
 import {
   json, methodNotAllowed, newOrderRef, preflight, publicOrigin, readJson, requireUser, restRpc,
@@ -37,11 +38,29 @@ export default async function handler(req: Request): Promise<Response> {
   const user = await requireUser(req)
   if (!user) return json({ error: 'not authenticated' }, 401)
 
+  // Live money: refuse to charge unless the webhook can be verified.
+  try {
+    assertLiveSafety()
+  } catch (e) {
+    const err = e as GatewayError
+    return json({ error: err.message, code: err.code }, err.httpStatus)
+  }
+
   const currency = normalizeCurrency(body.currency || 'UGX')
 
   // Mobile money is whole units. Stripe USD is cents. Either way: integer.
   if (!isWholeAmount(body.amount)) {
     return json({ error: 'amount must be a whole positive integer in minor units' }, 400)
+  }
+
+  // Ceilings keep a fat-fingered or malicious request from moving a huge sum.
+  const MAX_COLLECT = currency === 'UGX' ? 5_000_000 : 500_00
+  if (body.amount > MAX_COLLECT) {
+    return json({ error: `Maximum top-up is ${MAX_COLLECT.toLocaleString()} ${currency}.` }, 400)
+  }
+  const MIN_COLLECT = currency === 'UGX' ? 500 : 100
+  if (body.amount < MIN_COLLECT) {
+    return json({ error: `Minimum top-up is ${MIN_COLLECT.toLocaleString()} ${currency}.` }, 400)
   }
 
   const phone = normalizePhone(body.phone || body.phone_number || '')

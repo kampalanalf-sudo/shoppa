@@ -13,7 +13,8 @@
     "typecheck:api": "tsc -p tsconfig.api.json",
     "test:dg": "vite build --config smoke/vite.dg.config.ts && node smoke/dist-dg/dg.js",
     "test:routes": "vite build --config smoke/vite.routes.config.ts && node smoke/dist-routes/routes.js",
-    "test:webhook": "vite build --config smoke/vite.wh.config.ts && node smoke/dist-wh/wh.js"
+    "test:webhook": "vite build --config smoke/vite.wh.config.ts && node smoke/dist-wh/wh.js",
+    "test:live": "vite build --config smoke/vite.live.config.ts && node smoke/dist-livemode/live.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",

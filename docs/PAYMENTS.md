@@ -1,5 +1,8 @@
 # DGateway payments
 
+> **Current key is LIVE (`dgw_live_...`).** Real money moves. Read
+> "Live-mode guards" below before deploying.
+
 Four server routes under `/api`. The API key lives **only** in server env and is
 never bundled into the browser — verified by grepping `dist/` for the key.
 
@@ -26,8 +29,26 @@ prefix them with `VITE_`.
 | `SUPABASE_URL` | `https://<ref>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | service role key — **server only** |
 
-`DGATEWAY_WEBHOOK_SECRET` is required. The webhook **fails closed**: with no
-secret configured every webhook is rejected with 401, and no money moves.
+`DGATEWAY_WEBHOOK_SECRET` is **required in live mode**. See the guards below.
+
+## Live-mode guards
+
+`isLiveMode()` is true when `DGATEWAY_API_KEY` starts with `dgw_live_`. In that
+state the server refuses to take money unless it can verify the result:
+
+| Guard | Behaviour |
+|---|---|
+| `assertLiveSafety()` | Live key + no `DGATEWAY_WEBHOOK_SECRET` => `/api/collect` and `/api/disburse` return **503 `WEBHOOK_SECRET_MISSING`** and **no charge is attempted**. |
+| Webhook signature | Always fail-closed. No secret means 401 on every webhook. |
+| Top-up ceiling | 5,000,000 UGX max, 500 UGX min per charge. |
+| Payout ceiling | 2,000,000 UGX max per payout; larger amounts need manual review. |
+| Amount integrity | Webhook re-fetches from DGateway and rejects on amount/currency mismatch. |
+
+The reasoning: a live key with an unverifiable webhook is the one combination
+where a player can be charged and never credited. Rather than let that happen
+quietly, payments stop and say why.
+
+Sandbox keys (`dgw_test_`) skip only the secret requirement, for local dev.
 
 ## Registering the webhook
 
@@ -98,6 +119,7 @@ credits 50,000 PX.
 
 ```bash
 npm run typecheck:api   # typecheck the server routes
+npm run test:live       # live-mode guards: 503 without a secret, ceilings
 npm run test:dg         # phone/amount/status normalisation (24 assertions)
 npm run test:routes     # auth gating, payload shape, 10s memoisation (28)
 npm run test:webhook    # signature, idempotency, mismatch, fulfil (13)
@@ -107,11 +129,14 @@ All of the above pass. The route tests mock `fetch`, so they run offline and
 assert the exact payload sent to DGateway — including that the leading `0`
 survives and that decimals are rejected before an upstream call.
 
-## Not yet verified
+## First live call
 
-The sandbox this was built in **cannot reach `desispay.com`** (TCP reset), so the
-key has never been exercised against the live API. The first real call happens
-on your deployment. Check `/api/status` on a known reference with:
+Take **one small payment** and watch it end-to-end before letting players in:
+start a 1,000 UGX top-up, approve the prompt, confirm the webhook returns 200
+and the balance increases by exactly 10,000 PX (10 PX = 1 UGX). Then run the
+same test for a 1,000 UGX payout. Only then open it up.
+
+Check `/api/status` on a known reference with:
 
 ```bash
 curl -H "Authorization: Bearer <supabase access token>" \

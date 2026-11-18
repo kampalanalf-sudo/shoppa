@@ -15,3 +15,4 @@ smoke/dist-routes
 smoke/dist-wh
 smoke/dist-live
 smoke/dist-*
+smoke/dist-livemode

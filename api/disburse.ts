@@ -10,7 +10,7 @@
 // When `cashoutId` is supplied the payout is tied to the cashout hold created by
 // request_cashout(), so the PX is only released once the provider confirms.
 import {
-  GatewayError, disbursePayment, isWholeAmount, normalizeCurrency, normalizePhone,
+  GatewayError, assertLiveSafety, disbursePayment, isWholeAmount, normalizeCurrency, normalizePhone,
 } from './_lib/dgateway'
 import { json, methodNotAllowed, newOrderRef, preflight, readJson, requireUser, restRpc } from './_lib/http'
 
@@ -34,6 +34,13 @@ export default async function handler(req: Request): Promise<Response> {
   const user = await requireUser(req)
   if (!user) return json({ error: 'not authenticated' }, 401)
 
+  try {
+    assertLiveSafety()
+  } catch (e) {
+    const err = e as GatewayError
+    return json({ error: err.message, code: err.code }, err.httpStatus)
+  }
+
   const currency = normalizeCurrency(body.currency || 'UGX')
 
   if (!isWholeAmount(body.amount)) {
@@ -51,6 +58,14 @@ export default async function handler(req: Request): Promise<Response> {
   // Smallest sane guard so a malformed request cannot drain a wallet.
   if (currency === 'UGX' && body.amount < 1000) {
     return json({ error: 'Minimum payout is 1,000 UGX.' }, 400)
+  }
+  // Hard per-payout cap. Anything larger needs a manual, human review.
+  const MAX_PAYOUT = currency === 'UGX' ? 2_000_000 : 200_00
+  if (body.amount > MAX_PAYOUT) {
+    return json(
+      { error: `Payouts above ${MAX_PAYOUT.toLocaleString()} ${currency} need manual review. Contact support.` },
+      400,
+    )
   }
 
   const description = (body.description || 'FloatBet payout').slice(0, 120).trim()
