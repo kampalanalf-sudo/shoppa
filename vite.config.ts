@@ -18,4 +18,16 @@ export default defineConfig({
     hmr: { clientPort: 443 },
   },
   preview: { host: '0.0.0.0', port: 4173, allowedHosts: true },
+  build: {
+    rollupOptions: {
+      output: {
+        // supabase-js is large and changes far less often than the games, so
+        // give it its own long-lived chunk instead of busting the main bundle.
+        manualChunks: {
+          supabase: ['@supabase/supabase-js'],
+          react: ['react', 'react-dom'],
+        },
+      },
+    },
+  },
 })

@@ -315,7 +315,7 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
         Space to spin · reels lock left to right · every outcome is HMAC-SHA256 verifiable
       </p>
       <p className="mt-1 text-center text-[9.5px] text-slate-700">
-        Demo slot · characters are fictional caricatures · 18+
+        Characters are fictional · 18+ · Play responsibly
       </p>
       <span className="sr-only">Max win {money(potential)} PX</span>
     </GameShell>

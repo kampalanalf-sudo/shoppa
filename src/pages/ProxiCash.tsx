@@ -215,7 +215,7 @@ export function ProxiCash({ onBack }: Props) {
               <IconArrowUpRight size={15} />
             </button>
             <p className="mt-2 text-center text-[10px] text-slate-600">
-              Demo exchange · rates are reference rates, no real funds move · 18+
+              Cashout via ProxiCash · rates are reference rates · 18+
             </p>
           </div>
 

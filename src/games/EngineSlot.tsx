@@ -280,7 +280,7 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
       </div>
 
       <p className="mt-2 text-center text-[9.5px] text-slate-600">
-        Space to spin · Demo slot · characters are fictional caricatures · 18+
+        Space to spin · Characters are fictional · 18+ · Play responsibly
       </p>
     </GameShell>
   )
