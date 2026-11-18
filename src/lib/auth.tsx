@@ -11,6 +11,8 @@ export type PlayerProfile = {
   phone_verified: boolean
   age_confirmed: boolean
   suspended: boolean
+  /** Admin-only pages. The API re-checks this server-side on every call. */
+  is_admin: boolean
 }
 
 export type Wallet = {

@@ -37,5 +37,37 @@ ok('quantity multiplies the credit', /greatest\(coalesce\(p_quantity, 1\), 1\)/.
 ok('store_topups has RLS enabled', /alter table store_topups enable row level security/.test(sql))
 ok('players can read only their own top-ups', /user_id = auth\.uid\(\)/.test(sql))
 
+// ---------------------------------------------------------------- 0004 ------
+const sql4 = readFileSync('supabase/migrations/0004_store_topup_admin.sql', 'utf8')
+
+const grants4 = sql4.split('\n').filter((l) => l.trim().startsWith('grant execute on function'))
+const g4 = (fn: string) => grants4.filter((l) => l.includes(fn))
+
+ok('0004: release is service_role only',
+  g4('admin_release_store_topup').length === 1 && g4('admin_release_store_topup')[0].includes('to service_role'))
+ok('0004: dismiss is service_role only',
+  g4('dismiss_store_topup').length === 1 && g4('dismiss_store_topup')[0].includes('to service_role'))
+ok('0004: no admin RPC is granted to authenticated players',
+  !grants4.some((l) => l.includes('to authenticated')))
+ok('0004: the unattributed 0003 release is revoked',
+  /revoke all on function release_store_topup\(text, uuid\) from service_role;/.test(sql4))
+
+const rel = sql4.slice(sql4.indexOf('function admin_release_store_topup'), sql4.indexOf('function dismiss_store_topup'))
+ok('0004: release requires an admin id', /if p_admin_id is null then raise exception/.test(rel))
+ok('0004: release refuses an already-credited row', /already been credited/.test(rel))
+ok('0004: release refuses a row the gateway has not settled', /settled_at is null/.test(rel))
+ok('0004: release refuses a failed row', /failed payments cannot be released/.test(rel))
+ok('0004: release records the approver on the row', /released_by = p_admin_id/.test(rel))
+ok('0004: release writes an attributed ledger entry', /'channel', 'admin_release'/.test(rel) && /'admin_id', p_admin_id/.test(rel))
+ok('0004: release writes to the audit table', /insert into store_topup_actions/.test(rel))
+ok('0004: release credits at the same 10 PX / UGX peg', /amount \* 10 \* v_row.quantity/.test(rel))
+
+const dis = sql4.slice(sql4.indexOf('function dismiss_store_topup'))
+ok('0004: dismiss cannot touch a credited row', /already been credited/.test(dis))
+ok('0004: dismiss never credits a wallet', !/update wallets/.test(dis))
+ok('0004: dismiss is attributed', /dismissed_by = p_admin_id/.test(dis))
+
+ok('0004: the audit table is locked down (RLS on, no policies)', /alter table store_topup_actions enable row level security/.test(sql4) && !/create policy[^;]*store_topup_actions/.test(sql4))
+
 if (fails.length) { console.log(`\n${fails.length} FAILED: ${fails.join(', ')}`); process.exit(1) }
 console.log('\nall migration invariants hold')

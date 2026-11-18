@@ -18,7 +18,8 @@
     "test:success": "vite build --config smoke/vite.success.config.ts && node smoke/dist-success/success.js",
     "test:store": "vite build --config smoke/vite.store.config.ts && node smoke/dist-store/store.js",
     "test:claim": "vite build --config smoke/vite.claim.config.ts && node smoke/dist-claim/claim.js",
-    "test:migration": "vite build --config smoke/vite.migration.config.ts && node smoke/dist-migration/migration.js"
+    "test:migration": "vite build --config smoke/vite.migration.config.ts && node smoke/dist-migration/migration.js",
+    "test:admin": "vite build --config smoke/vite.admin.config.ts && node smoke/dist-admin/admin.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.119.0",

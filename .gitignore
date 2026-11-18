@@ -20,3 +20,4 @@ smoke/dist-success
 smoke/dist-store
 smoke/dist-claim
 smoke/dist-migration
+smoke/dist-admin
