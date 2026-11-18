@@ -8,6 +8,28 @@
 
 export const DG_BASE = (process.env.DGATEWAY_API_URL || 'https://dgatewayapi.desispay.com').replace(/\/$/, '')
 
+/**
+ * True when a LIVE key is configured. Live mode moves real money, so it is held
+ * to stricter rules than sandbox: a webhook secret is mandatory and the app
+ * refuses to start payments without one.
+ */
+export function isLiveMode(): boolean {
+  return (process.env.DGATEWAY_API_KEY || '').trim().startsWith('dgw_live_')
+}
+
+/** Throws when live mode is on but webhook verification is not configured. */
+export function assertLiveSafety(): void {
+  if (!isLiveMode()) return
+  if (!(process.env.DGATEWAY_WEBHOOK_SECRET || '').trim()) {
+    throw new GatewayError(
+      'Live payments are enabled but DGATEWAY_WEBHOOK_SECRET is not set. ' +
+        'Payments are blocked until the webhook can be verified.',
+      'WEBHOOK_SECRET_MISSING',
+      503,
+    )
+  }
+}
+
 export type PaymentStatus = 'pending' | 'completed' | 'failed'
 
 export type DgTransaction = {
@@ -208,6 +230,7 @@ const encoder = new TextEncoder()
  */
 export async function verifyWebhookSignature(raw: string, signature: string | null | undefined): Promise<boolean> {
   const secret = (process.env.DGATEWAY_WEBHOOK_SECRET || '').trim()
+  // Live mode must never fall back to trusting an unverified body.
   if (!secret) return false
   if (!signature) return false
 
