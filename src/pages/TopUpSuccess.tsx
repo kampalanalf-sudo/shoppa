@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { fetchStatus, type StatusResponse } from '../lib/payments'
+import { supabase } from '../lib/supabase'
 import { money } from '../lib/format'
 import { sfx } from '../lib/sound'
 import { IconCheck, IconChevronLeft, IconShield } from '../components/Icons'
@@ -27,6 +28,9 @@ export function TopUpSuccess({ reference, onHome, onTopUpAgain }: Props) {
   const [detail, setDetail] = useState<StatusResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [waited, setWaited] = useState(0)
+  const [claim, setClaim] = useState('')
+  const [claiming, setClaiming] = useState(false)
+  const [claimMsg, setClaimMsg] = useState<string | null>(null)
 
   const balance = wallet?.balance_px ?? 0
 
@@ -77,6 +81,39 @@ export function TopUpSuccess({ reference, onHome, onTopUpAgain }: Props) {
     }, 10_000)
     return () => window.clearInterval(timer)
   }, [reference, check, refreshWallet])
+
+  const submitClaim = useCallback(async () => {
+    const ref = claim.trim()
+    if (!ref) return
+    setClaiming(true)
+    setClaimMsg(null)
+    try {
+      const { data } = (await supabase?.auth.getSession()) ?? { data: { session: null } }
+      const token = data.session?.access_token
+      if (!token) {
+        setClaimMsg('Sign in first, then paste the reference from your payment SMS.')
+        return
+      }
+      const res = await fetch('/api/topup/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ reference: ref }),
+      })
+      const body = (await res.json().catch(() => ({}))) as { error?: string; px?: number }
+      if (!res.ok) {
+        setClaimMsg(body.error || 'Could not claim that reference.')
+        return
+      }
+      setClaimMsg('Top-up recovered — your balance is updated.')
+      setClaim('')
+      setState('paid')
+      await refreshWallet()
+    } catch {
+      setClaimMsg('Could not reach the server. Try again in a moment.')
+    } finally {
+      setClaiming(false)
+    }
+  }, [claim, refreshWallet])
 
   const tone = useMemo(() => {
     if (state === 'paid') return { ring: 'border-emerald-500/30', bg: 'bg-emerald-500/10', text: 'text-emerald-300' }
@@ -164,6 +201,36 @@ export function TopUpSuccess({ reference, onHome, onTopUpAgain }: Props) {
           </button>
         )}
       </div>
+
+      {state !== 'paid' && (
+        <div className="panel mt-3 p-3.5">
+          <p className="text-[11px] font-bold text-white">Paid but no credit?</p>
+          <p className="mt-0.5 text-[10.5px] leading-relaxed text-slate-500">
+            If the email you typed at checkout was different from your account email,
+            we can&apos;t match it automatically. Paste the reference from your payment
+            SMS and we&apos;ll attach it.
+          </p>
+          <div className="mt-2 flex gap-1.5">
+            <input
+              value={claim}
+              onChange={(e) => setClaim(e.target.value)}
+              placeholder="DG-XXXXXXXX"
+              className="min-w-0 flex-1 rounded-lg border border-white/10 bg-black/40 px-2.5 py-2 text-[11px] text-white placeholder:text-slate-600 focus:border-neon-cyan/50 focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={submitClaim}
+              disabled={claiming || !claim.trim()}
+              className="btn-primary shrink-0 !px-3 !py-2 !text-[11px] disabled:opacity-40"
+            >
+              {claiming ? 'Checking…' : 'Claim'}
+            </button>
+          </div>
+          {claimMsg && (
+            <p className="mt-1.5 text-[10.5px] text-neon-cyan">{claimMsg}</p>
+          )}
+        </div>
+      )}
 
       <p className="mt-4 flex items-start justify-center gap-1.5 text-center text-[9.5px] leading-relaxed text-slate-600">
         <IconShield size={11} className="mt-0.5 shrink-0" />

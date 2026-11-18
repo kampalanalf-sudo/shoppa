@@ -17,3 +17,6 @@ smoke/dist-live
 smoke/dist-*
 smoke/dist-livemode
 smoke/dist-success
+smoke/dist-store
+smoke/dist-claim
+smoke/dist-migration

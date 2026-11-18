@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
-import { collect, usePaymentPoll } from '../lib/payments'
+import { collect, storeEnabled, storeUrl, usePaymentPoll } from '../lib/payments'
 import { money } from '../lib/format'
 import { ugxToPx } from '../lib/proxicash'
 import { sfx } from '../lib/sound'
@@ -61,6 +61,19 @@ export function TopUpPanel({
   }, [ugx, phone])
 
   const waiting = poll.state === 'pending'
+  const hosted = storeEnabled()
+
+  // Hosted store: the buyer completes the purchase on DGateway's own page.
+  // Nothing here can credit — the store webhook does that once it has
+  // verified the transaction. We only navigate.
+  const startHosted = useCallback(() => {
+    const url = storeUrl(Math.round(ugx))
+    if (!url) {
+      setError('The payment page is not configured yet.')
+      return
+    }
+    window.location.href = url
+  }, [ugx])
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4">
@@ -124,18 +137,38 @@ export function TopUpPanel({
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => void start()}
-                disabled={busy || ugx < 500 || phone.trim().length < 9}
-                className="btn-primary w-full !py-3 !text-[13px]"
-              >
-                {busy ? 'Starting…' : `Pay ${money(ugx)} UGX`}
-              </button>
-              <p className="flex items-start gap-1.5 text-[9.5px] leading-relaxed text-slate-600">
-                <IconShield size={11} className="mt-0.5 shrink-0 text-emerald-500" />
-                You will get a prompt on your phone. Approve it to complete the top-up.
-              </p>
+              {hosted ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={startHosted}
+                    disabled={ugx < 500}
+                    className="btn-primary w-full !py-3 !text-[13px]"
+                  >
+                    Continue to secure payment — {money(ugx)} UGX
+                  </button>
+                  <p className="flex items-start gap-1.5 text-[9.5px] leading-relaxed text-slate-600">
+                    <IconShield size={11} className="mt-0.5 shrink-0 text-emerald-500" />
+                    You&apos;ll finish on DGateway&apos;s payment page and come back here.
+                    Use your account email at checkout so we can match it.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => void start()}
+                    disabled={busy || ugx < 500 || phone.trim().length < 9}
+                    className="btn-primary w-full !py-3 !text-[13px]"
+                  >
+                    {busy ? 'Starting…' : `Pay ${money(ugx)} UGX`}
+                  </button>
+                  <p className="flex items-start gap-1.5 text-[9.5px] leading-relaxed text-slate-600">
+                    <IconShield size={11} className="mt-0.5 shrink-0 text-emerald-500" />
+                    You will get a prompt on your phone. Approve it to complete the top-up.
+                  </p>
+                </>
+              )}
             </>
           ) : (
             <>
