@@ -12,7 +12,15 @@ const PRESETS = [5000, 10000, 25000, 50000]
  * Buy PX with mobile money. PX is credited by the DGateway webhook once the
  * provider confirms, so this panel only ever *starts* a payment and then polls.
  */
-export function TopUpPanel({ onClose }: { onClose: () => void }) {
+export function TopUpPanel({
+  onClose,
+  onStarted,
+}: {
+  onClose: () => void
+  /** Called once DGateway returns a reference, so the caller can route to
+   *  the success page (which polls) instead of leaving a spinner in a modal. */
+  onStarted?: (reference: string) => void
+}) {
   const { profile, refreshWallet } = useAuth()
 
   const [ugx, setUgx] = useState(10000)
@@ -44,6 +52,7 @@ export function TopUpPanel({ onClose }: { onClose: () => void }) {
       })
       setReference(res.reference)
       sfx.click()
+      onStarted?.(res.reference)
     } catch (e) {
       setError((e as Error).message)
     } finally {
