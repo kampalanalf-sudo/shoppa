@@ -11,9 +11,16 @@ import {
 
 /* ------------------------------------------------------------------ Header */
 
+type NavView =
+  | 'home'
+  | 'game'
+  | 'proxicash'
+  | 'cashout'
+  | 'auth'
+
 type HeaderProps = {
-  view: 'home' | 'game' | 'proxicash'
-  onNavigate: (v: 'home' | 'game' | 'proxicash', id?: GameId) => void
+  view: NavView
+  onNavigate: (v: NavView, id?: GameId) => void
   onSearch: () => void
 }
 
@@ -465,12 +472,12 @@ export function Footer() {
 
 /* ------------------------------------------------------------------ Bottom bar (mobile) */
 
-export function BottomBar({ view, onNavigate }: { view: 'home' | 'game' | 'proxicash'; onNavigate: HeaderProps['onNavigate'] }) {
+export function BottomBar({ view, onNavigate }: { view: NavView; onNavigate: HeaderProps['onNavigate'] }) {
   const { setWalletOpen, setHistoryOpen, setRewardsOpen } = useStore()
   const items: { label: string; icon: React.ReactNode; onClick: () => void; active?: boolean }[] = [
     { label: 'Home', icon: <IconHome size={19} />, onClick: () => onNavigate('home'), active: view === 'home' },
     { label: 'Wallet', icon: <IconWallet size={19} />, onClick: () => setWalletOpen(true) },
-    { label: 'Rewards', icon: <IconGift size={19} />, onClick: () => setRewardsOpen(true) },
+    { label: 'Cash out', icon: <IconGift size={19} />, onClick: () => onNavigate('cashout'), active: view === 'cashout' },
     { label: 'ProxiCash', icon: <IconBolt size={19} />, onClick: () => onNavigate('proxicash'), active: view === 'proxicash' },
   ]
   return (

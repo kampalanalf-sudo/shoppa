@@ -150,7 +150,15 @@ function Shell() {
     <div className="min-h-screen">
       <Header
         view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : 'home'}
-        onNavigate={(v, id) => (v === 'game' && id ? play(id) : v === 'proxicash' ? openProxiCash() : home())}
+        onNavigate={(v, id) =>
+          v === 'game' && id
+            ? play(id)
+            : v === 'proxicash'
+              ? openProxiCash()
+              : v === 'cashout'
+                ? openCashout()
+                : home()
+        }
         onSearch={() => setSearch(true)}
       />
 
@@ -178,7 +186,15 @@ function Shell() {
       <div className="h-16 md:hidden" />
       <BottomBar
         view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : 'home'}
-        onNavigate={(v, id) => (v === 'game' && id ? play(id) : v === 'proxicash' ? openProxiCash() : home())}
+        onNavigate={(v, id) =>
+          v === 'game' && id
+            ? play(id)
+            : v === 'proxicash'
+              ? openProxiCash()
+              : v === 'cashout'
+                ? openCashout()
+                : home()
+        }
       />
       <ChatDock onOpenRoom={() => setRoomOpen(true)} />
       {roomOpen && <ChatRoom onClose={() => setRoomOpen(false)} />}
