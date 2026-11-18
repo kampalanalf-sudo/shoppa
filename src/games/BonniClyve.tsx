@@ -3,7 +3,8 @@ import { useStore } from '../lib/store'
 import { sfx } from '../lib/sound'
 import { money, mult } from '../lib/format'
 import { gameById } from '../lib/games'
-import { BetAmount, BetButton, useHotkey } from '../components/BetControls'
+import { useHotkey } from '../components/BetControls'
+import { PlayBar } from '../components/PlayBar'
 import { GameShell, PayoutRow } from '../components/GameShell'
 import { Slot3D, SymbolFace, Siren } from '../components/Slot3D'
 import {
@@ -160,36 +161,6 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
       onFair={onFair}
       aside={
         <div className="space-y-3.5">
-          <BetAmount value={bet} onChange={setBet} disabled={spinning} />
-
-          <BetButton
-            onClick={spin}
-            disabled={spinning || freeSpins > 0}
-            loading={spinning}
-            sub={freeSpins > 0 ? `${freeSpins} free spins left` : `${REELS}×${ROWS} · 243 ways`}
-          >
-            {spinning ? 'Spinning…' : freeSpins > 0 ? 'Chase mode' : 'Spin'}
-          </BetButton>
-
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              disabled={spinning}
-              onClick={() => { setAutoLeft(10); sfx.click() }}
-              className="btn-ghost !py-2 !text-[11.5px]"
-            >
-              <IconBolt size={13} /> Auto ×10
-            </button>
-            <button
-              type="button"
-              disabled={spinning}
-              onClick={() => { setAutoLeft(0); setFreeSpins(0); sfx.click() }}
-              className="btn-ghost !py-2 !text-[11.5px]"
-            >
-              Stop
-            </button>
-          </div>
-
           {/* win readout */}
           <div
             className={`rounded-xl border px-3 py-2.5 text-center transition ${
@@ -273,23 +244,6 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
           </div>
         </div>
       }
-      mobileAction={
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-ink-900/90 px-2">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Bet</span>
-            <input
-              inputMode="decimal"
-              value={bet}
-              onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
-              className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
-            />
-            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
-          </div>
-          <button type="button" onClick={spin} disabled={spinning || freeSpins > 0} className="btn-primary h-10 flex-1 !text-[13px]">
-            {spinning ? 'Spinning…' : freeSpins > 0 ? `${freeSpins} free spins` : 'Spin'}
-          </button>
-        </div>
-      }
     >
       {/* marquee */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
@@ -326,6 +280,19 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
         />
       </div>
 
+      <PlayBar
+        bet={bet}
+        onBet={setBet}
+        onSpin={spin}
+        spinning={spinning}
+        freeSpins={freeSpins}
+        autoLeft={autoLeft}
+        onAuto={(n) => { setAutoLeft(n); sfx.click() }}
+        onStop={() => { setAutoLeft(0); setFreeSpins(0) }}
+        lastWin={outcome?.totalMultiplier ?? 0}
+        sub="Space to spin · 243 ways · HMAC-SHA256 verifiable"
+      />
+
       {/* feature strips */}
       <div className="mx-auto mt-3 grid max-w-[720px] grid-cols-2 gap-2">
         <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.07] bg-gradient-to-r from-neon-lime/[0.10] to-transparent p-2.5">
@@ -348,7 +315,7 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
         Space to spin · reels lock left to right · every outcome is HMAC-SHA256 verifiable
       </p>
       <p className="mt-1 text-center text-[9.5px] text-slate-700">
-        Demo slot · characters are fictional caricatures · 18+
+        Characters are fictional · 18+ · Play responsibly
       </p>
       <span className="sr-only">Max win {money(potential)} PX</span>
     </GameShell>

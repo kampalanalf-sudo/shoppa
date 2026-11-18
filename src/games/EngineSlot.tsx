@@ -4,9 +4,10 @@ import { sfx } from '../lib/sound'
 import { money } from '../lib/format'
 import { gameById } from '../lib/games'
 import type { GameId } from '../lib/types'
-import { BetAmount, BetButton, useHotkey } from '../components/BetControls'
+import { useHotkey } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
 import { SlotBoard3D } from '../components/SlotBoard3D'
+import { PlayBar } from '../components/PlayBar'
 import { buildGrid, resolve, type Grid, type SlotConfig, type SlotOutcome } from '../lib/slots/engine'
 
 type Props = { config: SlotConfig; id: GameId; onBack: () => void; onFair: () => void }
@@ -134,56 +135,12 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
       onFair={onFair}
       aside={
         <div className="space-y-3.5">
-          <BetAmount value={bet} onChange={setBet} disabled={spinning || freeSpins > 0} />
-          <BetButton onClick={() => void spin()} loading={spinning} disabled={freeSpins > 0}>
-            {spinning ? 'Spinning…' : freeSpins > 0 ? `${freeSpins} free spins` : 'Spin'}
-          </BetButton>
-          <div className="grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              onClick={() => { setAutoplay(10); sfx.click() }}
-              disabled={spinning || freeSpins > 0}
-              className="btn-ghost !py-2 !text-[11.5px]"
-            >
-              Autoplay ×10
-            </button>
-            <button
-              type="button"
-              onClick={() => { setAutoplay(0); sfx.click() }}
-              disabled={autoplay === 0}
-              className="btn-ghost !py-2 !text-[11.5px]"
-            >
-              Stop
-            </button>
-          </div>
           <div className="space-y-1.5">
             <PayoutRow label="RTP" value={game.rtp} />
             <PayoutRow label="Volatility" value={config.volatility} />
             <PayoutRow label="Max win" value={game.maxWin} />
             {config.omen && <PayoutRow label="Faith fine" value={`${config.omen.fine}×`} />}
           </div>
-        </div>
-      }
-      mobileAction={
-        <div className="flex items-center gap-1.5">
-          <div className="flex items-center gap-1 rounded-xl border border-white/10 bg-ink-900/90 px-2">
-            <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Bet</span>
-            <input
-              inputMode="decimal"
-              value={bet}
-              onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
-              className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
-            />
-            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => void spin()}
-            disabled={spinning || freeSpins > 0}
-            className="btn-primary h-10 flex-1 !text-[13px]"
-          >
-            {spinning ? 'Spinning…' : freeSpins > 0 ? `${freeSpins} free` : 'Spin'}
-          </button>
         </div>
       }
       footer={
@@ -232,6 +189,19 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
           glow={glow}
         />
       </div>
+
+      <PlayBar
+        bet={bet}
+        onBet={setBet}
+        onSpin={() => void spin()}
+        spinning={spinning}
+        freeSpins={freeSpins}
+        autoLeft={autoplay}
+        onAuto={(n) => { setAutoplay(n); sfx.click() }}
+        onStop={() => setAutoplay(0)}
+        lastWin={outcome?.totalMultiplier ?? 0}
+        sub={`Space to spin · ${config.reels}×${config.rows} ways · HMAC-SHA256 verifiable`}
+      />
 
       {/* outcome banner */}
       {outcome && !spinning && (
@@ -310,7 +280,7 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
       </div>
 
       <p className="mt-2 text-center text-[9.5px] text-slate-600">
-        Space to spin · Demo slot · characters are fictional caricatures · 18+
+        Space to spin · Characters are fictional · 18+ · Play responsibly
       </p>
     </GameShell>
   )

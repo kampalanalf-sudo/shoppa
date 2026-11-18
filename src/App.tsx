@@ -1,10 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { StoreProvider, useStore } from './lib/store'
+import { AuthProvider, useAuth } from './lib/auth'
 import { setSoundEnabled } from './lib/sound'
 import { Header, Footer, BottomBar, ChatDock, Toasts, WinFlash } from './components/Chrome'
 import { SearchModal, WalletModal, FairModal, HistoryModal, RewardsModal } from './components/Modals'
 import { Home } from './pages/Home'
 import { ProxiCash } from './pages/ProxiCash'
+import { Auth } from './pages/Auth'
+import { Onboarding } from './pages/Onboarding'
+import { Cashout } from './pages/Cashout'
+import { ChatRoom } from './components/ChatRoom'
 import { BonniClyve } from './games/BonniClyve'
 import { EngineSlot } from './games/EngineSlot'
 import { CHAPE, BLUE_MOUNTAIN } from './lib/slots/games'
@@ -19,12 +24,20 @@ import { Tower } from './games/Tower'
 import { Roulette } from './games/Roulette'
 import type { GameId } from './lib/types'
 
-type View = { name: 'home' } | { name: 'game'; id: GameId } | { name: 'proxicash' }
+type View =
+  | { name: 'home' }
+  | { name: 'game'; id: GameId }
+  | { name: 'proxicash' }
+  | { name: 'cashout' }
+  | { name: 'auth' }
 
 function Shell() {
   const { sound, setFairOpen, setWalletOpen, hydrated } = useStore()
+  const { configured, ready, user, needsOnboarding } = useAuth()
+  const [onboarded, setOnboarded] = useState(false)
   const [view, setView] = useState<View>({ name: 'home' })
   const [search, setSearch] = useState(false)
+  const [roomOpen, setRoomOpen] = useState(false)
 
   useEffect(() => setSoundEnabled(sound), [sound])
 
@@ -43,6 +56,8 @@ function Shell() {
     const apply = () => {
       const h = window.location.hash.replace('#', '')
       if (h === 'proxicash') { setView({ name: 'proxicash' }); return }
+      if (h === 'cashout') { setView({ name: 'cashout' }); return }
+      if (h === 'auth') { setView({ name: 'auth' }); return }
       if (h && h !== 'home') {
         const known = ['bonni', 'plinko', 'crash', 'mines', 'dice', 'limbo', 'wheel', 'tower', 'roulette', 'chape', 'bluemountain', 'bazaar', 'boda']
         if (known.includes(h)) setView({ name: 'game', id: h as GameId })
@@ -57,6 +72,12 @@ function Shell() {
     openGame(id)
     try { window.history.replaceState(null, '', `#${id}`) } catch { /* noop */ }
   }
+
+  const openCashout = useCallback(() => {
+    setView({ name: 'cashout' })
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+    try { window.history.replaceState(null, '', '#cashout') } catch { /* noop */ }
+  }, [])
 
   const openProxiCash = useCallback(() => {
     setView({ name: 'proxicash' })
@@ -91,6 +112,36 @@ function Shell() {
     )
   }
 
+  // With a backend configured, an account is required: the wallet, chat and
+  // cashout all belong to a user. Without one the app runs local-only.
+  if (configured) {
+    if (!ready) {
+      return (
+        <div className="grid min-h-screen place-items-center">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-neon-lime/25 border-t-neon-lime" />
+        </div>
+      )
+    }
+    if (!user) {
+      return (
+        <>
+          <Header view="home" onNavigate={() => {}} onSearch={() => {}} />
+          <Auth />
+          <Toasts />
+        </>
+      )
+    }
+    if (needsOnboarding && !onboarded) {
+      return (
+        <>
+          <Header view="home" onNavigate={() => {}} onSearch={() => {}} />
+          <Onboarding onDone={() => setOnboarded(true)} />
+          <Toasts />
+        </>
+      )
+    }
+  }
+
   const current = view.name === 'game' ? view.id : null
   const isProxiCash = view.name === 'proxicash'
   const shared = { onBack: home, onFair: () => setFairOpen(true) }
@@ -99,7 +150,15 @@ function Shell() {
     <div className="min-h-screen">
       <Header
         view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : 'home'}
-        onNavigate={(v, id) => (v === 'game' && id ? play(id) : v === 'proxicash' ? openProxiCash() : home())}
+        onNavigate={(v, id) =>
+          v === 'game' && id
+            ? play(id)
+            : v === 'proxicash'
+              ? openProxiCash()
+              : v === 'cashout'
+                ? openCashout()
+                : home()
+        }
         onSearch={() => setSearch(true)}
       />
 
@@ -118,6 +177,8 @@ function Shell() {
         {current === 'tower' && <Tower {...shared} />}
         {current === 'roulette' && <Roulette {...shared} />}
         {isProxiCash && <ProxiCash onBack={home} />}
+        {view.name === 'cashout' && <Cashout onBack={home} />}
+        {view.name === 'auth' && <Auth onDone={home} />}
         {!current && !isProxiCash && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} />}
       </main>
 
@@ -125,9 +186,18 @@ function Shell() {
       <div className="h-16 md:hidden" />
       <BottomBar
         view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : 'home'}
-        onNavigate={(v, id) => (v === 'game' && id ? play(id) : v === 'proxicash' ? openProxiCash() : home())}
+        onNavigate={(v, id) =>
+          v === 'game' && id
+            ? play(id)
+            : v === 'proxicash'
+              ? openProxiCash()
+              : v === 'cashout'
+                ? openCashout()
+                : home()
+        }
       />
-      <ChatDock />
+      <ChatDock onOpenRoom={() => setRoomOpen(true)} />
+      {roomOpen && <ChatRoom onClose={() => setRoomOpen(false)} />}
       <WinFlash />
       <Toasts />
       <WalletModal />
@@ -155,8 +225,10 @@ function Shell() {
 
 export default function App() {
   return (
-    <StoreProvider>
-      <Shell />
-    </StoreProvider>
+    <AuthProvider>
+      <StoreProvider>
+        <Shell />
+      </StoreProvider>
+    </AuthProvider>
   )
 }

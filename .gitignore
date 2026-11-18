@@ -8,3 +8,5 @@ smoke/dist
 !.env.example
 npm-debug.log*
 tsconfig.tsbuildinfo
+smoke/dist-ui
+smoke/dist-layout

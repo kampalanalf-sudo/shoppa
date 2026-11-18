@@ -154,7 +154,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
             {done.kind === 'deposit' ? 'Deposit confirmed' : 'Withdrawal sent'}
           </p>
           <p className="num mt-1 text-[13px] text-slate-400">{money(done.amt)} PX {done.kind === 'deposit' ? 'credited' : 'on the way'}</p>
-          <p className="mt-1 text-[11px] text-slate-500">Demo environment — settled instantly, no chain transaction.</p>
+          <p className="mt-1 text-[11px] text-slate-500">Payouts settle to mobile money via ProxiCash.</p>
           <div className="mt-4 flex gap-2">
             <button type="button" onClick={() => setDone(null)} className="btn-ghost flex-1">New transaction</button>
             <button type="button" onClick={() => { setWalletOpen(false); setDone(null) }} className="btn-primary flex-1">Back to games</button>
@@ -195,7 +195,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
             onClick={() => { resetAccount(); setDone(null) }}
             className="btn-ghost w-full !border-rose-500/25 !text-rose-300 hover:!bg-rose-500/10"
           >
-            Reset demo account
+            Reset local stats
           </button>
         </div>
       ) : (
@@ -264,7 +264,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
               <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Send {coinMeta.s} to</p>
               <CopyField label={`${coinMeta.s} · ${coinMeta.net}`} value="TQ8vN5kRfLz9m2yB7xJcWq4pAhD1sEuG3K" />
               <p className="mt-2 flex items-center gap-1.5 text-[10.5px] text-slate-500">
-                <IconInfo size={12} /> Demo wallet — any deposit is simulated instantly with zero fees.
+                <IconInfo size={12} /> Top up with mobile money or crypto. PX can be cashed out via ProxiCash.
               </p>
             </div>
           ) : (
@@ -289,7 +289,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
             )}
           </button>
           <p className="text-center text-[10px] text-slate-600">
-            By continuing you agree to the FloatBet Terms. Demo mode · 18+ · Play responsibly.
+            By continuing you agree to the FloatBet Terms. 18+ · Play responsibly.
           </p>
         </div>
       )}
@@ -638,7 +638,7 @@ export function PromoModal({ open, onClose }: { open: boolean; onClose: () => vo
         <p className="mt-1 text-4xl font-black text-white">+200%</p>
         <p className="mt-1 text-[12px] text-slate-400">on your first deposit, up to 5,000 PX</p>
         <div className="mt-3 flex items-center justify-center gap-1.5">
-          {['Instant', 'Zero fee', 'No wagering on demo'].map((t) => (
+          {['Instant', 'Provably fair', '18+ only'].map((t) => (
             <span key={t} className="rounded-full bg-black/30 px-2 py-0.5 text-[10px] font-semibold text-slate-300">{t}</span>
           ))}
         </div>
@@ -655,7 +655,7 @@ export function PromoModal({ open, onClose }: { open: boolean; onClose: () => vo
       >
         {claimed ? <><IconCheck size={16} /> Bonus credited</> : <><IconGift size={16} /> Claim 5,000 PX bonus</>}
       </button>
-      <p className="mt-2 text-center text-[10.5px] text-slate-600">Simulated demo bonus · no real currency involved</p>
+      <p className="mt-2 text-center text-[10.5px] text-slate-600">Bonus funds carry wagering requirements · 18+</p>
     </Sheet>
   )
 }

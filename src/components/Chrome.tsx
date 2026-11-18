@@ -11,9 +11,16 @@ import {
 
 /* ------------------------------------------------------------------ Header */
 
+type NavView =
+  | 'home'
+  | 'game'
+  | 'proxicash'
+  | 'cashout'
+  | 'auth'
+
 type HeaderProps = {
-  view: 'home' | 'game' | 'proxicash'
-  onNavigate: (v: 'home' | 'game' | 'proxicash', id?: GameId) => void
+  view: NavView
+  onNavigate: (v: NavView, id?: GameId) => void
   onSearch: () => void
 }
 
@@ -331,7 +338,7 @@ const CHAT_SEED = [
   { user: 'slyfox', msg: 'kk everyone gl' },
 ]
 
-export function ChatDock() {
+export function ChatDock({ onOpenRoom }: { onOpenRoom?: () => void } = {}) {
   const [open, setOpen] = useState(false)
   const [msgs, setMsgs] = useState(CHAT_SEED)
   const [text, setText] = useState('')
@@ -346,14 +353,23 @@ export function ChatDock() {
 
   return (
     <div className="fixed bottom-4 right-4 z-30 hidden xl:block">
-      {open ? (
+      {onOpenRoom ? (
+        <button
+          type="button"
+          onClick={onOpenRoom}
+          className="flex items-center gap-2 rounded-full border border-white/10 bg-ink-850/95 px-4 py-2.5 text-[12.5px] font-bold text-white shadow-pop backdrop-blur-xl transition hover:border-neon-lime/40"
+        >
+          <IconChat size={16} className="text-neon-lime" /> Live Room
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+        </button>
+      ) : open ? (
         <div className="w-[320px] animate-popIn overflow-hidden rounded-2xl border border-white/10 bg-ink-850/95 shadow-pop backdrop-blur-xl">
           <div className="flex items-center justify-between border-b border-white/[0.07] px-3.5 py-2.5">
             <div className="flex items-center gap-2">
               <IconChat size={15} className="text-neon-lime" />
               <span className="text-[12.5px] font-bold text-white">English Chat</span>
               <span className="chip !px-2 !py-0.5 !text-[10px] normal-case tracking-normal">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />2.1k
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />live
               </span>
             </div>
             <button type="button" onClick={() => setOpen(false)} aria-label="Close chat" className="text-slate-500 hover:text-white">
@@ -392,7 +408,7 @@ export function ChatDock() {
           className="flex items-center gap-2 rounded-full border border-white/10 bg-ink-850/95 px-4 py-2.5 text-[12.5px] font-bold text-white shadow-pop backdrop-blur-xl transition hover:border-neon-lime/40"
         >
           <IconChat size={16} className="text-neon-lime" /> Chat
-          <span className="rounded-full bg-white/10 px-1.5 text-[10px]">2.1k</span>
+          <span className="rounded-full bg-white/10 px-1.5 text-[10px]">live</span>
         </button>
       )}
     </div>
@@ -444,7 +460,7 @@ export function Footer() {
         </div>
         <div className="divider my-8" />
         <div className="flex flex-col items-start justify-between gap-3 text-[11.5px] text-slate-600 sm:flex-row sm:items-center">
-          <p>© 2026 FloatBet Gaming. Demo experience — no real money is wagered in this build.</p>
+          <p>© 2026 FloatBet Gaming. 18+ · Play responsibly. PX is cashed out only via ProxiCash.</p>
           <p className="flex items-center gap-2">
             <span className="num">{shortHash('a91f3c7d2e')}</span> · v1.4.2
           </p>
@@ -456,12 +472,12 @@ export function Footer() {
 
 /* ------------------------------------------------------------------ Bottom bar (mobile) */
 
-export function BottomBar({ view, onNavigate }: { view: 'home' | 'game' | 'proxicash'; onNavigate: HeaderProps['onNavigate'] }) {
+export function BottomBar({ view, onNavigate }: { view: NavView; onNavigate: HeaderProps['onNavigate'] }) {
   const { setWalletOpen, setHistoryOpen, setRewardsOpen } = useStore()
   const items: { label: string; icon: React.ReactNode; onClick: () => void; active?: boolean }[] = [
     { label: 'Home', icon: <IconHome size={19} />, onClick: () => onNavigate('home'), active: view === 'home' },
     { label: 'Wallet', icon: <IconWallet size={19} />, onClick: () => setWalletOpen(true) },
-    { label: 'Rewards', icon: <IconGift size={19} />, onClick: () => setRewardsOpen(true) },
+    { label: 'Cash out', icon: <IconGift size={19} />, onClick: () => onNavigate('cashout'), active: view === 'cashout' },
     { label: 'ProxiCash', icon: <IconBolt size={19} />, onClick: () => onNavigate('proxicash'), active: view === 'proxicash' },
   ]
   return (

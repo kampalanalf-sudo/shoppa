@@ -27,12 +27,25 @@ export type Asset = {
   kind: 'coin' | 'crypto'
 }
 
+/** How many PX make one UGX. 10 PX = 1 UGX, so 10,000 PX = 1,000 UGX. */
+export const PX_PER_UGX = 10
+
+/** Convert a PX balance into UGX at the platform peg. */
+export function pxToUgx(px: number): number {
+  return Math.floor(Math.max(0, px) / PX_PER_UGX)
+}
+
+/** Convert UGX into PX at the platform peg. */
+export function ugxToPx(ugx: number): number {
+  return Math.round(Math.max(0, ugx) * PX_PER_UGX)
+}
+
 /**
- * Reference UGX rates. PX is pegged 1:1 to UGX so the in-game coin has a
- * predictable payout value.
+ * Reference UGX rates. PX is pegged at 10 PX = 1 UGX so the in-game coin has a
+ * predictable payout value: 10,000 PX cashes out as 1,000 UGX.
  */
 export const ASSETS: Record<AssetId, Asset> = {
-  PX: { id: 'PX', name: 'ProxiCoin', ugxRate: 1, networkFee: 0, min: 5000, step: 1000, decimals: 0, color: '#c6f24e', kind: 'coin' },
+  PX: { id: 'PX', name: 'ProxiCoin', ugxRate: 1 / PX_PER_UGX, networkFee: 0, min: 50000, step: 10000, decimals: 0, color: '#c6f24e', kind: 'coin' },
   USDT: { id: 'USDT', name: 'Tether', ugxRate: 3780, networkFee: 0.6, min: 2, step: 1, decimals: 2, color: '#26a17b', kind: 'crypto' },
   USDC: { id: 'USDC', name: 'USD Coin', ugxRate: 3778, networkFee: 0.6, min: 2, step: 1, decimals: 2, color: '#2775ca', kind: 'crypto' },
   BTC: { id: 'BTC', name: 'Bitcoin', ugxRate: 356_000_000, networkFee: 0.00004, min: 0.0002, step: 0.0001, decimals: 5, color: '#f7931a', kind: 'crypto' },
