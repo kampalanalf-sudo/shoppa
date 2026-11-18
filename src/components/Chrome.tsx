@@ -17,6 +17,7 @@ type NavView =
   | 'proxicash'
   | 'cashout'
   | 'auth'
+  | 'topup'
 
 type HeaderProps = {
   view: NavView
@@ -27,6 +28,7 @@ type HeaderProps = {
 export function Header({ view, onNavigate, onSearch }: HeaderProps) {
   const { balance, balanceHidden, toggleBalanceHidden, setWalletOpen, setHistoryOpen, setFairOpen, setRewardsOpen, sound, toggleSound, username, bets } = useStore()
   const [accountOpen, setAccountOpen] = useState(false)
+  const canTopUp = typeof onNavigate === 'function'
   const [mobileNav, setMobileNav] = useState(false)
 
   useEffect(() => {
@@ -477,8 +479,8 @@ export function BottomBar({ view, onNavigate }: { view: NavView; onNavigate: Hea
   const items: { label: string; icon: React.ReactNode; onClick: () => void; active?: boolean }[] = [
     { label: 'Home', icon: <IconHome size={19} />, onClick: () => onNavigate('home'), active: view === 'home' },
     { label: 'Wallet', icon: <IconWallet size={19} />, onClick: () => setWalletOpen(true) },
-    { label: 'Cash out', icon: <IconGift size={19} />, onClick: () => onNavigate('cashout'), active: view === 'cashout' },
-    { label: 'ProxiCash', icon: <IconBolt size={19} />, onClick: () => onNavigate('proxicash'), active: view === 'proxicash' },
+    { label: 'Top up', icon: <IconBolt size={19} />, onClick: () => onNavigate('topup'), active: view === 'topup' },
+    { label: 'Cash out', icon: <IconWallet size={19} />, onClick: () => onNavigate('cashout'), active: view === 'cashout' },
   ]
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-4 border-t border-white/[0.07] glass pb-[env(safe-area-inset-bottom)] md:hidden">

@@ -50,6 +50,26 @@ quietly, payments stop and say why.
 
 Sandbox keys (`dgw_test_`) skip only the secret requirement, for local dev.
 
+## URLs for the DGateway product settings
+
+| Field | Value |
+|---|---|
+| Webhook / callback | `https://shoppa-ten.vercel.app/api/webhooks/dgateway` |
+| Success redirect | `https://shoppa-ten.vercel.app/#topup-success` |
+
+The webhook is the one that matters: it is what credits the PX. The success
+redirect is cosmetic. A player who closes the tab after approving the prompt
+still gets credited, which is deliberate — a URL a player can visit must never
+be able to move money.
+
+`#topup-success?reference=DG-...` works too; the page polls that reference and
+shows the confirmed balance.
+
+Configure the product as an **API product**, not a hosted-store product. The
+webhook payloads differ: ours handles the flat `{reference, status}` shape from
+`/v1/payments/*`, while hosted-store sends a cart with `product_id` /
+`product_slug`, which this route will 404 on.
+
 ## Registering the webhook
 
 In the DGateway dashboard set the callback URL to:

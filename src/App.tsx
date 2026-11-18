@@ -10,6 +10,8 @@ import { Auth } from './pages/Auth'
 import { Onboarding } from './pages/Onboarding'
 import { Cashout } from './pages/Cashout'
 import { ChatRoom } from './components/ChatRoom'
+import { TopUpPanel } from './components/TopUpPanel'
+import { TopUpSuccess } from './pages/TopUpSuccess'
 import { BonniClyve } from './games/BonniClyve'
 import { EngineSlot } from './games/EngineSlot'
 import { CHAPE, BLUE_MOUNTAIN } from './lib/slots/games'
@@ -30,6 +32,7 @@ type View =
   | { name: 'proxicash' }
   | { name: 'cashout' }
   | { name: 'auth' }
+  | { name: 'topup-success'; reference: string | null }
 
 function Shell() {
   const { sound, setFairOpen, setWalletOpen, hydrated } = useStore()
@@ -38,6 +41,7 @@ function Shell() {
   const [view, setView] = useState<View>({ name: 'home' })
   const [search, setSearch] = useState(false)
   const [roomOpen, setRoomOpen] = useState(false)
+  const [topUpOpen, setTopUpOpen] = useState(false)
 
   useEffect(() => setSoundEnabled(sound), [sound])
 
@@ -58,6 +62,11 @@ function Shell() {
       if (h === 'proxicash') { setView({ name: 'proxicash' }); return }
       if (h === 'cashout') { setView({ name: 'cashout' }); return }
       if (h === 'auth') { setView({ name: 'auth' }); return }
+      if (h.startsWith('topup-success')) {
+        const ref = new URLSearchParams(h.split('?')[1] || '').get('reference')
+        setView({ name: 'topup-success', reference: ref })
+        return
+      }
       if (h && h !== 'home') {
         const known = ['bonni', 'plinko', 'crash', 'mines', 'dice', 'limbo', 'wheel', 'tower', 'roulette', 'chape', 'bluemountain', 'bazaar', 'boda']
         if (known.includes(h)) setView({ name: 'game', id: h as GameId })
@@ -77,6 +86,15 @@ function Shell() {
     setView({ name: 'cashout' })
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
     try { window.history.replaceState(null, '', '#cashout') } catch { /* noop */ }
+  }, [])
+
+  const openSuccess = useCallback((reference: string | null) => {
+    setView({ name: 'topup-success', reference })
+    try {
+      window.history.replaceState(
+        null, '', reference ? `#topup-success?reference=${encodeURIComponent(reference)}` : '#topup-success',
+      )
+    } catch { /* noop */ }
   }, [])
 
   const openProxiCash = useCallback(() => {
@@ -157,7 +175,9 @@ function Shell() {
               ? openProxiCash()
               : v === 'cashout'
                 ? openCashout()
-                : home()
+                : v === 'topup'
+                  ? setTopUpOpen(true)
+                  : home()
         }
         onSearch={() => setSearch(true)}
       />
@@ -179,6 +199,13 @@ function Shell() {
         {isProxiCash && <ProxiCash onBack={home} />}
         {view.name === 'cashout' && <Cashout onBack={home} />}
         {view.name === 'auth' && <Auth onDone={home} />}
+        {view.name === 'topup-success' && (
+          <TopUpSuccess
+            reference={view.reference}
+            onHome={home}
+            onTopUpAgain={() => { home(); setTopUpOpen(true) }}
+          />
+        )}
         {!current && !isProxiCash && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} />}
       </main>
 
@@ -193,11 +220,19 @@ function Shell() {
               ? openProxiCash()
               : v === 'cashout'
                 ? openCashout()
-                : home()
+                : v === 'topup'
+                  ? setTopUpOpen(true)
+                  : home()
         }
       />
       <ChatDock onOpenRoom={() => setRoomOpen(true)} />
       {roomOpen && <ChatRoom onClose={() => setRoomOpen(false)} />}
+      {topUpOpen && (
+        <TopUpPanel
+          onClose={() => setTopUpOpen(false)}
+          onStarted={(ref) => { setTopUpOpen(false); openSuccess(ref) }}
+        />
+      )}
       <WinFlash />
       <Toasts />
       <WalletModal />
