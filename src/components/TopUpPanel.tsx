@@ -1,0 +1,192 @@
+import React, { useCallback, useEffect, useState } from 'react'
+import { useAuth } from '../lib/auth'
+import { collect, usePaymentPoll } from '../lib/payments'
+import { money } from '../lib/format'
+import { ugxToPx } from '../lib/proxicash'
+import { sfx } from '../lib/sound'
+import { IconCheck, IconClose, IconShield } from './Icons'
+
+const PRESETS = [5000, 10000, 25000, 50000]
+
+/**
+ * Buy PX with mobile money. PX is credited by the DGateway webhook once the
+ * provider confirms, so this panel only ever *starts* a payment and then polls.
+ */
+export function TopUpPanel({ onClose }: { onClose: () => void }) {
+  const { profile, refreshWallet } = useAuth()
+
+  const [ugx, setUgx] = useState(10000)
+  const [phone, setPhone] = useState(profile?.phone ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [reference, setReference] = useState<string | null>(null)
+
+  const poll = usePaymentPoll(reference)
+
+  // credit landed -> refresh the wallet so the balance updates live
+  useEffect(() => {
+    if (poll.state === 'completed') {
+      sfx.bigwin()
+      void refreshWallet()
+    }
+    if (poll.state === 'failed') setError(poll.detail?.failureReason || 'The payment was not completed.')
+  }, [poll.state, poll.detail?.failureReason, refreshWallet])
+
+  const start = useCallback(async () => {
+    setError(null)
+    setBusy(true)
+    try {
+      const res = await collect({
+        amount: Math.round(ugx),
+        currency: 'UGX',
+        phone: phone.trim(),
+        description: `FloatBet top-up ${money(ugx)} UGX`,
+      })
+      setReference(res.reference)
+      sfx.click()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }, [ugx, phone])
+
+  const waiting = poll.state === 'pending'
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="w-full max-w-[400px] animate-popIn overflow-hidden rounded-t-2xl border border-white/10 bg-ink-850/98 shadow-pop sm:rounded-2xl">
+        <div className="flex items-center justify-between border-b border-white/[0.07] px-3.5 py-2.5">
+          <span className="text-[13px] font-bold text-white">Buy PX</span>
+          <button type="button" onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-white">
+            <IconClose size={16} />
+          </button>
+        </div>
+
+        <div className="space-y-2.5 p-3.5">
+          {!reference ? (
+            <>
+              <div>
+                <p className="label">Amount (UGX)</p>
+                <div className="mb-1.5 grid grid-cols-4 gap-1">
+                  {PRESETS.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setUgx(p)}
+                      className={`num rounded-lg border py-1.5 text-[11px] font-bold transition ${
+                        ugx === p
+                          ? 'border-neon-lime bg-neon-lime/15 text-neon-lime'
+                          : 'border-white/10 bg-white/[0.02] text-slate-400'
+                      }`}
+                    >
+                      {money(p)}
+                    </button>
+                  ))}
+                </div>
+                <input
+                  inputMode="decimal"
+                  value={ugx}
+                  onChange={(e) => setUgx(Math.max(0, Math.round(Number(e.target.value.replace(/[^0-9]/g, '')) || 0)))}
+                  className="field num !text-[16px] font-bold"
+                />
+                <p className="mt-1 text-[10.5px] text-slate-500">
+                  You get <b className="text-neon-lime">{money(ugxToPx(ugx))} PX</b> at 10 PX / UGX
+                </p>
+              </div>
+
+              <div>
+                <p className="label">Mobile money number</p>
+                <input
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="07XX XXX XXX"
+                  inputMode="tel"
+                  className="field"
+                />
+                <p className="mt-1 text-[10px] text-slate-500">
+                  MTN or Airtel. Ugandan numbers only on this rail.
+                </p>
+              </div>
+
+              {error && (
+                <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-[11.5px] text-rose-200">
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => void start()}
+                disabled={busy || ugx < 500 || phone.trim().length < 9}
+                className="btn-primary w-full !py-3 !text-[13px]"
+              >
+                {busy ? 'Starting…' : `Pay ${money(ugx)} UGX`}
+              </button>
+              <p className="flex items-start gap-1.5 text-[9.5px] leading-relaxed text-slate-600">
+                <IconShield size={11} className="mt-0.5 shrink-0 text-emerald-500" />
+                You will get a prompt on your phone. Approve it to complete the top-up.
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-center">
+                {waiting ? (
+                  <>
+                    <div className="mx-auto mb-2 h-8 w-8 animate-spin rounded-full border-2 border-neon-lime/25 border-t-neon-lime" />
+                    <p className="text-[13px] font-bold text-white">Check your phone and approve the prompt</p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Waiting for {phone} · {Math.floor(poll.elapsed / 1000)}s
+                    </p>
+                  </>
+                ) : poll.state === 'completed' ? (
+                  <>
+                    <p className="mb-1 flex items-center justify-center gap-1.5 text-[13px] font-bold text-emerald-300">
+                      <IconCheck size={14} /> Payment confirmed
+                    </p>
+                    <p className="text-[11px] text-slate-500">
+                      {money(ugxToPx(ugx))} PX added to your balance.
+                    </p>
+                  </>
+                ) : poll.state === 'failed' ? (
+                  <>
+                    <p className="text-[13px] font-bold text-rose-300">Payment failed</p>
+                    <p className="mt-1 text-[11px] text-slate-500">Nothing was charged. You can try again.</p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[13px] font-bold text-amber-300">Still waiting</p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      We stopped checking after 5 minutes. If you approved it, the balance updates automatically.
+                    </p>
+                  </>
+                )}
+              </div>
+
+              {poll.detail?.reference && (
+                <p className="break-all rounded-lg bg-black/30 px-2 py-1.5 text-center text-[9.5px] text-slate-500">
+                  Reference {poll.detail.reference}
+                </p>
+              )}
+
+              {poll.state !== 'pending' && poll.state !== 'completed' && (
+                <button
+                  type="button"
+                  onClick={() => { setReference(null); setError(null) }}
+                  className="btn-ghost w-full !py-2.5 !text-[12px]"
+                >
+                  Try again
+                </button>
+              )}
+              {poll.state === 'pending' && (
+                <button type="button" onClick={onClose} className="btn-ghost w-full !py-2.5 !text-[12px]">
+                  Close — keep waiting in the background
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}

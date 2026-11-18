@@ -10,3 +10,8 @@ npm-debug.log*
 tsconfig.tsbuildinfo
 smoke/dist-ui
 smoke/dist-layout
+smoke/dist-dg
+smoke/dist-routes
+smoke/dist-wh
+smoke/dist-live
+smoke/dist-*
