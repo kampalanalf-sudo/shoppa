@@ -50,6 +50,71 @@ quietly, payments stop and say why.
 
 Sandbox keys (`dgw_test_`) skip only the secret requirement, for local dev.
 
+## Hosted store mode (active)
+
+FloatBet deposit is configured as a **hosted DGateway store product**. The
+buyer pays on DGateway's own page; we only navigate there.
+
+| Setting | Value |
+|---|---|
+| Store URL | `VITE_DGATEWAY_STORE_URL` — e.g. `https://dgatewayadmin.desispay.com/store/shop/floatbet?products` |
+| Store slug | `DGATEWAY_STORE_SLUG=floatbet` (payments for another shop are rejected 409) |
+| Webhook URL | `https://shoppa-ten.vercel.app/api/webhooks/dgateway-store` |
+| Success redirect | `https://shoppa-ten.vercel.app/#topup-success` |
+
+### The one real difference from API mode
+
+The hosted store is a page we do not control, so it **cannot carry our
+`order_id`**. The only identity it returns is the buyer's **checkout email**.
+
+That makes matching weaker than `order_id`, so the rules are stricter:
+
+| Situation | What happens |
+|---|---|
+| Email matches exactly one account, payment `completed` | Credited automatically |
+| No email / email not registered | Recorded as `pending`, **not credited** — waits for a claim |
+| Two or more accounts share the email | Recorded as `pending`, **not credited** — needs an admin |
+| Payment `failed` | Final, never credited |
+| Mixed cart (two products) | Rejected 409 before any look-up |
+| Payment for a different store slug | Rejected 409 |
+
+### Claim path
+
+A player whose checkout email differed from their account email pastes the
+DGateway reference from their payment SMS into `#topup-success`.
+
+`POST /api/topup/claim` calls `claim_store_topup`, which:
+
+* is granted to `authenticated` only and takes the user from `auth.uid()` — a
+  caller can never credit a wallet other than their own
+* requires the reference to be unclaimed, `completed` at DGateway, and settled
+* is idempotent: replaying your own claim returns `replay: true`, no double credit
+
+The reference is the shared secret — it appears in the buyer's SMS and nowhere
+public.
+
+### Env for hosted store
+
+Add to Vercel (and `.env.local` for local work):
+
+```
+VITE_DGATEWAY_STORE_URL=https://dgatewayadmin.desispay.com/store/shop/floatbet?products
+DGATEWAY_STORE_SLUG=floatbet
+```
+
+`VITE_` means this one *is* shipped to the browser. That is fine — it is a public
+URL, and no key is involved. Set `VITE_DGATEWAY_STORE_URL=off` to fall back to
+the in-app `/api/collect` rail instead.
+
+### Apply the migration
+
+```
+supabase/migrations/0003_store_topups.sql
+```
+
+Creates `store_topups` plus `apply_store_topup`, `claim_store_topup`,
+`release_store_topup`. Without it the store webhook returns 503 on every call.
+
 ## URLs for the DGateway product settings
 
 | Field | Value |

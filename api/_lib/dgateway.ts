@@ -32,6 +32,8 @@ export function assertLiveSafety(): void {
 
 export type PaymentStatus = 'pending' | 'completed' | 'failed'
 
+type Json = Record<string, unknown>
+
 export type DgTransaction = {
   reference: string
   status: string
@@ -41,6 +43,13 @@ export type DgTransaction = {
   currency?: string
   direction?: string
   failure_reason?: string
+  // Present on hosted-store transactions. Untyped upstream, so keep them loose.
+  quantity?: number
+  items?: Json[]
+  line_items?: Json[]
+  customer?: Json
+  product?: Json
+  metadata?: Json
 }
 
 export class GatewayError extends Error {

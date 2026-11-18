@@ -163,3 +163,37 @@ export function usePaymentPoll(reference: string | null) {
               : null,
   }
 }
+
+// ---------------------------------------------------------------- store mode --
+
+/**
+ * Hosted-store checkout. The buyer pays on DGateway's own page, so this is a
+ * plain navigation — the browser only follows a link, which is why it also
+ * works on GitHub Pages where /api routes do not exist.
+ *
+ * Safe to call with no reference: the return trip cannot carry our order_id,
+ * which is exactly why the browser return is cosmetic and the webhook is the
+ * only thing that credits.
+ */
+export function storeUrl(ugx: number): string | null {
+  const base = (import.meta.env.VITE_DGATEWAY_STORE_URL as string | undefined)?.trim()
+  if (!base || base === 'off') return null
+  try {
+    const url = new URL(base)
+    if (Number.isInteger(ugx) && ugx > 0) url.searchParams.set('amount', String(ugx))
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
+export function storeEnabled(): boolean {
+  const base = (import.meta.env.VITE_DGATEWAY_STORE_URL as string | undefined)?.trim()
+  return Boolean(base && base !== 'off')
+}
+
+/** The URL we tell DGateway to send the buyer back to. Cosmetic only. */
+export function successReturnUrl(): string {
+  const origin = typeof window !== 'undefined' ? window.location.origin : ''
+  return `${origin}/#topup-success`
+}
