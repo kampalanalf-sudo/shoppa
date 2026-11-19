@@ -11,6 +11,7 @@ import { ProxiCash } from './pages/ProxiCash'
 import { Auth } from './pages/Auth'
 import { Onboarding } from './pages/Onboarding'
 import { SetPassword } from './pages/SetPassword'
+import { Sportsbook } from './pages/Sportsbook'
 import { Cashout } from './pages/Cashout'
 import { ChatRoom } from './components/ChatRoom'
 import { TopUpPanel } from './components/TopUpPanel'
@@ -37,6 +38,7 @@ type View =
   | { name: 'cashout' }
   | { name: 'auth' }
   | { name: 'set-password' }
+  | { name: 'sportsbook' }
   | { name: 'topup-success'; reference: string | null }
   | { name: 'admin-parked' }
 
@@ -71,6 +73,8 @@ function Shell() {
       const h = raw.split(/[?&]/)[0].replace(/\/$/, '')
       if (h === 'proxicash') { setView({ name: 'proxicash' }); return }
       if (h === 'cashout') { setView({ name: 'cashout' }); return }
+      // Sports needs an account: a slip is attached to a wallet.
+      if (h === 'sports' || h === 'sportsbook') { setView({ name: 'sportsbook' }); return }
       if (h === 'auth') { setView({ name: 'auth' }); return }
       // Recovery link landing. Supabase sends the browser back here with a
       // session already established; without this route the reset link was a
@@ -216,6 +220,8 @@ function Shell() {
         {view.name === 'cashout' && <Cashout onBack={home} />}
         {view.name === 'auth' && <Auth onDone={home} />}
         {view.name === 'set-password' && <SetPassword onDone={home} />}
+        {view.name === 'sportsbook' && <Sportsbook onBack={home} />}
+        {/* Placeholder kept so the grid does not shift while loading. */}
         {view.name === 'admin-parked' && <AdminParked onHome={home} />}
         {view.name === 'topup-success' && (
           <TopUpSuccess
@@ -224,7 +230,7 @@ function Shell() {
             onTopUpAgain={() => { home(); setTopUpOpen(true) }}
           />
         )}
-        {!current && !isProxiCash && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} />}
+        {!current && !isProxiCash && view.name !== 'sportsbook' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} />}
       </main>
 
       <Footer />

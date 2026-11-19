@@ -19,6 +19,7 @@ import { BAZAAR, BODA } from '../src/lib/slots/games2'
 import { simulate, resolve, buildGrid, countSymbol } from '../src/lib/slots/engine'
 import { SYMBOLS, SYMBOL_POOL, buildGrid as bonniGrid, resolve as bonniResolve } from '../src/lib/slot'
 import { Header, Footer, WinFlash, Toasts, ChatDock, BottomBar } from '../src/components/Chrome'
+import { AuthProvider } from '../src/lib/auth'
 import { WalletModal, FairModal, HistoryModal, SearchModal, RewardsModal } from '../src/components/Modals'
 
 const noop = () => {}
@@ -34,7 +35,9 @@ const engineGames: [any, any][] = [
 let fails = 0
 const run = (name: string, node: any) => {
   try {
-    const html = renderToString(<StoreProvider>{node}</StoreProvider>)
+    // Header reads the signed-in identity for the account menu (handle, email,
+    // sign-out), so it needs the auth context exactly as it has in the app.
+    const html = renderToString(<AuthProvider><StoreProvider>{node}</StoreProvider></AuthProvider>)
     if (!html) throw new Error('empty output')
     console.log(`ok   ${name} (${html.length} bytes)`)
     return html

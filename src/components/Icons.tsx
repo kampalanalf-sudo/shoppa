@@ -101,3 +101,31 @@ export const IconMenu = (p: P) => (
 export const IconExternal = (p: P) => (
   <svg {...base(p)}><path d="M14 4h6v6M20 4l-8 8" /><path d="M18 14v4.5A2.5 2.5 0 0 1 15.5 21h-9A2.5 2.5 0 0 1 4 18.5v-9A2.5 2.5 0 0 1 6.5 7H11" /></svg>
 )
+
+/* ---------------------------------------------------------------- sports ---*/
+export const IconBall = (p: P) => (
+  <svg {...base(p)}><circle cx="12" cy="12" r="9" /><path d="m12 7.5 3.5 2.5-1.3 4H9.8L8.5 10 12 7.5Z" /><path d="M12 3v4.5M20.5 9.5 15.5 10M18 19l-3.8-5M6 19l3.8-5M3.5 9.5 8.5 10" /></svg>
+)
+export const IconWhistle = (p: P) => (
+  <svg {...base(p)}><path d="M14 8h7l-1.5 5H14" /><circle cx="8.5" cy="14" r="5.5" /><circle cx="8.5" cy="14" r="1.5" /></svg>
+)
+export const IconChevron = (p: P) => (
+  <svg {...base(p)}><path d="m9 6 6 6-6 6" /></svg>
+)
+export const IconClock = (p: P) => (
+  <svg {...base(p)}><circle cx="12" cy="12" r="9" /><path d="M12 7.5V12l3 2" /></svg>
+)
+
+/* ---------------------------------------------------------------- account --*/
+export const IconLogout = (p: P) => (
+  <svg {...base(p)}><path d="M15 4h3.5A1.5 1.5 0 0 1 20 5.5v13a1.5 1.5 0 0 1-1.5 1.5H15" /><path d="M10 8.5 6.5 12l3.5 3.5" /><path d="M6.5 12H15" /></svg>
+)
+export const IconKey = (p: P) => (
+  <svg {...base(p)}><circle cx="8" cy="15" r="4" /><path d="m11 12 8-8M16.5 6.5 19 9M14 9l2.5 2.5" /></svg>
+)
+export const IconUser = (p: P) => (
+  <svg {...base(p)}><circle cx="12" cy="8.5" r="3.5" /><path d="M5 20c0-3.4 3.1-5.5 7-5.5s7 2.1 7 5.5" /></svg>
+)
+export const IconRefresh = (p: P) => (
+  <svg {...base(p)}><path d="M20 12a8 8 0 1 1-2.6-5.9" /><path d="M20 4v4.5h-4.5" /></svg>
+)

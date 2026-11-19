@@ -7,8 +7,10 @@ import {
   IconBolt, IconChat, IconCheck, IconChevronDown, IconClose, IconCopy, IconEye, IconEyeOff, IconGift,
   IconHistory, IconHome, IconLive, IconMenu, IconMuted, IconSearch, IconShield, IconSpade, IconTrophy,
   IconVolume, IconWallet, IconDiamond, IconInfo, IconGrid, IconGamepad,
+  IconBall, IconKey, IconLogout, IconUser,
 } from './Icons'
 import { CoinRain, Confetti, CountUp } from './Celebration'
+import { useAuth } from '../lib/auth'
 
 /* ------------------------------------------------------------------ Header */
 
@@ -17,6 +19,7 @@ type NavView =
   | 'game'
   | 'proxicash'
   | 'cashout'
+  | 'sportsbook'
   | 'auth'
   | 'topup'
 
@@ -27,7 +30,13 @@ type HeaderProps = {
 }
 
 export function Header({ view, onNavigate, onSearch }: HeaderProps) {
-  const { balance, balanceHidden, toggleBalanceHidden, setWalletOpen, setHistoryOpen, setFairOpen, setRewardsOpen, sound, toggleSound, username, bets } = useStore()
+  const { balance, balanceHidden, toggleBalanceHidden, setWalletOpen, setHistoryOpen, setFairOpen, setRewardsOpen, sound, toggleSound, username, bets, toast } = useStore()
+  // The account menu needs the real identity, not the local store's handle: the
+  // store starts empty on a fresh device even when the player is signed in.
+  const { user, profile, configured, signOut } = useAuth()
+  const email = user?.email ?? ''
+  const handle = profile?.username ?? username
+  const [signingOut, setSigningOut] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
   const canTopUp = typeof onNavigate === 'function'
   const [mobileNav, setMobileNav] = useState(false)
@@ -61,6 +70,7 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
             Casino
           </NavItem>
           <NavItem onClick={onSearch} icon={<IconGamepad size={17} />}>Originals</NavItem>
+          <NavItem active={view === 'sportsbook'} onClick={() => onNavigate('sportsbook')} icon={<IconBall size={17} />}>Sports</NavItem>
           <NavItem active={view === 'proxicash'} onClick={() => onNavigate('proxicash')} icon={<IconBolt size={17} />}>ProxiCash</NavItem>
           <NavItem onClick={() => setFairOpen(true)} icon={<IconShield size={17} />}>Fairness</NavItem>
           <NavItem onClick={() => setRewardsOpen(true)} icon={<IconGift size={17} />}>Rewards</NavItem>
@@ -140,19 +150,40 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
               aria-label="Account menu"
               className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-neon-violet/80 to-neon-cyan/70 text-[12px] font-black text-ink-950 ring-2 ring-white/10 transition hover:ring-neon-lime/60"
             >
-              {username.slice(0, 2).toUpperCase()}
+              {(handle || email || 'PX').slice(0, 2).toUpperCase()}
             </button>
             {accountOpen && (
               <div className="absolute right-0 top-11 w-64 animate-popIn overflow-hidden rounded-2xl border border-white/10 bg-ink-850 p-1.5 shadow-pop">
                 <div className="border-b border-white/[0.07] px-3 py-2.5">
                   <p className="text-[10px] font-bold uppercase tracking-[.16em] text-slate-500">Signed in</p>
-                  <p className="truncate text-sm font-semibold text-white">{username}</p>
-                  <p className="num mt-0.5 text-[11px] text-slate-400">Level 24 · VIP Platinum</p>
+                  {/* The real handle and address, not a decoration. This block
+                      used to read "Level 24 - VIP Platinum" for every player
+                      including brand-new ones, because it was hard-coded. */}
+                  <p className="truncate text-sm font-semibold text-white">{handle || 'Player'}</p>
+                  {email && <p className="truncate text-[11px] text-slate-400">{email}</p>}
+                  <p className="num mt-0.5 text-[11px] text-slate-500">
+                    {money(balance)} PX <span className="text-slate-600">· 10 PX = 1 UGX</span>
+                  </p>
                 </div>
                 <MenuItem icon={<IconHistory size={15} />} onClick={() => { setHistoryOpen(true); setAccountOpen(false) }}>Bet history</MenuItem>
+                {configured && (
+                  <MenuItem icon={<IconUser size={15} />} onClick={() => { setAccountOpen(false); onNavigate('sportsbook') }}>
+                    Sports book
+                  </MenuItem>
+                )}
                 <MenuItem icon={<IconShield size={15} />} onClick={() => { setFairOpen(true); setAccountOpen(false) }}>Provably fair</MenuItem>
-                <MenuItem icon={<IconGift size={15} />} onClick={() => { setRewardsOpen(true); setAccountOpen(false) }}>Rewards & bonuses</MenuItem>
-                <MenuItem icon={<IconTrophy size={15} />} onClick={() => { setHistoryOpen(true); setAccountOpen(false) }}>Rank & leaderboard</MenuItem>
+                <MenuItem icon={<IconGift size={15} />} onClick={() => { setRewardsOpen(true); setAccountOpen(false) }}>Rewards &amp; bonuses</MenuItem>
+                <MenuItem icon={<IconTrophy size={15} />} onClick={() => { setHistoryOpen(true); setAccountOpen(false) }}>Rank &amp; leaderboard</MenuItem>
+
+                {configured && (
+                  <MenuItem
+                    icon={<IconKey size={15} />}
+                    onClick={() => { setAccountOpen(false); window.location.hash = 'reset-password' }}
+                  >
+                    Change password
+                  </MenuItem>
+                )}
+
                 <div className="divider my-1" />
                 <div className="flex items-center justify-between px-3 py-2">
                   <span className="text-[12px] text-slate-400">Sound</span>
@@ -160,6 +191,32 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
                     {sound ? <IconVolume size={16} /> : <IconMuted size={16} />}
                   </button>
                 </div>
+
+                {/* Signing out is only meaningful with a real session. */}
+                {configured && user && (
+                  <>
+                    <div className="divider my-1" />
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setAccountOpen(false)
+                        setSigningOut(true)
+                        try {
+                          await signOut()
+                          toast({ kind: 'info', title: 'Signed out', body: 'Your balance and bets are safe.' })
+                          onNavigate('home')
+                        } finally {
+                          setSigningOut(false)
+                        }
+                      }}
+                      disabled={signingOut}
+                      className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[12.5px] font-semibold text-rose-300 transition hover:bg-rose-500/10 disabled:opacity-50"
+                    >
+                      <IconLogout size={15} />
+                      {signingOut ? 'Signing out…' : 'Sign out'}
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -181,6 +238,7 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
           <CatPill active icon={<IconFlameBag />}>Popular</CatPill>
           <CatPill icon={<IconSpade size={13} />}>Slots</CatPill>
           <CatPill icon={<IconLive size={13} />}>Live Casino</CatPill>
+          <CatPill icon={<IconBall size={13} />} onClick={() => onNavigate('sportsbook')}>Sports</CatPill>
           <CatPill icon={<IconDiamond size={13} />}>Originals</CatPill>
           <CatPill icon={<IconGrid size={13} />}>Table Games</CatPill>
           <CatPill icon={<IconBolt size={13} />}>Instant Win</CatPill>
@@ -269,10 +327,13 @@ function NavItem({ children, icon, onClick, active }: { children: React.ReactNod
   )
 }
 
-function CatPill({ children, icon, active }: { children: React.ReactNode; icon: React.ReactNode; active?: boolean }) {
+function CatPill({
+  children, icon, active, onClick,
+}: { children: React.ReactNode; icon: React.ReactNode; active?: boolean; onClick?: () => void }) {
   return (
     <button
       type="button"
+      onClick={onClick}
       className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold transition ${
         active ? 'bg-neon-lime/12 text-neon-lime' : 'text-slate-400 hover:bg-white/[0.05] hover:text-slate-200'
       }`}
@@ -543,10 +604,11 @@ export function BottomBar({ view, onNavigate }: { view: NavView; onNavigate: Hea
     { label: 'Home', icon: <IconHome size={19} />, onClick: () => onNavigate('home'), active: view === 'home' },
     { label: 'Wallet', icon: <IconWallet size={19} />, onClick: () => setWalletOpen(true) },
     { label: 'Top up', icon: <IconBolt size={19} />, onClick: () => onNavigate('topup'), active: view === 'topup' },
+    { label: 'Sports', icon: <IconBall size={19} />, onClick: () => onNavigate('sportsbook'), active: view === 'sportsbook' },
     { label: 'Cash out', icon: <IconWallet size={19} />, onClick: () => onNavigate('cashout'), active: view === 'cashout' },
   ]
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-4 border-t border-white/[0.07] glass pb-[env(safe-area-inset-bottom)] md:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-40 grid grid-cols-5 border-t border-white/[0.07] glass pb-[env(safe-area-inset-bottom)] md:hidden">
       {items.map((i) => (
         <button
           key={i.label}
