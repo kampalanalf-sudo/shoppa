@@ -21,12 +21,15 @@
     "test:migration": "vite build --config smoke/vite.migration.config.ts && node smoke/dist-migration/migration.js",
     "test:admin": "vite build --config smoke/vite.admin.config.ts && node smoke/dist-admin/admin.js",
     "test:pwa": "vite build --config smoke/vite.pwa.config.ts && node smoke/dist-pwa/pwa.js",
-    "icons": "node scripts/build-icons.mjs",
+    "favicon": "vite build --config smoke/vite.favicon.config.ts && node smoke/dist-favicon/gen-favicon.js",
+    "icons": "npm run favicon && node scripts/build-icons.mjs",
+    "icons:android": "node scripts/build-android-icons.mjs",
     "android:sync": "npm run build && npx cap sync android",
     "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug",
     "test:reels": "vite build --config smoke/vite.reels.config.ts && node smoke/dist-reels/reels.js",
     "test:slotboard": "vite build --config smoke/vite.slotcheck.config.ts && node smoke/dist-slotcheck/slotcheck.js",
-    "test:celebrate": "vite build --config smoke/vite.celebrate.config.ts && node smoke/dist-celebrate/celebrate.js"
+    "test:celebrate": "vite build --config smoke/vite.celebrate.config.ts && node smoke/dist-celebrate/celebrate.js",
+    "test:brand": "vite build --config smoke/vite.brand.config.ts && node smoke/dist-brand/brand.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",

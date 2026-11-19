@@ -315,6 +315,110 @@ looks smooth on a real device is not something I can claim.
 
 ---
 
+## 2c. The mark: one die, everywhere
+
+The FloatBet logo **is** the die. Header, footer, studio ident, browser tab,
+PWA launcher icon, Android launcher icon and the themed (monochrome) icon are
+all the same drawing.
+
+### One source of truth
+
+`src/lib/brand.ts` generates the markup:
+
+| Export | Used by |
+|---|---|
+| `diceSvg()` | the header / footer / ident mark (via `public/favicon.svg`) and `dieOnlySvg()` |
+| `faviconSvg()` | `public/favicon.svg` — the die on the dark app tile |
+| `dieOnlySvg()` | the maskable launcher icons (die alone, no tile) |
+| `monochromeDieSvg()` | Android 13 themed icons and notification badges |
+
+`public/favicon.svg` is **generated, not hand-written**:
+
+```bash
+npm run favicon   # regenerate the SVG from brand.ts
+npm run icons     # favicon + every PNG (192/512 any, 192/512 maskable, 180 apple, 512 mono)
+```
+
+`npm run icons` now runs `npm run favicon` first, so the raster icons can never
+be built from a stale SVG. `test:brand` asserts that the file on disk is
+byte-identical to `faviconSvg()`, so editing the code without regenerating fails
+the suite.
+
+### The three bugs this pass fixed in the icon pipeline
+
+1. **Maskable icons inset the whole rounded tile**, producing a dark blob with
+   its own corners inside Android's circular crop. They now composite the die
+   *alone* at 58% on a full-bleed background.
+2. **The monochrome icon was flattened onto white**, so the system — which tints
+   themed icons itself — rendered a solid white square. It is now a flat
+   silhouette on transparent, at 62%, with the pips **cut out** rather than
+   painted: a single-colour tint would swallow painted pips, but a hole stays a
+   hole.
+3. **The old logo tile and the old favicon were different drawings**, which is
+   how a header mark and a launcher icon end up disagreeing.
+
+### Geometry
+
+A one-point-tilt cube: front face an axis-aligned square (front 5), top face a
+parallelogram (3), right face a narrow sliver in shadow. Pips are placed on a
+3x3 grid mapped onto each face's parallelogram, so they cannot bleed over an
+edge. The first two attempts did exactly that — the pips were mapped onto a
+bounding box and the top face was drawn as a crossed quad that filled like a
+bowtie. `test:brand` now asserts every pip's full radius lies inside the cube
+silhouette, and that the top face is drawn in a non-crossing order.
+
+The mark must survive being drawn at **16px**, so it uses few, large, high
+contrast shapes and no detail under ~3% of its width.
+
+### Wordmark
+
+`Wordmark` in `src/components/Chrome.tsx` renders the supplied lockup: **Float**
+in white, **Bet** in `neon-lime`, then **GAMING** tracked out in slate. Three
+sizes (`sm` / `md` / `lg`) plus `showGaming` for tight spaces. The header and
+footer both use it; neither hand-rolls the type any more.
+
+### Verified
+
+`test:brand` — 64 assertions: pip containment, face winding, the favicon
+matching the generator byte for byte, every icon file existing, the icon build
+importing the die (not a hand-made file), the maskable composite and the
+monochrome cut-out, the lockup's white/green split, and that the header places
+the die to the **left** of the wordmark.
+
+Also rasterised and visually inspected here: the die at 420px, the favicon at
+256px and 32px, all three icon families, and the maskable icon under a circular
+crop. The 32px tab icon and the circular crop both still read as a die.
+
+### The Android app icon was shipping Capacitor's default
+
+Until this pass the APK installed with **Capacitor's blue "X" on a white
+splash** — someone else's logo on the player's home screen — because
+`npx cap add android` writes those defaults and `cap sync` never replaces them.
+`capacitor.config.ts` had specified `#08090f`, so the splash also contradicted
+its own configuration.
+
+`scripts/build-android-icons.mjs` (`npm run icons:android`) now writes all 26
+Android assets from the same die:
+
+| Asset | Content |
+|---|---|
+| `mipmap-*/ic_launcher_foreground.png` | die at 56% of the 108dp layer, inside the 66% safe zone |
+| `mipmap-*/ic_launcher.png` | die on the brand-ink rounded tile (Android 7 and below) |
+| `mipmap-*/ic_launcher_round.png` | the same, circular |
+| `drawable*/splash.png` | die centred on `#08090f`, all 11 densities/orientations |
+| `values/ic_launcher_background.xml` | `#08090F` (was `#FFFFFF`) |
+
+### Not verified
+
+The **APK launcher icon** has not been seen on a device — there is no Android
+emulator here. The PNGs are generated and checked, but the Capacitor asset
+pipeline (`npx cap sync`) and the true adaptive-icon crop on a phone are
+untested. The SVG also renders through `sharp` in CI, which is not the same
+renderer as Android's.
+
+---
+---
+
 ## 3. Things to know before shipping either
 
 **Google Play will reject this app as-is.** Real-money gambling apps need a

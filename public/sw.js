@@ -18,11 +18,21 @@
  * simple: if it can move money, it does not go through the cache.
  */
 
-const VERSION = 'v1'
+// Bump this whenever anything in SHELL or public/icons changes. The shell and
+// the icons are cache-first, so without a bump an installed PWA keeps serving
+// the old file forever. v2 = the die replaced the old logo tile.
+const VERSION = 'v2'
 const SHELL_CACHE = `floatbet-shell-${VERSION}`
 const ASSET_CACHE = `floatbet-assets-${VERSION}`
 
-const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/favicon.svg']
+const SHELL = [
+  '/', '/index.html', '/manifest.webmanifest', '/favicon.svg',
+  // The launcher / tab icons. Cached so an installed app still has its own
+  // icon offline; listed here so a VERSION bump refreshes them too.
+  '/icons/icon-192.png', '/icons/icon-512.png',
+  '/icons/maskable-192.png', '/icons/maskable-512.png',
+  '/icons/apple-touch-icon-180.png',
+]
 
 // Anything matching these is treated as live data and never cached.
 const NEVER_CACHE = [

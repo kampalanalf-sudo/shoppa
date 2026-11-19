@@ -50,10 +50,9 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
           className="group flex shrink-0 items-center gap-2.5"
           aria-label="FloatBet Gaming home"
         >
-          <Logo />
-          <span className="hidden text-[17px] font-extrabold tracking-tight text-white sm:block">
-            Float<span className="text-neon-lime">Bet</span>
-            <span className="ml-1 hidden text-[10px] font-bold uppercase tracking-[.2em] text-slate-500 lg:inline">Gaming</span>
+          <Logo size={30} />
+          <span className="hidden sm:block">
+            <Wordmark size="md" />
           </span>
         </button>
 
@@ -286,20 +285,73 @@ function CatPill({ children, icon, active }: { children: React.ReactNode; icon: 
 
 /* ------------------------------------------------------------------ Logo */
 
-export function Logo({ size = 34 }: { size?: number }) {
+/**
+ * The FloatBet die.
+ *
+ * The artwork comes from `src/lib/brand.ts`, the same module that generates
+ * `public/favicon.svg` — so the header mark and the tab / launcher icon are
+ * literally the same drawing. Rendered as inline SVG rather than an <img> so it
+ * scales crisply at any size and costs no extra request.
+ */
+export function Logo({ size = 34, className = '' }: { size?: number; className?: string }) {
   return (
     <span
-      className="relative grid place-items-center rounded-xl"
+      className={`relative grid shrink-0 place-items-center ${className}`}
       style={{
-        width: size, height: size,
-        background: 'linear-gradient(150deg,#e5ff9b,#b6ee3f 45%,#7dd31c)',
-        boxShadow: '0 8px 22px -10px rgba(182,238,63,.9), inset 0 1px 0 rgba(255,255,255,.6)',
+        width: size,
+        height: size,
+        filter: 'drop-shadow(0 4px 10px rgba(198,242,78,.35))',
       }}
+      aria-hidden
     >
-      <svg width={size * 0.62} height={size * 0.62} viewBox="0 0 24 24" fill="none" stroke="#0b0d15" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M6.5 8h11a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-11a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2Z" />
-        <path d="M8.5 12h7M10.5 9.6 8.2 12l2.3 2.4M13.5 9.6 15.8 12l-2.3 2.4" />
-      </svg>
+      <img
+        src={`${import.meta.env.BASE_URL}favicon.svg`}
+        alt=""
+        width={size}
+        height={size}
+        draggable={false}
+        className="h-full w-full select-none object-contain"
+      />
+    </span>
+  )
+}
+
+/**
+ * The wordmark: "Float" in white, "Bet" in green, with GAMING tracked out in
+ * slate — matching the supplied brand lockup.
+ *
+ * The whole lockup is one component so the header, the footer and anywhere else
+ * it appears cannot fall out of step.
+ */
+export function Wordmark({
+  size = 'md',
+  showGaming = true,
+  className = '',
+}: {
+  size?: 'sm' | 'md' | 'lg'
+  showGaming?: boolean
+  className?: string
+}) {
+  const scale = {
+    sm: { word: 'text-[15px]', gaming: 'text-[8.5px] tracking-[.26em]' },
+    md: { word: 'text-[17px]', gaming: 'text-[9.5px] tracking-[.28em]' },
+    lg: { word: 'text-[22px]', gaming: 'text-[11px] tracking-[.3em]' },
+  }[size]
+
+  return (
+    <span className={`flex items-center gap-2.5 ${className}`}>
+      <span className={`font-display font-extrabold leading-none tracking-[-.02em] ${scale.word}`}>
+        <span className="text-white">Float</span>
+        <span className="text-neon-lime">Bet</span>
+      </span>
+      {showGaming && (
+        <span
+          className={`font-display font-bold uppercase leading-none text-slate-400 ${scale.gaming}`}
+          style={{ letterSpacing: undefined }}
+        >
+          Gaming
+        </span>
+      )}
     </span>
   )
 }
@@ -434,7 +486,7 @@ export function Footer() {
           <div>
             <div className="flex items-center gap-2.5">
               <Logo size={32} />
-              <span className="text-[15px] font-extrabold text-white">Float<span className="text-neon-lime">Bet</span> <span className="text-[10px] font-bold uppercase tracking-[.18em] text-slate-500">Gaming</span></span>
+              <Wordmark size="sm" />
             </div>
             <p className="mt-3 max-w-xs text-[12.5px] leading-relaxed text-slate-500">
               Provably fair crypto casino. 8 original games, instant settlement and the fastest withdrawals in the industry.
