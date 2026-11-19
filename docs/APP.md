@@ -157,41 +157,71 @@ npm run android:apk     # build + sync + assembleDebug
 
 ## 2b. Reel animation
 
-The engine slots (`chape`, `bluemountain`, `bazaar`, `boda`) share one board
-component, `src/components/SlotBoard3D.tsx`, and one motion model,
-`src/lib/reels.ts`.
+There are **two** slot boards and both use one motion model in
+`src/lib/reels.ts`:
 
-**What was wrong.** The previous reel incremented a counter twelve times, then
-applied a CSS `transition` while the rows were positioned by `top` — and the
-transform it transitioned was `translateY(${settling ? 0 : 0}px)`, which is
-always zero. Nothing animated. The reels jumped from one grid to the next and
-the "spin" was 900 ms of a shimmer overlay over a static board.
+* `src/components/SlotBoard3D.tsx` — the engine slots (`chape`,
+  `bluemountain`, `bazaar`, `boda`), driven by `src/games/EngineSlot.tsx`.
+* `src/components/Slot3D.tsx` — Bonni & Clyve, driven by
+  `src/games/BonniClyve.tsx`.
+
+**What was wrong, in three passes.**
+
+1. The first board transitioned `translateY(${settling ? 0 : 0}px)` while rows
+   were positioned by `top`. Both branches were zero, so nothing moved; the
+   "spin" was 900 ms of shimmer over a static board.
+2. The second pass drove a rAF loop on the engine board — but rebuilt the strip
+   for the *outcome* the instant the spin began. The visible symbols were
+   replaced before any motion happened, so the board **jumped, then span**. This
+   is what the player reported. Bonni & Clyve was never touched at all and still
+   hopped 14 times and snapped.
+3. This pass. The strip a drum spins now **starts on exactly the symbols the
+   drum is already showing**, and ends on the outcome:
+
+   ```
+   [ what you see ]  [ 10 faces of filler ]  [ where it lands ]
+   ```
+
+   A spin is therefore a continuation of the visible board, not a swap.
 
 **How it works now.**
 
 | Piece | Behaviour |
 |---|---|
-| Motion driver | one `requestAnimationFrame` loop per reel, writing `translate3d` straight to the strip |
-| Easing | ease-out quart over the whole travel — fast launch, long settle |
-| Stagger | 620 / 790 / 960 / 1130 / 1300 ms, left to right |
-| Motion blur | applied while travelling via a `filter`, dropped on landing |
-| Landing | offset computed so the window shows exactly the resolved result |
-| Result commit | `EngineSlot` waits for the **last** reel stop, so a win highlight can never precede the reels |
-| Reduced motion | `prefers-reduced-motion` lands the reels instantly, no travel |
+| Motion driver | one composited CSS `transition: transform` per drum — the compositor runs it off the main thread, so settling the round cannot stall a drum |
+| Start | identity transform; the strip's first window *is* the resting board, so t=0 is pixel-identical |
+| Anticipation | a 90 ms / 5 px pull-back before the launch, read as the drum engaging |
+| Easing | `cubic-bezier(.14,.78,.26,1)` — fast off the mark, long deceleration, still moving at the stop |
+| Stagger | 120 ms per drum, travel 1000 ms each: stops at 1090 / 1210 / 1330 / 1450 / 1570 ms |
+| Travel | 13 faces (~2.5 drum turns), derived from the strip so it can never fall short |
+| Motion blur | `blur(0.7px)` while travelling only, cleared on landing |
+| Result commit | the game and the board share `spinPlan()`; the payout lands on the last drum's stop |
+| Reduced motion | `prefers-reduced-motion` lands the drums instantly |
 
-React state is deliberately not updated per frame — five reels re-rendering at
-60 fps drops frames on mid-range Android, and a stuttering slot is worse than a
-slower one. The transform is written directly to the DOM node instead.
+**Two invariants worth knowing before touching this code.**
+
+* Transform and transition are written **imperatively** (layout effects), never
+  declared in JSX. A re-render would rewrite the style attribute and cancel a
+  travel mid-flight. This is the one place where direct DOM writes are correct.
+* The board starts a spin on a **`spinKey`** prop bumped in the same React batch
+  that publishes the outcome to `grid` — not on the `spinning` flag. A drum must
+  never begin travelling before it knows where it is landing.
+
+The old `frameScale()` compressed 3-reel boards to ~850 ms. It is gone: a
+three-reel board should feel the same weight as a five-reel one, just with fewer
+drums.
 
 ### Verified
 
-`test:reels` (28 assertions) covers the motion model: offset is non-zero and
-changes between frames, monotonic, never overshoots, decelerates, clamps at both
-ends, stop times stagger, and the landing window shows the resolved symbols.
+`test:reels` (32 assertions) covers the model: the strip opens on the previous
+symbols and closes on the outcome, the landing window is exactly one window tall
+(this caught a real off-by-`rows`-gaps bug that pulled an extra symbol in), the
+drum never runs out of symbols mid-travel, stop times ascend and match
+`spinPlan`, and a 3-reel board is not sped up.
 
-`test:slotboard` (8 assertions) renders the real component through
-`renderToString` and asserts five strips exist, each carries a non-zero
-`translate3d`, and the blur only appears while spinning.
+`test:slotboard` (10 assertions) renders **both** boards through
+`renderToString`: five strips each, no transform baked into the markup, sharp at
+rest, shimmer only while spinning.
 
 ### Not verified
 

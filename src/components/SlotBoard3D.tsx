@@ -1,6 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { SlotConfig, SlotSymbolDef, Grid } from '../lib/slots/engine'
-import { buildStrip, offsetAt, stopTimes, totalSpinMs, frameScale } from '../lib/reels'
+import {
+  buildSpinStrip, spinPlan, restOffsetPx, stripHeightPx, restTransform,
+  START_TRANSFORM, NUDGE_TRANSFORM, NUDGE_EASE, SPIN_EASE, SPIN_BLUR,
+} from '../lib/reels'
 
 /**
  * Generic 3D ways-slot board for the engine games.
@@ -94,108 +97,132 @@ export function SymbolFace({ sym, face }: { sym: SlotSymbolDef; face: number }) 
 
 type ReelProps = {
   reel: number
-  target: string[]
+  /** symbols this drum is showing right now */
+  current: string[]
+  /** symbols it must land on */
+  next: string[]
   pool: string[]
   symById: Record<string, SlotSymbolDef>
   face: number
   gap: number
-  /** bump this to start a spin */
+  /** bumped once per spin, at the moment the outcome is published */
   spinToken: number
-  /** ms from spin start until this reel stops */
   stopMs: number
-  /** total spin length, so the settle can be positioned */
-  totalMs: number
+  delayMs: number
+  nudgeMs: number
+  travelMs: number
   winCells: Set<string>
   reducedMotion: boolean
-  /** the board's spin state, so the first frame is already in motion */
-  boardSpinning: boolean
 }
 
 /**
  * One drum.
  *
- * During the spin the strip is translated by a rAF-driven offset and slightly
- * blurred in the direction of travel, which is what sells speed. On stop the
- * blur drops to zero and the strip lands exactly on its window.
+ * The strip is built from the symbols this drum is ALREADY showing, so the spin
+ * is a continuation of what the player is looking at rather than a swap of the
+ * whole board. Travel is one composited CSS transition, which the compositor
+ * runs independently of the main thread, so settling the round cannot stall it.
  */
 function Reel({
-  reel, target, pool, symById, face, gap, spinToken, stopMs, totalMs, winCells,
-  reducedMotion, boardSpinning,
+  reel, current, next, pool, symById, face, gap, spinToken, stopMs, delayMs,
+  nudgeMs, travelMs, winCells, reducedMotion,
 }: ReelProps) {
-  const strip = useRef<HTMLDivElement>(null)
-  const [spinning, setSpinning] = useState(false)
+  const stripRef = useRef<HTMLDivElement>(null)
+  const [moving, setMoving] = useState(false)
+  const [landed, setLanded] = useState(false)
   const step = face + gap
 
-  const { cells, height, landing } = useMemo(() => {
-    const s = buildStrip(target, pool, step)
-    return { cells: s.cells, height: s.height, landing: s.height - target.length * step }
-  }, [target, pool, step])
+  const stripKey = `${current.join(',')}|${next.join(',')}`
+  const strip = useMemo(
+    () => buildSpinStrip(current, next, pool, { travelFaces: 10, rows: next.length || 3 }),
+    // stripKey is the content identity of both windows
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stripKey],
+  )
+  const rows = next.length || 3
+  const height = stripHeightPx(strip.length, face, gap)
+  const offset = restOffsetPx(strip.length, rows, step)
 
-  useEffect(() => {
+  // Imperative, not declarative: see the note in Slot3D. A re-render here would
+  // rewrite the style attribute and cancel the travel mid-flight.
+  useLayoutEffect(() => {
+    const el = stripRef.current
+    if (!el) return
+    el.style.transition = 'none'
+    el.style.transform = restTransform(offset)
+  }, [stripKey, offset])
+
+  useLayoutEffect(() => {
     if (spinToken === 0) return
-    const el = strip.current
+    const el = stripRef.current
     if (!el) return
 
-    // Reduced motion: land immediately, no travel. Still communicate the spin
-    // by the win highlight afterwards.
     if (reducedMotion) {
-      el.style.transform = `translate3d(0,${-landing}px,0)`
-      setSpinning(false)
+      el.style.transition = 'none'
+      el.style.transform = restTransform(offset)
+      setMoving(false)
+      setLanded(true)
       return
     }
 
-    setSpinning(true)
-    const start = performance.now()
-    let raf = 0
-    let done = false
+    el.style.transition = 'none'
+    el.style.transform = START_TRANSFORM
+    setMoving(false)
+    setLanded(false)
 
-    const tick = (now: number) => {
-      const t = now - start
-      const off = offsetAt(t, totalMs, landing)
-      el.style.transform = `translate3d(0,${-off}px,0)`
+    let cancelled = false
+    const timers: number[] = []
 
-      if (t >= stopMs && !done) {
-        // land exactly, kill the blur, and stop this reel's loop
-        done = true
-        el.style.transform = `translate3d(0,${-landing}px,0)`
-        setSpinning(false)
-        return
-      }
-      raf = requestAnimationFrame(tick)
+    timers.push(window.setTimeout(() => {
+      if (cancelled) return
+      el.style.transition = `transform ${nudgeMs}ms ${NUDGE_EASE}`
+      el.style.transform = NUDGE_TRANSFORM
+      setMoving(true)
+    }, delayMs))
+
+    timers.push(window.setTimeout(() => {
+      if (cancelled) return
+      void el.offsetHeight
+      el.style.transition = `transform ${travelMs}ms ${SPIN_EASE}`
+      el.style.transform = restTransform(offset)
+    }, delayMs + nudgeMs))
+
+    timers.push(window.setTimeout(() => {
+      if (cancelled) return
+      el.style.transition = 'none'
+      el.style.transform = restTransform(offset)
+      setMoving(false)
+      setLanded(true)
+    }, stopMs))
+
+    return () => {
+      cancelled = true
+      timers.forEach((t) => window.clearTimeout(t))
     }
-
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [spinToken, stopMs, totalMs, landing, reducedMotion])
+  }, [spinToken, offset, delayMs, nudgeMs, travelMs, stopMs, reducedMotion])
 
   return (
     <div className="relative h-full flex-1 overflow-hidden" aria-hidden>
       <div
-        ref={strip}
+        ref={stripRef}
         className="absolute left-0 right-0 top-0 will-change-transform"
         style={{
           height,
-          transform: `translate3d(0,${-landing}px,0)`,
-          // A blur only while moving. `backface-visibility` keeps the layer
-          // promoted so the transform stays on the compositor.
-          filter: (spinning || (boardSpinning && !reducedMotion)) ? 'blur(1.1px)' : 'none',
-          backfaceVisibility: 'hidden',
-          // Motion blur is a function of speed; the animation is ease-out so a
-          // constant blur is a fair approximation and far cheaper than tracking
-          // velocity every frame.
+          filter: moving ? SPIN_BLUR : 'none',
           transition: 'filter 120ms linear',
+          backfaceVisibility: 'hidden',
         }}
       >
-        {cells.map((cell) => {
+        {strip.map((cell) => {
           const sym = symById[cell.symId]
           if (!sym) return null
           return (
             <div
-              key={cell.index}
+              key={cell.key}
               className="absolute left-0 right-0 grid place-items-center overflow-hidden rounded-[16%] border border-white/10"
               style={{
                 height: face,
-                top: cell.y,
+                top: cell.key * step,
                 background:
                   'linear-gradient(180deg, rgba(38,46,66,.96) 0%, rgba(22,27,41,.98) 55%, rgba(15,19,30,1) 100%)',
                 boxShadow:
@@ -209,8 +236,8 @@ function Reel({
       </div>
 
       {/* win highlight is drawn as a fixed overlay so it cannot scroll away */}
-      {!spinning &&
-        target.map((_, row) =>
+      {landed &&
+        next.map((_, row) =>
           winCells.has(`${reel}-${row}`) ? (
             <span
               key={row}
@@ -227,13 +254,19 @@ export type SlotBoard3DProps = {
   config: SlotConfig
   grid: Grid | null
   spinning: boolean
+  /**
+   * Bumped by the game at the exact moment the outcome is committed to `grid`.
+   * Drums start on this, never on `spinning`: a drum cannot start travelling
+   * before it knows where it is landing.
+   */
+  spinKey: number
   winCells: Set<string>
   glow?: 'none' | 'win' | 'omen' | 'free'
   className?: string
 }
 
 export function SlotBoard3D({
-  config, grid, spinning, winCells, glow = 'none', className = '',
+  config, grid, spinning, spinKey, winCells, glow = 'none', className = '',
 }: SlotBoard3DProps) {
   const symById = useMemo(() => {
     const m: Record<string, SlotSymbolDef> = {}
@@ -257,14 +290,25 @@ export function SlotBoard3D({
 
   const board = grid ?? fallback
 
-  // Per-reel landing symbols. Held across the spin so the strip does not
-  // reshuffle mid-flight: the result must be committed before the reels start,
-  // which is also what makes the outcome honest.
-  const [targets, setTargets] = useState<string[][]>(() => board.map((col) => col.map((c) => c.id)))
+  // What each drum is showing at rest, and the flight it is committed to.
+  const [shown, setShown] = useState<string[][]>(() => board.map((col) => col.map((c) => c.id)))
+  const [flight, setFlight] = useState<{ from: string[][]; to: string[][] } | null>(null)
+
+  // spinKey changes in the same batch as `grid`, so `to` and the start token
+  // always arrive together — a drum can never launch at a stale target.
   useEffect(() => {
-    setTargets(board.map((col) => col.map((c) => c.id)))
-    // board identity changes once per spin
-  }, [board])
+    if (spinKey === 0) return
+    setFlight({ from: shown, to: board.map((col) => col.map((c) => c.id)) })
+    // spinKey only: `shown` and `board` are read at that instant by design.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spinKey])
+
+  // Landed: whatever is on screen becomes the new resting board.
+  useEffect(() => {
+    if (spinKey === 0) return
+    setShown(board.map((col) => col.map((c) => c.id)))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spinKey])
 
   const [face, setFace] = useState(56)
   const [gap, setGap] = useState(3)
@@ -298,25 +342,10 @@ export function SlotBoard3D({
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches
   }, [])
 
-  const scale = frameScale(config.reels, config.rows)
-  const stops = useMemo(
-    () => stopTimes(config.reels).map((ms) => Math.round(ms * scale)),
-    [config.reels, scale],
-  )
-  const totalMs = useMemo(() => Math.round(totalSpinMs(config.reels) * scale), [config.reels, scale])
+  const plan = useMemo(() => spinPlan(config.reels), [config.reels])
 
-  // A spin is identified by a monotonically increasing token so a reel can
-  // restart even if it was already at rest.
-  const [spinToken, setSpinToken] = useState(0)
-  const wasSpinning = useRef(false)
-  useEffect(() => {
-    if (spinning && !wasSpinning.current) {
-      wasSpinning.current = true
-      setSpinToken((n) => n + 1)
-    } else if (!spinning && wasSpinning.current) {
-      wasSpinning.current = false
-    }
-  }, [spinning])
+  const from = flight?.from ?? shown
+  const to = flight?.to ?? board.map((col) => col.map((c) => c.id))
 
   const boardH = face * config.rows + gap * (config.rows - 1)
 
@@ -350,23 +379,28 @@ export function SlotBoard3D({
 
           <div className="relative px-1 py-1 sm:px-3 sm:py-3">
             <div ref={wrap} className="flex w-full" style={{ gap: `${gap}px`, height: `${boardH}px` }}>
-              {targets.map((target, reel) => (
-                <Reel
-                  key={reel}
-                  reel={reel}
-                  target={target}
-                  pool={pool}
-                  symById={symById}
-                  face={face}
-                  gap={gap}
-                  spinToken={spinToken}
-                  stopMs={stops[reel] ?? totalMs}
-                  totalMs={totalMs}
-                  winCells={winCells}
-                  reducedMotion={reducedMotion}
-                  boardSpinning={spinning}
-                />
-              ))}
+              {from.map((_, reel) => {
+                const p = plan.reels[reel]
+                return (
+                  <Reel
+                    key={reel}
+                    reel={reel}
+                    current={from[reel] ?? []}
+                    next={to[reel] ?? []}
+                    pool={pool}
+                    symById={symById}
+                    face={face}
+                    gap={gap}
+                    spinToken={spinKey}
+                    stopMs={p.stopMs}
+                    delayMs={p.delayMs}
+                    nudgeMs={p.nudgeMs}
+                    travelMs={p.travelMs}
+                    winCells={winCells}
+                    reducedMotion={reducedMotion}
+                  />
+                )
+              })}
             </div>
 
             {/* glass + scanlines */}

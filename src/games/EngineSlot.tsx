@@ -9,7 +9,7 @@ import { GameShell, PayoutRow } from '../components/GameShell'
 import { SlotBoard3D } from '../components/SlotBoard3D'
 import { PlayBar } from '../components/PlayBar'
 import { buildGrid, resolve, type Grid, type SlotConfig, type SlotOutcome } from '../lib/slots/engine'
-import { frameScale, stopTimes, totalSpinMs } from '../lib/reels'
+import { spinPlan } from '../lib/reels'
 
 type Props = { config: SlotConfig; id: GameId; onBack: () => void; onFair: () => void }
 
@@ -27,6 +27,9 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
   const [autoplay, setAutoplay] = useState(0)
   const [history, setHistory] = useState<number[]>([])
   const [lastWin, setLastWin] = useState(0)
+  // Bumped the instant an outcome is published, so the drums start travelling
+  // against a board that already knows where it lands.
+  const [spinKey, setSpinKey] = useState(0)
   const autoRef = useRef(false)
 
   const safe = (fn: () => void) => { try { fn() } catch { /* audio best-effort */ } }
@@ -64,20 +67,23 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
           ? `${out.wins[0].symbol} ×${out.wins[0].multiplier}`
           : 'No win'
 
-    // The board animates for exactly this long (see SlotBoard3D). The result is
-    // committed when the LAST reel stops, so the win highlight can never appear
-    // before the reels have landed.
-    const scale = frameScale(config.reels, config.rows)
-    const stops = stopTimes(config.reels).map((ms) => Math.round(ms * scale))
-    const landAt = Math.round(totalSpinMs(config.reels) * scale)
+    // ONE clock for the drums and the payout. The board publishes this same
+    // plan in the same frame, so the win highlight can never appear before the
+    // last drum has landed — nor long after it, which reads as a stall.
+    const plan = spinPlan(config.reels)
 
-    // One click per drum, at the moment it actually stops.
-    stops.forEach((ms, r) => {
-      window.setTimeout(() => safe(() => sfx.reelStop(r)), ms)
+    // Publish the outcome NOW, while the board is still sitting on the previous
+    // symbols. Each drum builds its strip from "what I am showing" to "where I
+    // must land", which is what stops the board jumping at t=0.
+    setGrid(out.grid)
+    setSpinKey((k) => k + 1)
+
+    // One click per drum, at the moment it actually lands.
+    plan.reels.forEach((r) => {
+      window.setTimeout(() => safe(() => sfx.reelStop(r.reel)), r.stopMs)
     })
 
     window.setTimeout(() => {
-      setGrid(out.grid)
       setSpinning(false)
       setOutcome(out)
       setLastWin(out.totalMultiplier)
@@ -119,7 +125,7 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
         multiplier: out.totalMultiplier,
         detail,
       })
-    }, landAt)
+    }, plan.totalMs)
   }, [spinning, freeSpins, bet, balance, placeBet, id, config, nextFloats, settleBet, toast, flashLoss])
 
   useHotkey(() => { if (autoplay === 0) void spin() })
@@ -193,6 +199,7 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
           config={config}
           grid={grid}
           spinning={spinning}
+          spinKey={spinKey}
           winCells={winCells}
           glow={glow}
         />

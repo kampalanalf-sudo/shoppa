@@ -11,6 +11,7 @@ import {
   MAX_WIN, REELS, ROWS, SYMBOLS, buildGrid, resolve, type Grid, type SlotOutcome, type SymbolId,
 } from '../lib/slot'
 import { IconBolt, IconFlame, IconTrophy } from '../components/Icons'
+import { spinPlan } from '../lib/reels'
 
 const PAY_ROWS: SymbolId[] = ['wild', 'bonita', 'clyve', 'diamond', 'badge', 'cash', 'key', 'donut']
 
@@ -28,6 +29,9 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
   const [freeSpins, setFreeSpins] = useState(0)
   const [autoLeft, setAutoLeft] = useState(0)
   const [history, setHistory] = useState<number[]>([4.2, 0, 12.5, 2.1, 0, 8.4])
+  // Bumped the instant an outcome is published, so the drums start their travel
+  // against a board that already has a target.
+  const [spinKey, setSpinKey] = useState(0)
   const timers = useRef<number[]>([])
 
   const clearTimers = () => {
@@ -60,10 +64,22 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
       const floats = await nextFloats(REELS * ROWS)
       const next = buildGrid(floats)
 
-      // reels lock in one after another (3 -> 0 ms)
-      schedule(() => {
-        setGrid(next)
-      }, 120)
+      // ONE clock for the drums and the payout. The board publishes this exact
+      // plan in the same frame, so the result can never be committed before the
+      // last drum is at rest (or long after it, which reads as a stall).
+      const plan = spinPlan(REELS)
+
+      // Publish the outcome to the board NOW, while it is still sitting on the
+      // previous symbols. Each drum builds its strip from "what I am showing"
+      // to "where I must land", which is what stops the board jumping at t=0.
+      // React batches these, so the drums receive grid + spinKey together.
+      setGrid(next)
+      setSpinKey((k) => k + 1)
+
+      // One click per drum, at the moment it actually lands.
+      plan.reels.forEach((r) => {
+        schedule(() => sfx.reelStop(r.reel), r.stopMs)
+      })
 
       schedule(() => {
         const res = resolve(next)
@@ -72,13 +88,6 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
         setLastWin(res.totalMultiplier)
         setHistory((h) => [res.totalMultiplier, ...h].slice(0, 14))
 
-        const cells = new Set<string>()
-        res.wins.forEach((w) =>
-          w.cells.forEach((c) => {
-            // winning cell positions: match the displayed row of that symbol
-            cells.add(`${c.reel}-${c.row}`)
-          }),
-        )
         // only highlight cells that are actually part of the ways run
         const lit = new Set<string>()
         res.wins.forEach((w) => {
@@ -107,9 +116,6 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
           setGlow(res.totalMultiplier >= 40 ? 'bigwin' : 'win')
           if (sound) (res.totalMultiplier >= 40 ? sfx.bigwin : sfx.win)()
         } else if (sound) sfx.omen()
-        if (sound) {
-          for (let r = 0; r < 5; r++) window.setTimeout(() => sfx.reelStop(r), 300 + r * 90)
-        }
 
         if (res.chase) {
           setGlow('chase')
@@ -117,7 +123,7 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
           toast({ kind: 'win', title: 'Chase mode!', body: `3 sirens — ${res.freeSpins} free spins unlocked.` })
         }
         void paid
-      }, 1650)
+      }, plan.totalMs)
 
       return true
     },
@@ -274,6 +280,7 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
         <Slot3D
           grid={grid}
           spinning={spinning}
+          spinKey={spinKey}
           stopping={!spinning}
           winCells={winCells}
           glow={glow}
