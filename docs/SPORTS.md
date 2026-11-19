@@ -298,35 +298,128 @@ the code.
 
 ---
 
-## 9. Installing the live feed
+## 9. Enabling sports mode — the checklist
 
-Built and applied. It needs one thing from you: a free API key, because the
-signup is yours.
+Five steps. Each one unblocks the next, so do them in order. Total time about
+15 minutes, and nothing here costs money.
 
-### What you do (5 minutes)
+The Sports UI is already live on both hosts. What is missing is the **data**,
+and the data can only be fetched by a server. That is why the Vercel half
+matters even though GitHub Pages is where you have been looking.
 
-The key is live and verified — `/v4/sports` and one `/odds` call both returned
-real EPL fixtures. What is left is putting it where the server can read it.
-
-1. Add **`ODDS_API_KEY`** to Vercel — Project → Settings → Environment Variables
-   → Production + Preview, tick **Sensitive**. No `VITE_` prefix, ever.
-2. Run `./scripts/set-feed-env.sh` after `vercel link --project shoppa`. It
-   generates `CRON_SECRET` and sets it plus `ODDS_MARGIN_PCT` for you. (The CLI
-   cannot mark a variable *sensitive*, which is why the key stays a dashboard
-   step — a billable credential belongs there, not in a shell argument.)
-3. Redeploy: `vercel --prod`.
-
-Then trigger the first pull by hand:
+### Step 0 — check what you are working with
 
 ```bash
-curl -H "Authorization: Bearer $CRON_SECRET" https://shoppa-ten.vercel.app/api/feed/sync
+git pull origin main          # the feed code is on main, merged in PR #25
+vercel whoami                 # must be the account that owns `shoppa`
 ```
 
-Check it without spending a credit:
+The Vercel project is **`shoppa` under `iuearadio`**. If `vercel whoami` prints
+`charlielwanga88-4249`, you are on the wrong account — it only has
+`proxicore-visor`, and every step below will silently do nothing useful.
 
 ```bash
-curl -H "Authorization: Bearer $CRON_SECRET" "https://shoppa-ten.vercel.app/api/feed/sync?dry=1"
+vercel link --project shoppa    # NOT proxicore-visor
 ```
+
+`scripts/set-feed-env.sh` refuses to run if you link the wrong one, so if it
+exits complaining, that is this step being wrong.
+
+### Step 1 — three environment variables in Vercel
+
+Project → Settings → Environment Variables. All three, Production **and**
+Preview.
+
+| Variable | Value | Sensitive? |
+|---|---|---|
+| `ODDS_API_KEY` | `759d…329` (the key you gave me) | **yes — tick it** |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → `service_role` | **yes — tick it** |
+| `CRON_SECRET` | any long random string | yes |
+
+`CRON_SECRET` is the bearer token Vercel sends to the cron routes — it is how
+`/api/feed/sync` knows the caller is the scheduler and not a stranger. You can
+generate one yourself:
+
+```bash
+openssl rand -hex 32
+```
+
+None of these get a `VITE_` prefix. A `VITE_` variable is compiled into the
+JavaScript the browser downloads.
+
+`SUPABASE_SERVICE_ROLE_KEY` is the one that is easy to miss and fails
+confusingly: without it the sync route answers **`DB_KEY_MISSING`**, not "no
+data", because it has nowhere to write.
+
+### Step 2 — redeploy
+
+```bash
+vercel --prod
+```
+
+Environment variables only apply to **new** builds. Skipping this is the single
+most common reason a correctly-set variable appears to do nothing.
+
+### Step 3 — turn it on without spending a credit
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  "https://shoppa-ten.vercel.app/api/feed/sync?dry=1"
+```
+
+`dry=1` reports which sports would be fetched and confirms the key and database
+are both configured. It costs **nothing**. You want:
+
+```json
+{ "ok": true, "dry": true, "configured": true, "sports": ["soccer_epl", ...] }
+```
+
+If `configured` is `false`, `ODDS_API_KEY` did not reach the build — go back to
+step 2.
+
+### Step 4 — the first real pull
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+  "https://shoppa-ten.vercel.app/api/feed/sync"
+```
+
+This spends **3 credits** (one per sport) and returns how many fixtures it
+upserted and how many credits are left. Then open:
+
+**https://shoppa-ten.vercel.app/#sports**
+
+Fixtures should be there. From then on the schedule in `vercel.json` keeps it
+current — no further action.
+
+### Step 5 — confirm settlement will work
+
+Nothing to run, but check it once the first match finishes:
+
+```sql
+select started_at, status, fixtures_upserted, credits_left, errors
+  from feed_sync_log order by started_at desc limit 5;
+```
+
+`status` should be `ok`. `partial` means some fixtures failed and the board is
+incomplete — the `errors` column says which.
+
+### If it does not work
+
+| What you see | Cause | Fix |
+|---|---|---|
+| Board says "No matches on the board yet" | No sync has run | Step 4 |
+| `{ "error": "ODDS_KEY_MISSING" }` | Key not in the build | Step 1 then step 2 |
+| `{ "error": "DB_KEY_MISSING" }` | Service role key missing | Step 1 |
+| `{ "error": "not authorised" }` | `CRON_SECRET` mismatch | Re-run step 1, redeploy |
+| `401` from every route | Wrong Vercel account linked | Step 0 |
+| Fixtures appear but a bet is refused with "odds are out of date" | No sync in 90 minutes | Check the cron ran; the limit is deliberate |
+| `404` on `/api/feed/*` | You are on GitHub Pages, not Vercel | Pages is static only — see §4b |
+
+That last row is the important one. **GitHub Pages cannot ever run the feed.**
+It serves files; it does not execute functions. `gh-pages` contains zero files
+under `api/`, and I verified that. The Sports section will render on Pages, but
+prices can only come from the Vercel host.
 
 ### What runs after that
 
