@@ -3,28 +3,77 @@
 Exact steps, in order. Nothing here is optional — each step is a hard dependency
 for the next.
 
-> **Current state:** none of the SQL below has ever been applied, and no real
-> DGateway call has ever succeeded from this project. The first live payment will
-> be the first time this code meets the real API. Step 9 is not optional.
+> **Current state (updated):** the Supabase project `floatbet`
+> (`dtroufrfavmjldtlprpn`, eu-west-1) now exists and migrations 0001–0005 are
+> **applied**. The schema, the signup trigger, the money RPCs and the privilege
+> lockdown are verified against the live database.
+>
+> Still outstanding: Vercel env vars (step 4), Google OAuth credentials (step 2),
+> your admin flag (step 5). No real DGateway call has ever succeeded, so step 7
+> is not optional.
 
 ---
 
-## 0. Pick your Supabase project first
+## 0. The Supabase project (done)
 
-You have **no Supabase project for FloatBet** yet. These two projects exist in
-the connected account (`zioruvnvcefrdlxmvhes`, eu-west-1):
+**Already created:** `floatbet` — ref `dtroufrfavmjldtlprpn`, region `eu-west-1`,
+plan free, organization `wvbizaxothlogmkepsia` (ProxiTalk).
 
-| Project | Ref |
+| Value | Where |
 |---|---|
-| proxicore-outbreak-system | `sshnsototbqlznadyysk` |
-| proxitalk-mesh-cloud | `hsgcsyhyzsftinisksty` |
+| Project URL | `https://dtroufrfavmjldtlprpn.supabase.co` |
+| Anon / publishable key | `sb_publishable_NMfiDW0hFB9KXtgmurOqZw_18-UcMPX` (or the legacy `anon` JWT) |
+| service_role key | Supabase → Project Settings → API → `service_role`. **Server only.** |
 
-**Do not reuse either.** They belong to other apps, and the migration creates
-`wallets`, `ledger`, `payment_orders` and `store_topups` — pointing FloatBet at
-one would put two apps' money in one database.
+**Database password** (generated at creation, store it in a password manager):
+`5ZRD8OYFSNEPj6f0yq4Azd7U3mpR`
 
-Create a **new** project (free plan allows it), region `eu-west-1`, then use its
-ref everywhere `PROJECT_REF` appears below.
+Migrations **0001 through 0005 are applied**. The steps below are kept for the
+record and for rebuilding the project from scratch.
+
+### What was verified on the live database
+
+| Check | Result |
+|---|---|
+| 10 tables, 15 functions present | pass |
+| Signup creates profile + wallet + 10,000 PX `grant` ledger row | pass |
+| `place_bet` 1,000 then `settle_round` 2.5× | balance 10,000 → 9,000 → **11,500** |
+| A player cannot read another player's wallet/ledger | 0 rows |
+| A player cannot write a balance directly | 0 rows updated |
+| `request_cashout` blocked without KYC | raises `confirm you are 18 or older` |
+| Realtime on `wallets`, `chat_messages`, `gifts` | 3 tables in publication |
+
+### A hole that was found and closed (0005)
+
+`0001`–`0004` used `revoke all on function … from public`, which is **not**
+enough on Supabase: the platform explicitly GRANTs EXECUTE to `anon` and
+`authenticated` at CREATE time, and an explicit role grant is not inherited from
+PUBLIC. Measured before the fix:
+
+```
+authenticated could execute admin_release_store_topup  -> true
+authenticated could execute apply_store_topup          -> true
+authenticated could execute settle_cashout             -> true
+anon          could execute place_bet                  -> true
+```
+
+All SECURITY DEFINER, all bypassing RLS — a player could have called
+`admin_release_store_topup(reference, their_id, any_admin_id)` through PostgREST
+and credited themselves. **`0005_function_privileges.sql` fixes it** and sets
+`alter default privileges` so future functions fail closed. Re-verified after:
+all four are now `false`, while `place_bet` and `claim_store_topup` remain
+`true` for `authenticated`.
+
+---
+
+## 0b. If you ever rebuild from scratch
+
+**Do not reuse another app's project.** The organization also holds
+`proxicore-outbreak-system` and `proxitalk-mesh-cloud`; the migrations create
+`wallets`, `ledger` and `payment_orders`, so pointing FloatBet at either would
+put two apps' money in one database.
+
+`PROJECT_REF` throughout this document is `dtroufrfavmjldtlprpn`.
 
 Once it exists, note from **Project Settings → API**:
 
@@ -47,6 +96,7 @@ supabase/migrations/0001_core.sql
 supabase/migrations/0002_payment_orders.sql
 supabase/migrations/0003_store_topups.sql
 supabase/migrations/0004_store_topup_admin.sql
+supabase/migrations/0005_function_privileges.sql   <-- must run last
 ```
 
 Verify afterwards — this must return 4 rows:
@@ -77,13 +127,40 @@ order by 1;
 |---|---|
 | Email provider | **Enabled** |
 | Confirm email | **Enabled** (you asked for verification) |
-| Google provider | **Enabled** — paste Client ID + Secret from Google Cloud |
+| Google provider | **Still to do** — paste Client ID + Secret from Google Cloud |
 | Site URL | `https://shoppa-ten.vercel.app` |
 | Redirect URLs (allow list) | `https://shoppa-ten.vercel.app/**` |
 | | `http://localhost:5173/**` |
 
-Google Cloud side: create an OAuth 2.0 Client (Web application) with authorized
-redirect URI `https://PROJECT_REF.supabase.co/auth/v1/callback`.
+### The one remaining manual auth step: Google Sign-In
+
+This cannot be automated — it needs credentials only you can create.
+
+1. **Google Cloud Console** → APIs & Services → Credentials → *Create credentials*
+   → *OAuth client ID* → *Web application*.
+2. Authorized JavaScript origin: `https://shoppa-ten.vercel.app`
+3. Authorized redirect URI: `https://dtroufrfavmjldtlprpn.supabase.co/auth/v1/callback`
+4. Copy the Client ID and Client Secret.
+5. Supabase → Authentication → Providers → **Google** → enable and paste both.
+
+Until this is done, the Google button will fail with
+`provider is not enabled`. Email + password sign-in already works.
+
+### Already configured
+
+| Setting | Value |
+|---|---|
+| Site URL | `https://shoppa-ten.vercel.app` |
+| Redirect allow list | `https://shoppa-ten.vercel.app/**`, `**/auth/callback`, `http://localhost:5173/**` |
+| Email provider | enabled |
+| Confirm email | enabled (`mailer_autoconfirm: false`) |
+| Refresh token rotation | enabled, 10s reuse interval |
+| JWT expiry | 3600s |
+
+⚠️ **Free-tier email limit is 2 per hour.** Email confirmation and password
+resets will hit this almost immediately in testing. For anything beyond a smoke
+test, either raise the limit on a paid plan or add custom SMTP (Resend, Postmark)
+under Authentication → Settings → SMTP.
 
 ---
 
@@ -160,9 +237,9 @@ Set these in **Project → Settings → Environment Variables**, for
 | `DGATEWAY_WEBHOOK_SECRET` | from DGateway | **required in live mode** — without it every collect/disburse returns 503 `WEBHOOK_SECRET_MISSING` and charges nothing |
 | `DGATEWAY_STORE_SLUG` | `floatbet` | rejects payments from another shop |
 | `APP_URL` | `https://shoppa-ten.vercel.app` | builds the `callback_url` |
-| `SUPABASE_URL` | `https://PROJECT_REF.supabase.co` | |
+| `SUPABASE_URL` | `https://dtroufrfavmjldtlprpn.supabase.co` | |
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role key | **sensitive**, server only |
-| `VITE_SUPABASE_URL` | `https://PROJECT_REF.supabase.co` | public, shipped to browser |
+| `VITE_SUPABASE_URL` | `https://dtroufrfavmjldtlprpn.supabase.co` | public, shipped to browser |
 | `VITE_SUPABASE_ANON_KEY` | anon key | public, shipped to browser |
 | `VITE_DGATEWAY_STORE_URL` | `https://dgatewayadmin.desispay.com/store/shop/floatbet?products` | public URL only, no key. Set to `off` to use the in-app rail |
 
@@ -172,6 +249,20 @@ Set these in **Project → Settings → Environment Variables**, for
    the JavaScript bundle and readable by anyone.
 2. `DGATEWAY_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` go in as **Sensitive**.
 3. After adding variables, **redeploy**. Existing deployments keep the old env.
+
+**Automated helper.** Because the connected Vercel integration cannot reach the
+`iuearadio` account, use the CLI with your own login:
+
+```bash
+vercel login
+vercel link --project shoppa     # NOT proxicore-visor
+./scripts/set-vercel-env.sh
+```
+
+The script refuses to run if the directory is linked to `proxicore-visor`, and it
+prompts for the two secrets rather than taking them as arguments. It sets
+everything except `SUPABASE_SERVICE_ROLE_KEY`, which you must add in the
+dashboard so it can be marked *sensitive*.
 
 ---
 

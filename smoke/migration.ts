@@ -69,5 +69,30 @@ ok('0004: dismiss is attributed', /dismissed_by = p_admin_id/.test(dis))
 
 ok('0004: the audit table is locked down (RLS on, no policies)', /alter table store_topup_actions enable row level security/.test(sql4) && !/create policy[^;]*store_topup_actions/.test(sql4))
 
+// ---------------------------------------------------------------- 0005 ------
+// Regression guard for the privilege hole measured on the live database:
+// `revoke ... from public` does NOT remove Supabase's explicit grants to anon
+// and authenticated, so every function needs an explicit revoke from both.
+const sql5 = readFileSync('supabase/migrations/0005_function_privileges.sql', 'utf8')
+
+ok('0005: revokes from anon and authenticated, not just public',
+  /revoke all on function %s from anon/.test(sql5) &&
+  /revoke all on function %s from authenticated/.test(sql5))
+ok('0005: sweeps every function in the public schema', /from pg_proc p[\s\S]{0,200}nspname = 'public'/.test(sql5))
+ok('0005: re-grants place_bet to authenticated', /grant execute on function place_bet\(text, bigint\) to authenticated;/.test(sql5))
+ok('0005: re-grants claim_store_topup to authenticated', /grant execute on function claim_store_topup\(text\) to authenticated;/.test(sql5))
+ok('0005: grants the admin release to service_role only',
+  /grant execute on function admin_release_store_topup\(text, uuid, uuid\) to service_role;/.test(sql5))
+ok('0005: grants settle_cashout to service_role only',
+  /grant execute on function settle_cashout\(uuid, cashout_status, text\) to service_role;/.test(sql5))
+ok('0005: future functions fail closed for anon',
+  /alter default privileges in schema public revoke execute on functions from anon;/.test(sql5))
+ok('0005: future functions fail closed for authenticated',
+  /alter default privileges in schema public revoke execute on functions from authenticated;/.test(sql5))
+ok('0005: never grants a credit path to authenticated',
+  !/grant execute on function (apply_store_topup|admin_release_store_topup|dismiss_store_topup|settle_cashout|record_collect|record_disburse|apply_gateway_result)[\s\S]{0,40}to authenticated/.test(sql5))
+ok('0005: the retired release is dead for every role',
+  /revoke all on function release_store_topup\(text, uuid\) from public, anon, authenticated, service_role;/.test(sql5))
+
 if (fails.length) { console.log(`\n${fails.length} FAILED: ${fails.join(', ')}`); process.exit(1) }
 console.log('\nall migration invariants hold')
