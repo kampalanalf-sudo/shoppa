@@ -5,6 +5,15 @@
 let ctx: AudioContext | null = null
 let enabled = true
 
+/**
+ * Whether the audio context has been unlocked by a user gesture.
+ *
+ * Browsers refuse to start audio before one, and on a cold boot there usually
+ * hasn't been. Callers that fire on app launch (the studio ident) consult this
+ * so they never spam console errors trying to play into a suspended context.
+ */
+export const audioReady = () => !!ctx && ctx.state === 'running'
+
 export const setSoundEnabled = (v: boolean) => {
   enabled = v
 }
@@ -129,6 +138,87 @@ function noise(dur = 0.08, gain = 0.05, hp = 1200) {
   src.start()
 }
 
+/** A bell: fundamental + inharmonic partials, long decay. Used for celebration. */
+function bell(freq: number, { gain = 0.05, delay = 0, dur = 1.1 } = {}) {
+  const a = ac()
+  if (!a) return
+  const t0 = a.currentTime + delay
+  // partial, relative gain, relative decay
+  const partials: [number, number, number][] = [
+    [1, 1, 1],
+    [2.01, 0.42, 0.62],
+    [2.98, 0.24, 0.44],
+    [4.21, 0.12, 0.3],
+  ]
+  for (const [ratio, pGain, pDecay] of partials) {
+    const osc = a.createOscillator()
+    const g = a.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = freq * ratio
+    const d = dur * pDecay
+    g.gain.setValueAtTime(0.0001, t0)
+    g.gain.exponentialRampToValueAtTime(gain * pGain, t0 + 0.008)
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + d)
+    osc.connect(g).connect(a.destination)
+    osc.start(t0)
+    osc.stop(t0 + d + 0.02)
+  }
+}
+
+/** A short string-like swell: detuned saws through a lowpass that opens. */
+function swell(freq: number, { dur = 0.9, gain = 0.03, delay = 0, detune = 12 } = {}) {
+  const a = ac()
+  if (!a) return
+  const t0 = a.currentTime + delay
+  const f = a.createBiquadFilter()
+  f.type = 'lowpass'
+  f.frequency.setValueAtTime(freq * 1.6, t0)
+  f.frequency.linearRampToValueAtTime(freq * 7, t0 + dur * 0.55)
+  f.frequency.linearRampToValueAtTime(freq * 2.2, t0 + dur)
+  f.Q.value = 0.8
+  const out = a.createGain()
+  out.gain.setValueAtTime(0.0001, t0)
+  out.gain.exponentialRampToValueAtTime(gain, t0 + 0.12)
+  out.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
+  f.connect(out).connect(a.destination)
+  for (const d of [-detune, 0, detune]) {
+    const osc = a.createOscillator()
+    osc.type = 'sawtooth'
+    osc.detune.value = d
+    osc.frequency.value = freq
+    osc.connect(f)
+    osc.start(t0)
+    osc.stop(t0 + dur + 0.05)
+  }
+}
+
+/** A shaker/rain fill: filtered noise with a soft attack. */
+function sparkle(dur = 0.5, gain = 0.03, hp = 4200, delay = 0) {
+  const a = ac()
+  if (!a) return
+  const t0 = a.currentTime + delay
+  const len = Math.max(1, Math.floor(a.sampleRate * dur))
+  const buf = a.createBuffer(1, len, a.sampleRate)
+  const data = buf.getChannelData(0)
+  for (let i = 0; i < len; i++) {
+    // shimmering: modulate the noise so it twinkles instead of hissing
+    const wobble = 0.55 + 0.45 * Math.sin((i / a.sampleRate) * 62)
+    data[i] = (Math.random() * 2 - 1) * wobble * (1 - i / len)
+  }
+  const src = a.createBufferSource()
+  src.buffer = buf
+  const f = a.createBiquadFilter()
+  f.type = 'highpass'
+  f.frequency.value = hp
+  const g = a.createGain()
+  g.gain.setValueAtTime(0.0001, t0)
+  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.03)
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
+  src.connect(f).connect(g).connect(a.destination)
+  src.start(t0)
+  src.stop(t0 + dur + 0.02)
+}
+
 export const sfx = {
   click: () => tone({ freq: 320, to: 260, dur: 0.05, type: 'triangle', gain: 0.045 }),
   place: () => {
@@ -216,6 +306,70 @@ export const sfx = {
   deposit: () => {
     ;[784, 1046.5].forEach((f, i) => tone({ freq: f, dur: 0.16, type: 'sine', gain: 0.06, delay: i * 0.08 }))
   },
+  /* --- celebration --- */
+  /**
+   * Studio ident sting. A single low hit, a rising fourth, then a bright open
+   * fifth that rings out — short enough (1.6s) to play over a splash card
+   * without holding the player up.
+   */
+  logoSting: () => {
+    // low impact
+    fat(110, { to: 82, dur: 0.5, type: 'sine', gain: 0.09 })
+    noise(0.16, 0.05, 240)
+    // rising fourth
+    fat(220, { dur: 0.34, type: 'triangle', gain: 0.055, delay: 0.08 })
+    fat(293.66, { dur: 0.34, type: 'triangle', gain: 0.06, delay: 0.2 })
+    // the ring: A major-ish open fifth + octave
+    bell(440, { gain: 0.05, delay: 0.34, dur: 1.25 })
+    bell(659.25, { gain: 0.04, delay: 0.34, dur: 1.1 })
+    bell(880, { gain: 0.03, delay: 0.4, dur: 0.9 })
+    swell(220, { dur: 1.3, gain: 0.022, delay: 0.1 })
+    sparkle(0.9, 0.016, 5200, 0.36)
+  },
+  /**
+   * Free-spin fanfare. Unlike `bigwin` this is deliberately long (about 2.4s)
+   * because it plays over a full-screen celebration, not over a paytable.
+   */
+  freespinFanfare: () => {
+    // three-note brass call: E, G#, B
+    const call = [329.63, 415.3, 493.88]
+    call.forEach((f, i) => {
+      fat(f, { dur: 0.3, type: 'sawtooth', gain: 0.05, delay: i * 0.14, detune: 10 })
+      fat(f * 2, { dur: 0.24, type: 'triangle', gain: 0.03, delay: i * 0.14 })
+    })
+    // the payoff chord, spread for a "ka-ching"
+    const chord = [493.88, 587.33, 659.25, 987.77]
+    chord.forEach((f, i) => {
+      bell(f, { gain: 0.042, delay: 0.46 + i * 0.05, dur: 1.5 })
+      fat(f, { dur: 0.5, type: 'triangle', gain: 0.04, delay: 0.46 + i * 0.05, vibrato: 3 })
+    })
+    bell(1318.51, { gain: 0.024, delay: 0.72, dur: 1.2 })
+    whoosh(0.55, 0.03, 700, 6800)
+    sparkle(1.2, 0.02, 4600, 0.5)
+    swell(164.81, { dur: 1.8, gain: 0.03, delay: 0.3 })
+  },
+  /** Small cash-register-ish flourish for a free-spin payout. */
+  coinShower: (n = 6) => {
+    for (let i = 0; i < Math.max(1, n); i++) {
+      // pentatonic sparkle so overlapping hits never clash
+      const scale = [1046.5, 1174.66, 1318.51, 1567.98, 1760, 2093]
+      tone({
+        freq: scale[i % scale.length],
+        dur: 0.09,
+        type: 'sine',
+        gain: 0.035,
+        delay: i * 0.055,
+      })
+    }
+    bell(1046.5, { gain: 0.03, delay: 0.12, dur: 0.7 })
+  },
+  /** Rising excitement bed under a free-spin round. */
+  freespinBed: (seconds = 1.6) => {
+    swell(110, { dur: seconds, gain: 0.018 })
+    swell(164.81, { dur: seconds, gain: 0.014, delay: 0.06 })
+    sparkle(seconds, 0.012, 6000, 0.1)
+  },
 }
+
 
 export type SfxName = keyof typeof sfx

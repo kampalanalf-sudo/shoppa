@@ -10,6 +10,7 @@ import { SlotBoard3D } from '../components/SlotBoard3D'
 import { PlayBar } from '../components/PlayBar'
 import { buildGrid, resolve, type Grid, type SlotConfig, type SlotOutcome } from '../lib/slots/engine'
 import { spinPlan } from '../lib/reels'
+import { Celebration, celebrationSound, FreeSpinHud } from '../components/Celebration'
 
 type Props = { config: SlotConfig; id: GameId; onBack: () => void; onFair: () => void }
 
@@ -24,12 +25,22 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
   const [winCells, setWinCells] = useState<Set<string>>(new Set())
   const [glow, setGlow] = useState<'none' | 'win' | 'omen' | 'free'>('none')
   const [freeSpins, setFreeSpins] = useState(0)
+  const [freeTotal, setFreeTotal] = useState(0)
+  const freeWon = useRef(0)
   const [autoplay, setAutoplay] = useState(0)
   const [history, setHistory] = useState<number[]>([])
   const [lastWin, setLastWin] = useState(0)
   // Bumped the instant an outcome is published, so the drums start travelling
   // against a board that already knows where it lands.
   const [spinKey, setSpinKey] = useState(0)
+  // A free-spin trigger or a big win takes over the screen for a moment.
+  const [party, setParty] = useState<{
+    kind: 'freespins' | 'bigwin' | 'mega'
+    title: string
+    subtitle?: string
+    amount?: number
+    spins?: number
+  } | null>(null)
   const autoRef = useRef(false)
 
   const safe = (fn: () => void) => { try { fn() } catch { /* audio best-effort */ } }
@@ -105,40 +116,80 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
       } else if (out.triggered) {
         setGlow('free')
         setFreeSpins((n) => n + out.freeSpins)
+        setFreeTotal((n) => n + out.freeSpins)
         safe(() => sfx.scatter())
-        window.setTimeout(() => safe(() => sfx.freespin()), 320)
-        toast({ kind: 'success', title: 'Free spins!', body: `${out.scatters} scatters — ${out.freeSpins} free spins awarded.` })
+        setParty({
+          kind: 'freespins',
+          title: 'Free spins',
+          subtitle: `${out.scatters} ${config.scatter} landed — awarded free spins.`,
+          spins: out.freeSpins,
+        })
+        if (sound) celebrationSound('freespins')
       } else if (out.totalMultiplier >= bet * 0.2) {
         setGlow('win')
       }
 
       if (out.totalMultiplier > 0 && out.fine === 0) {
-        safe(() => (out.totalMultiplier >= 8 ? sfx.bigwin() : sfx.win()))
+        const won = Math.round(bet * out.totalMultiplier)
+        if (out.totalMultiplier >= 8) {
+          // Big win: escalate the celebration with the size of the win.
+          setParty({
+            kind: out.totalMultiplier >= 40 ? 'mega' : 'bigwin',
+            title: out.totalMultiplier >= 40 ? 'Mega win' : 'Big win',
+            subtitle: free ? 'Won on a free spin' : undefined,
+            amount: won,
+          })
+          if (sound) celebrationSound(out.totalMultiplier >= 40 ? 'mega' : 'bigwin')
+        } else if (sound) sfx.win()
       }
+
+      if (free && out.fine === 0) freeWon.current += Math.round(bet * out.totalMultiplier)
 
       // settleBet credits wager * multiplier, i.e. the full return including
       // the stake. placeBet already debited it, so passing the full bet here is
       // correct and matches every other game's convention.
+      // A full celebration card is already covering the win: suppress the
+      // global flash so two confetti layers do not stack.
+      const celebrating = out.triggered || (out.fine === 0 && out.totalMultiplier >= 8)
       settleBet({
         game: id,
         wager: free ? 0 : bet,
         multiplier: out.totalMultiplier,
         detail,
+        silent: celebrating,
       })
     }, plan.totalMs)
   }, [spinning, freeSpins, bet, balance, placeBet, id, config, nextFloats, settleBet, toast, flashLoss])
+
+  // Round over: celebrate the total.
+  useEffect(() => {
+    if (freeSpins > 0 || freeTotal <= 0) return
+    const total = freeWon.current
+    freeWon.current = 0
+    setFreeTotal(0)
+    if (total <= 0) return
+    setParty({
+      kind: total >= bet * 40 ? 'mega' : 'bigwin',
+      title: 'Free spins complete',
+      subtitle: `All ${freeTotal} spins played.`,
+      amount: total,
+    })
+    if (sound) celebrationSound(total >= bet * 40 ? 'mega' : 'bigwin')
+    // fires once, when the counter reaches zero
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freeSpins])
 
   useHotkey(() => { if (autoplay === 0) void spin() })
 
   // autoplay loop
   useEffect(() => {
-    if (autoplay <= 0 || spinning) return
+    if (autoplay <= 0 || spinning || party) return
     const t = window.setTimeout(() => {
       void spin()
       setAutoplay((n) => Math.max(0, n - 1))
     }, 600)
     return () => window.clearTimeout(t)
-  }, [autoplay, spinning, spin])
+  }, [autoplay, spinning, spin, party])
 
   const payRows = useMemo(() => config.symbols.filter((s) => s.pay), [config])
 
@@ -177,6 +228,17 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
         ) : undefined
       }
     >
+      {party && (
+        <Celebration
+          kind={party.kind}
+          title={party.title}
+          subtitle={party.subtitle}
+          amount={party.amount}
+          spins={party.spins}
+          onDone={() => setParty(null)}
+        />
+      )}
+
       {/* header strip */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
         <div className="flex items-center gap-2">
@@ -194,7 +256,8 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
         )}
       </div>
 
-      <div className="-mx-3 w-auto sm:mx-auto sm:w-full sm:max-w-[760px]">
+      <div className="relative -mx-3 w-auto sm:mx-auto sm:w-full sm:max-w-[760px]">
+        <FreeSpinHud left={freeSpins} total={freeTotal} tick={freeTotal - freeSpins} />
         <SlotBoard3D
           config={config}
           grid={grid}

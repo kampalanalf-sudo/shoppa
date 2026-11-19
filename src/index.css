@@ -160,6 +160,75 @@ input[type='range'].range::-moz-range-thumb { height: 16px; width: 16px; border-
 /* Floating spheres glow (Plinko) */
 .ball-glow { filter: drop-shadow(0 0 10px rgba(198,242,78,.75)) drop-shadow(0 6px 8px rgba(0,0,0,.5)); }
 
+/* ==========================================================================
+   Celebration layers (confetti, coins, rays, celebration card, studio ident)
+   One keyframe set each, parameterised by inline custom properties, so a burst
+   of 90 confetti pieces is 90 elements and nothing on the main thread.
+   ========================================================================== */
+
+@keyframes fbFall {
+  0%   { opacity: 0; transform: translate3d(0, -12vh, 0) rotate(0deg); }
+  8%   { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(var(--fb-drift, 0px), 112vh, 0) rotate(var(--fb-spin, 540deg)); }
+}
+
+@keyframes fbCoinDrop {
+  0%   { opacity: 0; transform: translate3d(0, -14vh, 0) rotateY(0deg) scale(.7); }
+  12%  { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; transform: translate3d(var(--fb-drift, 0px), 108vh, 0) rotateY(var(--fb-spin, 480deg)) scale(1); }
+}
+
+@keyframes fbSpin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+@keyframes fbFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fbFadeOut {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+
+@keyframes fbCardIn {
+  0%   { opacity: 0; transform: scale(.82) translateY(18px); }
+  60%  { opacity: 1; transform: scale(1.03) translateY(0); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes fbPop {
+  0%   { opacity: 0; transform: scale(.7); }
+  55%  { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* Studio ident: a mark that draws itself in, holds, then lifts away. */
+@keyframes fbIdentIn {
+  0%   { opacity: 0; transform: scale(.9); letter-spacing: .5em; filter: blur(8px); }
+  55%  { opacity: 1; transform: scale(1); letter-spacing: .22em; filter: blur(0); }
+  100% { opacity: 1; transform: scale(1); letter-spacing: .22em; filter: blur(0); }
+}
+
+@keyframes fbIdentRule {
+  0%   { transform: scaleX(0); opacity: 0; }
+  60%  { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 1; }
+}
+
+@keyframes fbIdentGlow {
+  0%, 100% { opacity: .35; transform: scale(1); }
+  50%      { opacity: .8; transform: scale(1.12); }
+}
+
+@keyframes fbIdentOut {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(1.06); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: .001ms !important;

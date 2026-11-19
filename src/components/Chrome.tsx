@@ -8,6 +8,7 @@ import {
   IconHistory, IconHome, IconLive, IconMenu, IconMuted, IconSearch, IconShield, IconSpade, IconTrophy,
   IconVolume, IconWallet, IconDiamond, IconInfo, IconGrid, IconGamepad,
 } from './Icons'
+import { CoinRain, Confetti, CountUp } from './Celebration'
 
 /* ------------------------------------------------------------------ Header */
 
@@ -505,6 +506,10 @@ export function BottomBar({ view, onNavigate }: { view: NavView; onNavigate: Hea
 
 export function WinFlash() {
   const { winFlash, lossFlash } = useStore()
+  // WinFlash fires from settleBet at 10x and above, i.e. from EVERY game on the
+  // floor, so it carries the shared celebration layer. The heavy full-screen
+  // card is reserved for slot free-spin triggers; this is the quick version.
+  const big = winFlash != null && winFlash >= 5000
   if (lossFlash) {
     return (
       <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center">
@@ -515,11 +520,24 @@ export function WinFlash() {
   }
   if (winFlash == null) return null
   return (
-    <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center">
+    <div className="pointer-events-none fixed inset-0 z-50 grid place-items-center overflow-hidden">
       <div className="absolute inset-0 animate-popIn bg-gradient-to-b from-neon-lime/[0.07] via-transparent to-neon-violet/[0.07]" />
-      <div className="relative animate-popIn rounded-3xl border border-neon-lime/30 bg-ink-900/90 px-8 py-5 text-center shadow-glow backdrop-blur-xl">
-        <p className="text-[11px] font-bold uppercase tracking-[.28em] text-neon-lime/80">Big win</p>
-        <p className="num mt-1 text-4xl font-black text-white glow-text">+{money(winFlash)} PX</p>
+      {big ? <CoinRain count={18} seed={4} /> : <Confetti count={46} seed={17} duration={2400} />}
+      <div
+        className="relative animate-popIn rounded-3xl border bg-ink-900/90 px-8 py-5 text-center shadow-glow backdrop-blur-xl"
+        style={{
+          borderColor: big ? 'rgba(255,207,92,.45)' : 'rgba(198,242,78,.3)',
+          boxShadow: big
+            ? '0 0 0 1px rgba(255,255,255,.06), 0 0 90px -20px rgba(255,207,92,.75)'
+            : undefined,
+        }}
+      >
+        <p className={`text-[11px] font-bold uppercase tracking-[.28em] ${big ? 'text-gold/90' : 'text-neon-lime/80'}`}>
+          {big ? 'Huge win' : 'Big win'}
+        </p>
+        <p className="num mt-1 text-4xl font-black text-white glow-text">
+          +<CountUp value={winFlash} duration={1100} /> PX
+        </p>
       </div>
     </div>
   )

@@ -155,6 +155,90 @@ npm run android:apk     # build + sync + assembleDebug
 
 ---
 
+## 2a. Studio ident and celebration
+
+### "NoKwaff Studios" launch ident
+
+`src/components/StudioIdent.tsx`, mounted at the app root in `src/App.tsx`.
+
+| | |
+|---|---|
+| Where | above the whole shell (`z-[120]`), so it covers the boot screen and a game opened directly by hash URL |
+| Length | 2.0 s hold + 0.42 s fade = **2.42 s maximum** |
+| Skippable | tap or click anywhere |
+| Repeats | **once per launch** (`sessionStorage: nokwaff.ident.seen`), not on in-app navigation or hash change |
+| Reduced motion | static card, ~0.5 s |
+| Sound | `sfx.logoSting()` — **only if the audio context is already unlocked** |
+
+That last row is the interesting one. Every mobile browser blocks audio until a
+user gesture, and on a cold start there hasn't been one, so **the ident is
+usually silent on first launch**. That is the correct behaviour, not a bug:
+forcing it would mean either an error in the console or a delayed sting that
+fires out of sync with the animation. The sting does play when audio is already
+unlocked in the session, and a tap on the way out gives a short click.
+
+It is mounted at the root rather than inside the `!hydrated` boot branch.
+Hydration finishes in a few milliseconds, so a splash mounted there would be
+unmounted before it animated.
+
+### Celebration layers
+
+`src/components/Celebration.tsx`:
+
+| Piece | Used for |
+|---|---|
+| `Celebration` | full-screen card: free-spin trigger, big/mega win, end-of-round summary |
+| `Confetti` | 34–90 pieces, seeded, drift + spin |
+| `CoinRain` | gold PX coins for big wins |
+| `LightRays` | rotating conic wedges behind a headline |
+| `CountUp` | payouts count up instead of appearing |
+| `WinBurst` | compact burst anchored to a panel (no screen takeover) |
+| `FreeSpinHud` | spins left, total, and a progress bar while a round runs |
+
+All of it is **CSS-animation driven**, one keyframe set per effect, with each
+particle's timing passed as inline custom properties (`--fb-drift`,
+`--fb-spin`). Ninety confetti pieces therefore cost ninety elements and nothing
+on the main thread — the same reason the reel strips avoid per-frame React
+state. Every layer is `pointer-events-none` and drops out entirely under
+`prefers-reduced-motion`.
+
+Keyframes live in `src/index.css` (`fbFall`, `fbCoinDrop`, `fbSpin`, `fbFadeIn`,
+`fbFadeOut`, `fbCardIn`, `fbPop`, `fbIdentIn`, `fbIdentRule`, `fbIdentGlow`,
+`fbIdentOut`). They are plain CSS, not Tailwind theme extensions, so they cannot
+be purged: they are referenced from inline `style` attributes, which the
+Tailwind content scanner does not read.
+
+### Where celebration fires
+
+| Moment | Bonni & Clyve | Engine slots |
+|---|---|---|
+| Free spins triggered | `Celebration` (freespins) + fanfare | same |
+| Win ≥ 40× | `Celebration` (bigwin/mega) + coin shower | 8× bigwin, 40× mega |
+| Free-spin round ends | `Celebration` with the round total | same |
+| Any win ≥ 10×, any game | `WinFlash` with confetti + count-up | — |
+
+`settleBet` is called with `silent: true` when a full `Celebration` card is up,
+so two confetti layers never stack.
+
+### Verified
+
+`test:celebrate` — 51 assertions. Particle counts, seeding (a burst is stable
+across re-renders), pointer-events, the HUD's maths and accessibility, the
+2.42 s ident budget, every audio cue being safe to call with no `AudioContext`,
+and that both slot games are actually wired to the free-spin and big-win
+branches.
+
+### Not verified
+
+**Nothing here has been heard or seen.** The sandbox has no browser and no audio
+output. I cannot tell you whether the fanfare sounds good, whether the ident
+reads well, or whether the confetti looks cheap. The timing budgets and the DOM
+are tested; the aesthetics are not. Please play it — the sounds are the part I
+would expect to need the most tuning, since they are synthesised from scratch
+rather than licensed samples.
+
+---
+
 ## 2b. Reel animation
 
 There are **two** slot boards and both use one motion model in
