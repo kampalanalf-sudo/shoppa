@@ -21,3 +21,6 @@ smoke/dist-store
 smoke/dist-claim
 smoke/dist-migration
 smoke/dist-admin
+
+# vercel link state
+.vercel
