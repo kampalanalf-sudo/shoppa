@@ -1,0 +1,186 @@
+name: Build Android APK
+
+# Produces two artifacts on every run:
+#   FloatBet-<version>-release.apk  signed, if the keystore secrets exist
+#   FloatBet-<version>-debug.apk    always, installable on any device
+#
+# The APK embeds the web build, so it is NOT auto-updating. A new web deploy
+# does not reach installed apps; rebuild and republish.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'android/**'
+      - 'capacitor.config.ts'
+      - 'index.html'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/android.yml'
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'android/**'
+      - 'capacitor.config.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Capacitor 8 / AGP 8.13 target SDK 36, which needs JDK 21.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Do NOT use android-actions/setup-android here: it failed on this repo
+      # (step 5 of run 44446434700) and the runner image already ships a
+      # complete SDK. Use the preinstalled one and make sure the pieces this
+      # project needs are present.
+      - name: Android SDK
+        run: |
+          set -e
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "$SDK" ]; then
+            echo "No preinstalled Android SDK at $SDK" >&2
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK"            >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK"       >> "$GITHUB_ENV"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$SDK/platform-tools"          >> "$GITHUB_PATH"
+
+          SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKM" ]; then
+            echo "sdkmanager missing at $SDKM" >&2
+            ls -la "$SDK" >&2 || true
+            exit 1
+          fi
+
+          echo "Installed packages:"; "$SDKM" --list_installed 2>/dev/null | head -20 || true
+
+          # compileSdk 36 needs platform 36 and matching build-tools. Accept
+          # licences first or the install is refused.
+          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+          "$SDKM" "platforms;android-36" > /dev/null 2>&1 || true
+          "$SDKM" "build-tools;36.0.0" > /dev/null 2>&1 || true
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build the web app
+        run: npm run build
+
+      - name: Sync into the Android project
+        run: npx cap sync android
+
+      # versionCode must increase or Android rejects the upgrade. Derive it from
+      # the commit count so it is monotonic without anyone remembering.
+      - name: Resolve version
+        id: v
+        run: |
+          CODE=$(git rev-list --count HEAD)
+          NAME=$(node -p "require('./package.json').version")
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME.$CODE" >> "$GITHUB_OUTPUT"
+          echo "Building versionName=$NAME.$CODE versionCode=$CODE"
+
+      - name: Decode keystore
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/release.keystore
+
+      - name: Build release APK
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          FB_VERSION_CODE: ${{ steps.v.outputs.code }}
+          FB_VERSION_NAME: ${{ steps.v.outputs.name }}
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Build debug APK
+        env:
+          FB_VERSION_CODE: ${{ steps.v.outputs.code }}
+          FB_VERSION_NAME: ${{ steps.v.outputs.name }}
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      # A keystore that was decoded but is not the one the app was signed with
+      # would produce an APK that fails to install over the previous version.
+      # apksigner catches an unsigned or malformed artifact here instead of on a
+      # user's phone.
+      - name: Verify the APKs are signed
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          [ -x "$APKSIGNER" ] || { echo "apksigner missing at $APKSIGNER" >&2; exit 1; }
+
+          # A glob that matches nothing expands to the literal pattern, so a
+          # naive loop would silently verify zero files and still pass. Count
+          # them and fail if the count is zero.
+          VERIFIED=0
+          for f in android/app/build/outputs/apk/release/*.apk android/app/build/outputs/apk/debug/*.apk; do
+            [ -f "$f" ] || continue
+            echo "== $f ($(stat -c%s "$f") bytes)"
+            "$APKSIGNER" verify --print-certs "$f"
+            VERIFIED=$((VERIFIED + 1))
+          done
+
+          if [ "$VERIFIED" -eq 0 ]; then
+            echo "No APK was produced — nothing to verify." >&2
+            find android/app/build/outputs -type f >&2 2>/dev/null || true
+            exit 1
+          fi
+          echo "Verified $VERIFIED APK(s)."
+
+      - name: Report artifact sizes
+        run: |
+          echo "### APK outputs" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          find android/app/build/outputs/apk -name '*.apk' -exec ls -lh {} \; >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release APK
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: FloatBet-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: FloatBet-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30

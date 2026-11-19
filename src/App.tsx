@@ -3,6 +3,7 @@ import { StoreProvider, useStore } from './lib/store'
 import { AuthProvider, useAuth } from './lib/auth'
 import { setSoundEnabled } from './lib/sound'
 import { Header, Footer, BottomBar, ChatDock, Toasts, WinFlash } from './components/Chrome'
+import { InstallPrompt } from './components/InstallPrompt'
 import { SearchModal, WalletModal, FairModal, HistoryModal, RewardsModal } from './components/Modals'
 import { Home } from './pages/Home'
 import { ProxiCash } from './pages/ProxiCash'
@@ -238,6 +239,7 @@ function Shell() {
         />
       )}
       <WinFlash />
+      <InstallPrompt />
       <Toasts />
       <WalletModal />
       <FairModal />

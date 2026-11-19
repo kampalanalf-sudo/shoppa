@@ -24,3 +24,13 @@ smoke/dist-admin
 
 # vercel link state
 .vercel
+smoke/dist-pwa
+
+# Android signing material — never commit
+*.keystore
+*.jks
+release.keystore
+android/.gradle/
+android/app/build/
+android/build/
+android/local.properties

@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">FloatBet</string>
+    <string name="title_activity_main">FloatBet</string>
+    <string name="package_name">com.floatbet.gaming</string>
+    <string name="custom_url_scheme">com.floatbet.gaming</string>
+</resources>
