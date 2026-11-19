@@ -13,6 +13,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { readFileSync } from 'node:fs'
 import sharp from 'sharp'
+import { dieOnlySvg, monochromeDieSvg } from '../src/lib/brand.ts'
 
 const SRC = 'public/favicon.svg'
 const OUT = 'public/icons'
@@ -25,6 +26,11 @@ const MASKABLE = [192, 512]
 const APPLE = 180
 
 const svg = readFileSync(SRC)
+
+// The die on its own, generated from the same module as the favicon above, so
+// the maskable and monochrome variants cannot drift from the mark either.
+const dieOnly = Buffer.from(dieOnlySvg())
+const mono = Buffer.from(monochromeDieSvg())
 
 /** Render the glyph at a given inner size on a solid background. */
 async function render(size, { pad = 0, radius = 0 } = {}) {
@@ -75,21 +81,46 @@ async function main() {
   }
 
   for (const size of MASKABLE) {
-    // full bleed, glyph at 60% so the adaptive mask cannot clip it
-    await save(`maskable-${size}.png`, await render(size, { pad: 0.2 }))
+    // Full bleed: a solid background edge to edge, with ONLY the die composited
+    // at ~58% so Android's circle/squircle crop cannot reach it. Rendering the
+    // rounded tile itself and insetting that (the previous approach) put a
+    // second dark blob with its own corners inside the mask.
+    const inner = Math.round(size * 0.58)
+    const die = await sharp(dieOnly, { density: 900 })
+      .resize(inner, inner, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer()
+    const bg = await sharp({ create: { width: size, height: size, channels: 4, background: BG } })
+      .png()
+      .toBuffer()
+    const offset = Math.round((size - inner) / 2)
+    await save(
+      `maskable-${size}.png`,
+      await sharp(bg)
+        .composite([{ input: die, top: offset, left: offset }])
+        .png({ compressionLevel: 9 })
+        .toBuffer(),
+    )
   }
 
   await save(`apple-touch-icon-${APPLE}.png`, await render(APPLE, { radius: APPLE * 0.22 }))
 
-  // A monochrome mark for Android 13 themed icons / notification badges.
+  // Android 13 themed icon. The system tints this itself, so it must be a flat
+  // silhouette on TRANSPARENT: flattening it onto white (the previous version)
+  // produced a white square that the system then tinted into a solid blob.
+  const monoInner = Math.round(512 * 0.62)
   await save(
     'monochrome-512.png',
-    await sharp(svg, { density: 600 })
-      .resize(320, 320, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
-      .flatten({ background: '#ffffff' })
-      .extend({ top: 96, bottom: 96, left: 96, right: 96, background: '#ffffff' })
-      .greyscale()
-      .png()
+    await sharp(mono, { density: 900 })
+      .resize(monoInner, monoInner, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .extend({
+        top: Math.round((512 - monoInner) / 2),
+        bottom: 512 - monoInner - Math.round((512 - monoInner) / 2),
+        left: Math.round((512 - monoInner) / 2),
+        right: 512 - monoInner - Math.round((512 - monoInner) / 2),
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      })
+      .png({ compressionLevel: 9 })
       .toBuffer(),
   )
 

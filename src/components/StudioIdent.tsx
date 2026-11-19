@@ -118,34 +118,21 @@ export function StudioIdent({
       />
 
       <div className="relative px-6 text-center">
+        {/* The die is the studio mark as well as the product mark: one
+            identity, so the splash, the header and the launcher icon agree. */}
         <div
-          className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-2xl border border-white/10"
-          style={{
-            background: 'linear-gradient(165deg, rgba(198,242,78,.18), rgba(58,215,255,.10))',
-            boxShadow: '0 0 0 1px rgba(255,255,255,.06), 0 24px 60px -24px rgba(198,242,78,.9)',
-            animation: 'fbCardIn .7s cubic-bezier(.16,1.1,.3,1) both',
-          }}
-          aria-hidden
+          className="mx-auto mb-5"
+          style={{ animation: 'fbCardIn .7s cubic-bezier(.16,1.1,.3,1) both' }}
         >
-          {/* NoKwaff mark: two stacked strokes forming an N with a floating dot */}
-          <svg viewBox="0 0 48 48" className="h-9 w-9">
-            <defs>
-              <linearGradient id="nokwaffMark" x1="0" y1="0" x2="1" y2="1">
-                <stop offset="0" stopColor="#e7ff9b" />
-                <stop offset=".55" stopColor="#c6f24e" />
-                <stop offset="1" stopColor="#3ad7ff" />
-              </linearGradient>
-            </defs>
-            <path
-              d="M10 36V12l14 16V12M28 36h10"
-              fill="none"
-              stroke="url(#nokwaffMark)"
-              strokeWidth="4.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <circle cx="38" cy="13" r="3.6" fill="#c6f24e" />
-          </svg>
+          <img
+            src={`${import.meta.env.BASE_URL}favicon.svg`}
+            alt=""
+            width={72}
+            height={72}
+            draggable={false}
+            className="h-[72px] w-[72px] select-none object-contain"
+            style={{ filter: 'drop-shadow(0 10px 30px rgba(198,242,78,.45))' }}
+          />
         </div>
 
         <h1
