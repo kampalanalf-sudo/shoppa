@@ -161,6 +161,61 @@ input[type='range'].range::-moz-range-thumb { height: 16px; width: 16px; border-
 .ball-glow { filter: drop-shadow(0 0 10px rgba(198,242,78,.75)) drop-shadow(0 6px 8px rgba(0,0,0,.5)); }
 
 /* ==========================================================================
+   The FloatBet die, in 3D
+   --------------------------------------------------------------------------
+   The mark is drawn flat in SVG (src/lib/brand.ts); volume comes from CSS so
+   the transform stays on the compositor. A filter chain on an element that is
+   on screen at all times is a real per-frame cost on a mid-range Android, so
+   the depth is a perspective tilt plus one specular sweep — nothing that has to
+   be recomputed.
+   ========================================================================== */
+
+.fb-die {
+  perspective: 220px;
+  filter:
+    drop-shadow(0 4px 6px rgba(0, 12, 6, .55))
+    drop-shadow(0 1px 0 rgba(255, 255, 255, .10));
+}
+
+.fb-die-spin {
+  transform: rotateX(14deg) rotateY(-18deg);
+  transform-style: preserve-3d;
+  animation: fbDieIdle 7.5s ease-in-out infinite;
+  will-change: transform;
+}
+
+/* A single specular pass, so the top face catches the light once in a while. */
+.fb-die::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 22%;
+  pointer-events: none;
+  background: linear-gradient(115deg, transparent 34%, rgba(255,255,255,.45) 48%, transparent 62%);
+  background-size: 260% 100%;
+  background-position: 160% 0;
+  mix-blend-mode: screen;
+  animation: fbDieSheen 7.5s ease-in-out infinite;
+  opacity: .5;
+}
+
+@keyframes fbDieIdle {
+  0%, 100% { transform: rotateX(14deg) rotateY(-18deg); }
+  50%      { transform: rotateX(10deg) rotateY(16deg); }
+}
+
+@keyframes fbDieSheen {
+  0%, 62%   { background-position: 170% 0; opacity: 0; }
+  70%       { opacity: .5; }
+  88%, 100% { background-position: -70% 0; opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fb-die-spin { animation: none; }
+  .fb-die::after { animation: none; opacity: 0; }
+}
+
+/* ==========================================================================
    Celebration layers (confetti, coins, rays, celebration card, studio ident)
    One keyframe set each, parameterised by inline custom properties, so a burst
    of 90 confetti pieces is 90 elements and nothing on the main thread.
@@ -236,4 +291,20 @@ input[type='range'].range::-moz-range-thumb { height: 16px; width: 16px; border-
     transition-duration: .001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* --------------------------------------------------------------------------
+   Pinned header
+   Sticky, so it stays at the top on scroll, with a solid backdrop: the glass
+   blur alone let busy hero artwork bleed through the logo and made the
+   wordmark hard to read on the home page.
+   -------------------------------------------------------------------------- */
+.fb-header {
+  background: color-mix(in srgb, #08090f 82%, transparent);
+  backdrop-filter: saturate(140%) blur(14px);
+  -webkit-backdrop-filter: saturate(140%) blur(14px);
+}
+
+@supports not (background: color-mix(in srgb, red 50%, blue)) {
+  .fb-header { background: rgba(8, 9, 15, .88); }
 }

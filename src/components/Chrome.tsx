@@ -42,7 +42,7 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
   const lastBet = bets[0]
 
   return (
-    <header className="sticky top-0 z-40 border-b border-white/[0.06] glass">
+    <header className="fb-header sticky top-0 z-40 border-b border-white/[0.06] glass">
       <div className="mx-auto flex h-[62px] max-w-[1500px] items-center gap-2 px-3 sm:gap-4 sm:px-5">
         <button
           type="button"
@@ -50,9 +50,9 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
           className="group flex shrink-0 items-center gap-2.5"
           aria-label="FloatBet Gaming home"
         >
-          <Logo size={30} />
-          <span className="hidden sm:block">
-            <Wordmark size="md" />
+          <Logo size={32} />
+          <span className="block">
+            <Wordmark size="sm" className="!gap-1.5 sm:!gap-2" />
           </span>
         </button>
 
@@ -289,19 +289,29 @@ function CatPill({ children, icon, active }: { children: React.ReactNode; icon: 
  * The FloatBet die.
  *
  * The artwork comes from `src/lib/brand.ts`, the same module that generates
- * `public/favicon.svg` — so the header mark and the tab / launcher icon are
- * literally the same drawing. Rendered as inline SVG rather than an <img> so it
- * scales crisply at any size and costs no extra request.
+ * `public/favicon.svg`, so the header mark and the tab / launcher icon are
+ * literally the same drawing.
+ *
+ * The 3D read is done in CSS, not in the SVG: a perspective tilt, a slow idle
+ * rotation and a specular sweep give it volume no flat drawing can. Kept in CSS
+ * so it stays on the compositor — an SVG filter chain on a always-visible
+ * header element is a real frame cost on a mid-range Android.
+ *
+ * `prefers-reduced-motion` drops the rotation and keeps the tilt.
  */
-export function Logo({ size = 34, className = '' }: { size?: number; className?: string }) {
+export function Logo({
+  size = 34,
+  className = '',
+  animated = true,
+}: {
+  size?: number
+  className?: string
+  animated?: boolean
+}) {
   return (
     <span
-      className={`relative grid shrink-0 place-items-center ${className}`}
-      style={{
-        width: size,
-        height: size,
-        filter: 'drop-shadow(0 4px 10px rgba(198,242,78,.35))',
-      }}
+      className={`fb-die relative grid shrink-0 place-items-center ${className}`}
+      style={{ width: size, height: size }}
       aria-hidden
     >
       <img
@@ -310,7 +320,7 @@ export function Logo({ size = 34, className = '' }: { size?: number; className?:
         width={size}
         height={size}
         draggable={false}
-        className="h-full w-full select-none object-contain"
+        className={`h-full w-full select-none object-contain ${animated ? 'fb-die-spin' : ''}`}
       />
     </span>
   )
@@ -333,7 +343,7 @@ export function Wordmark({
   className?: string
 }) {
   const scale = {
-    sm: { word: 'text-[15px]', gaming: 'text-[8.5px] tracking-[.26em]' },
+    sm: { word: 'text-[15px] sm:text-[16px]', gaming: 'text-[7.5px] sm:text-[8.5px] tracking-[.24em] sm:tracking-[.26em]' },
     md: { word: 'text-[17px]', gaming: 'text-[9.5px] tracking-[.28em]' },
     lg: { word: 'text-[22px]', gaming: 'text-[11px] tracking-[.3em]' },
   }[size]

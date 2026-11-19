@@ -110,13 +110,37 @@ export function Auth({ onDone }: { onDone?: () => void }) {
 
       <button
         type="button"
-        onClick={() => void run(async () => { await signInGoogle(); onDone?.() })}
+        onClick={() =>
+          void run(async () => {
+            // This redirects the browser away, so `onDone` never runs on a
+            // success path. Reaching the line after it means the redirect was
+            // refused — a blocked popup, a provider that is not enabled, or an
+            // origin missing from the redirect allow-list.
+            await signInGoogle()
+            setNotice('Redirecting to Google… if nothing happens, allow pop-ups for this site.')
+          })
+        }
         disabled={busy || !configured}
         className="mb-3 flex w-full items-center justify-center gap-2.5 rounded-xl border border-white/15 bg-white px-4 py-3 text-[13px] font-bold text-[#1f1f1f] transition hover:bg-white/90 disabled:opacity-50"
       >
         <GoogleMark />
-        Continue with Google
+        {busy ? 'Opening Google…' : 'Continue with Google'}
       </button>
+
+      {/* the reset flow this form starts has to be finishable */}
+      {mode === 'reset' && notice && (
+        <button
+          type="button"
+          onClick={() => {
+            // The email has landed; the link opens #reset-password. Offer the
+            // local jump so a player on this device can set it immediately.
+            window.location.hash = 'reset-password'
+          }}
+          className="btn-ghost mb-3 w-full !py-2.5 !text-[12px]"
+        >
+          Already opened the link? Set a new password
+        </button>
+      )}
 
       <div className="mb-3 flex items-center gap-3">
         <span className="h-px flex-1 bg-white/10" />
