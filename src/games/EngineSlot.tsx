@@ -9,6 +9,7 @@ import { GameShell, PayoutRow } from '../components/GameShell'
 import { SlotBoard3D } from '../components/SlotBoard3D'
 import { PlayBar } from '../components/PlayBar'
 import { buildGrid, resolve, type Grid, type SlotConfig, type SlotOutcome } from '../lib/slots/engine'
+import { frameScale, stopTimes, totalSpinMs } from '../lib/reels'
 
 type Props = { config: SlotConfig; id: GameId; onBack: () => void; onFair: () => void }
 
@@ -63,10 +64,17 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
           ? `${out.wins[0].symbol} ×${out.wins[0].multiplier}`
           : 'No win'
 
-    // mechanical reel stops, staggered so the drums feel physical
-    for (let r = 0; r < config.reels; r++) {
-      window.setTimeout(() => safe(() => sfx.reelStop(r)), 380 + r * 90)
-    }
+    // The board animates for exactly this long (see SlotBoard3D). The result is
+    // committed when the LAST reel stops, so the win highlight can never appear
+    // before the reels have landed.
+    const scale = frameScale(config.reels, config.rows)
+    const stops = stopTimes(config.reels).map((ms) => Math.round(ms * scale))
+    const landAt = Math.round(totalSpinMs(config.reels) * scale)
+
+    // One click per drum, at the moment it actually stops.
+    stops.forEach((ms, r) => {
+      window.setTimeout(() => safe(() => sfx.reelStop(r)), ms)
+    })
 
     window.setTimeout(() => {
       setGrid(out.grid)
@@ -111,7 +119,7 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
         multiplier: out.totalMultiplier,
         detail,
       })
-    }, 900)
+    }, landAt)
   }, [spinning, freeSpins, bet, balance, placeBet, id, config, nextFloats, settleBet, toast, flashLoss])
 
   useHotkey(() => { if (autoplay === 0) void spin() })

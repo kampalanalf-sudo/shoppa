@@ -23,7 +23,9 @@
     "test:pwa": "vite build --config smoke/vite.pwa.config.ts && node smoke/dist-pwa/pwa.js",
     "icons": "node scripts/build-icons.mjs",
     "android:sync": "npm run build && npx cap sync android",
-    "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug"
+    "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug",
+    "test:reels": "vite build --config smoke/vite.reels.config.ts && node smoke/dist-reels/reels.js",
+    "test:slotboard": "vite build --config smoke/vite.slotcheck.config.ts && node smoke/dist-slotcheck/slotcheck.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",
