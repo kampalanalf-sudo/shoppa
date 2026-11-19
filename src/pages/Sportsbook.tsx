@@ -3,11 +3,12 @@ import { useAuth } from '../lib/auth'
 import { sfx } from '../lib/sound'
 import { coin, money } from '../lib/format'
 import {
-  SPORT_LABEL, fmtOdds, loadBoard, loadSlips, placeBet, potentialPayout, startsIn, stakeUgx,
+  DEFAULT_MAX_STAKE_PX, SPORT_LABEL, fmtOdds, isPriceStale, loadBoard, loadSlips, placeBet,
+  potentialPayout, startsIn, stakeUgx,
   type Fixture, type Market, type Selection, type Slip, type Sport,
 } from '../lib/sportsbook'
 import {
-  IconBall, IconCheck, IconChevron, IconChevronLeft, IconClock, IconHistory, IconShield, IconTrophy,
+  IconBall, IconCheck, IconChevron, IconChevronLeft, IconClock, IconHistory, IconRefresh, IconShield, IconTrophy,
 } from '../components/Icons'
 
 /**
@@ -78,7 +79,13 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
   const stakeNum = Number(stake.replace(/[^0-9]/g, '')) || 0
   const potential = picked ? potentialPayout(stakeNum, picked.selection.odds_x100) : 0
   const overBalance = stakeNum > balance
-  const canPlace = Boolean(picked) && stakeNum > 0 && !overBalance && !busy
+  // These two mirror checks the database makes. They exist so the player sees
+  // why before they tap, not so the client is trusted: place_sports_bet checks
+  // the stake ceiling and the price age again, server-side, under a lock.
+  const maxStake = picked?.market.max_stake_px ?? DEFAULT_MAX_STAKE_PX
+  const overMax = stakeNum > maxStake
+  const stalePrice = picked ? isPriceStale(picked.selection.price_at) : false
+  const canPlace = Boolean(picked) && stakeNum > 0 && !overBalance && !overMax && !stalePrice && !busy
 
   const confirm = async () => {
     if (!picked || !canPlace) return
@@ -121,6 +128,15 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
           <p className="text-[11.5px] text-slate-500">Pre-match · Uganda and abroad · PX stakes</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { sfx.click(); setLoading(true); void refresh() }}
+            className="grid h-9 w-9 place-items-center rounded-full text-slate-400 transition hover:bg-white/5 hover:text-white"
+            aria-label="Refresh fixtures"
+            title="Prices update about every 2 hours. This reloads what is on the board."
+          >
+            <IconRefresh size={16} />
+          </button>
           <span className="chip !border-white/[0.07] normal-case tracking-normal">
             <span className="grid h-4 w-4 place-items-center rounded-full bg-gradient-to-br from-neon-lime to-neon-green text-[7px] font-black text-ink-950">PX</span>
             <span className="num font-bold text-white">{money(balance)}</span>
@@ -289,6 +305,17 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
                 That is more than your balance of {coin(balance)}.
               </p>
             )}
+            {overMax && (
+              <p className="mt-2 text-[11px] font-semibold text-rose-300">
+                The most you can stake on this market is {coin(maxStake)}.
+              </p>
+            )}
+            {stalePrice && (
+              <p className="mt-2 text-[11px] font-semibold text-amber-300">
+                These odds have not refreshed in over 90 minutes, so bets are paused.
+                Try again after the next price update.
+              </p>
+            )}
 
             <div className="mt-3 flex gap-2">
               <button type="button" onClick={() => setPicked(null)} disabled={busy} className="btn-ghost flex-1 !py-3 !text-[13px]">
@@ -342,6 +369,11 @@ function FixtureCard({
           {SPORT_LABEL[fixture.sport]}
         </span>
         <span className="truncate text-[11px] font-semibold text-slate-400">{fixture.league}</span>
+        {fixture.source === 'oddsapi' && (
+          <span className="shrink-0 rounded bg-white/[0.06] px-1 py-0.5 text-[8.5px] font-bold uppercase tracking-wider text-slate-500">
+            live odds
+          </span>
+        )}
         <span className="ml-auto flex shrink-0 items-center gap-1 text-[10.5px] font-semibold text-slate-500">
           {fixture.status === 'live' ? (
             <span className="flex items-center gap-1 text-rose-300">

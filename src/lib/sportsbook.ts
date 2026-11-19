@@ -31,6 +31,10 @@ export type Fixture = {
   venue: string | null
   status: 'upcoming' | 'live' | 'settled' | 'void'
   result: string | null
+  /** 'manual' or a feed name ('oddsapi'). Null on rows predating the feed. */
+  source?: string | null
+  home_score?: number | null
+  away_score?: number | null
 }
 
 export type Selection = {
@@ -39,6 +43,8 @@ export type Selection = {
   name: string
   odds_x100: number
   is_active: boolean
+  /** When this price was written. The server refuses bets on a stale price. */
+  price_at?: string
 }
 
 export type Market = {
@@ -47,7 +53,22 @@ export type Market = {
   name: string
   is_open: boolean
   winning_selection_id: string | null
+  /** Stake ceiling, if the market sets its own. */
+  max_stake_px?: number | null
   sports_selections: Selection[]
+}
+
+/** Same default the database applies, so the UI blocks what the server blocks. */
+export const DEFAULT_MAX_STAKE_PX = 500_000
+/** Same default as place_sports_bet: prices older than this are refused. */
+export const MAX_PRICE_AGE_SECONDS = 5400
+
+/** True when a price is old enough that the server will reject a bet on it. */
+export function isPriceStale(priceAt: string | undefined, now = Date.now()): boolean {
+  if (!priceAt) return false
+  const t = new Date(priceAt).getTime()
+  if (!Number.isFinite(t)) return false
+  return (now - t) / 1000 > MAX_PRICE_AGE_SECONDS
 }
 
 export type Slip = {

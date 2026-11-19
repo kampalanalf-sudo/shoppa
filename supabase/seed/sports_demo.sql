@@ -1,5 +1,11 @@
 -- supabase/seed/sports_demo.sql
 --
+-- SUPERSEDED by the live odds feed (api/feed/sync.ts). Real fixtures are now
+-- ingested from The Odds API; this file is kept only for local work when no
+-- ODDS_API_KEY is available. To clear it out of a real database:
+--
+--   delete from sports_fixtures where venue = 'DEMO';
+--
 -- DEMO FIXTURES — NOT REAL EVENTS.
 --
 -- This is seed data so the Sports section is not an empty shell while the odds

@@ -2,5 +2,15 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
     "api/**/*.ts": { "maxDuration": 30 }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/feed/sync",
+      "schedule": "0 */2 * * *"
+    },
+    {
+      "path": "/api/feed/settle",
+      "schedule": "15 */3 * * *"
+    }
+  ]
 }

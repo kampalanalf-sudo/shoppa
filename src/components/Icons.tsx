@@ -126,3 +126,6 @@ export const IconKey = (p: P) => (
 export const IconUser = (p: P) => (
   <svg {...base(p)}><circle cx="12" cy="8.5" r="3.5" /><path d="M5 20c0-3.4 3.1-5.5 7-5.5s7 2.1 7 5.5" /></svg>
 )
+export const IconRefresh = (p: P) => (
+  <svg {...base(p)}><path d="M20 12a8 8 0 1 1-2.6-5.9" /><path d="M20 4v4.5h-4.5" /></svg>
+)

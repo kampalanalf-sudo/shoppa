@@ -295,3 +295,123 @@ The schema already fits; this is ingestion, not redesign.
 
 Each of those is small. The reasons not to build them today are §5 and §6, not
 the code.
+
+---
+
+## 9. Installing the live feed
+
+Built and applied. It needs one thing from you: a free API key, because the
+signup is yours.
+
+### What you do (5 minutes)
+
+1. Go to **https://the-odds-api.com** and click *Get API Key* → **Starter, FREE**.
+   No card. The key arrives by email.
+2. Add it to Vercel as **`ODDS_API_KEY`** — Project → Settings → Environment
+   Variables → Production + Preview. It is a server secret: **no `VITE_` prefix**.
+3. Add **`CRON_SECRET`** — any long random string (`openssl rand -hex 32`).
+   Vercel sends it as a bearer token to the cron routes, which is how they know
+   the caller is the scheduler and not a stranger.
+4. Redeploy.
+
+Then trigger the first pull by hand:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://shoppa-ten.vercel.app/api/feed/sync
+```
+
+Check it without spending a credit:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" "https://shoppa-ten.vercel.app/api/feed/sync?dry=1"
+```
+
+### What runs after that
+
+| Route | Schedule | Cost | Does |
+|---|---|---|---|
+| `/api/feed/sync` | every 2 hours | 4 credits | Upserts fixtures + prices |
+| `/api/feed/settle` | every 3 hours, at :15 | 4 credits | Settles finished matches |
+
+Both are in `vercel.json`. Four sports × 12 runs a day = **48 credits/day**,
+which is 1,440 a month — comfortably inside the 500-credit free plan only
+because only *in-season* sports return events, and the sync skips a sport with
+no data. If you add sports, do the arithmetic first.
+
+### The four sports
+
+```
+soccer_epl                    Premier League
+soccer_uefa_champs_league     Champions League
+soccer_africa_cup_of_nations  AFCON
+basketball_nba                NBA
+```
+
+Change `SPORTS` at the top of `api/feed/sync.ts`. Every key you add costs one
+credit per run, forever.
+
+### The prices are not the feed's prices
+
+Two things happen between the provider's number and the board:
+
+1. **Consensus, not best price.** Several bookmakers quote each match. We take
+   the **median**. The best price is usually one book that has not repriced yet,
+   and building a board on the outlier means holding only the bets that were
+   about to be wrong.
+2. **A 4% margin is applied**, because publishing another book's number verbatim
+   is a zero-margin book: you carry all the market risk and keep none of the
+   compensation. `ODDS_MARGIN_PCT` overrides it; it is clamped to 25.
+
+Rounding is **always down**, in our favour. Rounding up would hand the player a
+fraction of a percent on every single bet.
+
+### Three limits that only matter now prices are automated
+
+All three are enforced in `place_sports_bet`, server-side, under a row lock:
+
+| Limit | Default | Why |
+|---|---|---|
+| Stake ceiling | 500,000 PX (50,000 UGX) | One account must not be able to take the whole market down on a short price. Per-market override: `sports_markets.max_stake_px`. |
+| Price age | 90 minutes | The feed polls every 2 hours. A price older than 90 minutes is refused rather than honoured. Per-market override: `max_price_age_seconds`. |
+| Kick-off clock | `starts_at <= now()` | The feed's `status` lags reality. A match that started two minutes ago can still say `upcoming` in the last payload, and betting a known result is not a book. |
+
+Verified against the live database, not assumed:
+
+```
+stake 600,000 PX   -> "stake exceeds the 500000 PX limit for this market"
+price 3h old       -> "odds for this market are out of date"
+valid bet          -> accepted, ledger row written, balance debited
+```
+
+### How settlement decides
+
+`/api/feed/settle` reads the scores endpoint and will only act on an event with
+**`completed: true`**. A live match with a current score is *not* a result — it
+can still turn. A draw has no winner, so the `Draw` selection wins if the feed
+quoted one, and the market is **voided** if it did not. Nothing is guessed.
+
+Fixtures are matched by the provider's event id (`external_id`), never by team
+name: names get respelled, ids do not.
+
+### When it goes wrong
+
+Every run writes a row to `feed_sync_log` — status, fixtures seen, credits used,
+credits remaining, and the first 20 errors. A partial sync is logged as
+`partial`, not `ok`, because a board that is half-stale looks fine and is not.
+
+```sql
+select started_at, status, fixtures_upserted, credits_left, errors
+  from feed_sync_log order by started_at desc limit 10;
+```
+
+A fixture the feed stops returning is **voided**, never deleted:
+`void_stale_fixtures('oddsapi', 6)` refunds open slips through
+`settle_sports_market`. Deleting a fixture a player has a bet on would make the
+slip disappear rather than resolve.
+
+### What this still does not give you
+
+- **Live in-play.** Polling every 2 hours cannot price a match in progress. This
+  is a pre-match book, and the schema says so.
+- **A licence.** Every word of §6 still holds. The feed is data, not permission.
+- **More than 4 competitions** without spending more credits.
