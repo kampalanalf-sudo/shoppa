@@ -67,8 +67,25 @@ ok('the top-up reference is still read from the raw hash',
 ok('no server secret is exposed to the browser bundle',
   !/import\.meta\.env\.(VITE_)?(DGATEWAY_API_KEY|SUPABASE_SERVICE_ROLE_KEY)/.test(
     read('src/lib/supabase.ts') + read('src/lib/auth.tsx')))
-ok('the backend is optional, so a build without env vars still boots',
-  read('src/lib/supabase.ts').includes('export const isBackendConfigured'))
+// The pipeline that published the live site had no VITE_ vars, so the bundle it
+// shipped contained no Supabase client at all and sign-in did not exist. The
+// public URL and key now have in-source defaults, so no pipeline can publish an
+// unauthenticated app by simply forgetting.
+const backend = read('src/lib/backend.ts')
+ok('the public backend location is in source, not only in env',
+  backend.includes("dtroufrfavmjldtlprpn.supabase.co") && backend.includes('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'))
+ok('the env still wins, so another project needs no code change',
+  backend.includes('VITE_SUPABASE_URL') && backend.includes('VITE_SUPABASE_ANON_KEY'))
+ok('supabase.ts resolves through that module',
+  read('src/lib/supabase.ts').includes("from './backend'"))
+
+// Email links must stay on the origin the player is on: Supabase has one
+// site_url, but two sites serve this build.
+ok('auth redirects are relative, so a Pages player is not bounced to Vercel',
+  auth.includes("const here = (hash: string)") &&
+  auth.includes("emailRedirectTo: here('#verified')") &&
+  auth.includes("redirectTo: here('#reset-password')") &&
+  !auth.includes('window.location.origin}${window.location.pathname}'))
 
 if (fails.length) { console.log(`\n${fails.length} FAILED: ${fails.join(', ')}`); process.exit(1) }
 console.log('\nauthentication: email, Google, and password recovery are all wired end to end')

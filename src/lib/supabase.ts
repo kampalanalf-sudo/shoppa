@@ -1,17 +1,17 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { SUPABASE_URL as url, SUPABASE_ANON_KEY as anon, BACKEND_AVAILABLE } from './backend'
 
 /**
- * Browser Supabase client. Only the public anon key is used here — every
+ * Browser Supabase client. Only the public publishable key is used here — every
  * privileged operation goes through a SECURITY DEFINER function or an edge
  * function, so this key can safely ship in the bundle.
  *
- * If the two VITE_ vars are absent the app still boots in local-only mode:
- * `isBackendConfigured` is false and the UI hides anything that needs a server.
+ * The URL and key resolve through `src/lib/backend.ts`, which carries the public
+ * defaults. They used to be read straight off `import.meta.env`, which meant a
+ * pipeline that forgot to set them published a bundle with no client at all and
+ * no sign-in, silently. Set the two `VITE_` vars to point at another project.
  */
-const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim() ?? ''
-const anon = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim() ?? ''
-
-export const isBackendConfigured = Boolean(url && anon)
+export const isBackendConfigured = BACKEND_AVAILABLE
 
 export const supabase: SupabaseClient | null = isBackendConfigured
   ? createClient(url, anon, {

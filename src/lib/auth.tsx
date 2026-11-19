@@ -180,6 +180,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session?.user])
 
+  /**
+   * Where this browser actually is.
+   *
+   * Two sites serve this build — the Vercel deployment and GitHub Pages — and
+   * Supabase has a single `site_url` (currently Vercel). Sending an absolute
+   * redirect, which is what the SDK does when handed a full URL, would bounce a
+   * player who signed up on Pages over to Vercel mid-flow. A *relative* path
+   * stays on whichever origin the request came from, and the allow-list already
+   * covers both.
+   */
+  const here = (hash: string) => `${window.location.pathname}${hash}`
+
   const signUpEmail = useCallback(
     async (email: string, password: string, username: string, dob: string) => {
       if (!supabase) throw new Error('Backend is not configured.')
@@ -189,7 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         options: {
           // the handle_new_user() trigger reads these to seed the profile
           data: { username: username.trim(), date_of_birth: dob },
-          emailRedirectTo: `${window.location.origin}${window.location.pathname}#verified`,
+          emailRedirectTo: here('#verified'),
         },
       })
       if (error) throw new Error(error.message)
@@ -208,7 +220,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}${window.location.pathname}`,
+        // relative: stay on the origin the player is actually on
+      redirectTo: here(''),
         queryParams: { access_type: 'offline', prompt: 'consent' },
       },
     })
@@ -218,7 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const resetPassword = useCallback(async (email: string) => {
     if (!supabase) throw new Error('Backend is not configured.')
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}${window.location.pathname}#reset-password`,
+      redirectTo: here('#reset-password'),
     })
     if (error) throw new Error(error.message)
   }, [])
@@ -239,7 +252,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email: email.trim(),
-      options: { emailRedirectTo: `${window.location.origin}${window.location.pathname}#verified` },
+      options: { emailRedirectTo: here('#verified') },
     })
     if (error) throw new Error(error.message)
   }, [])

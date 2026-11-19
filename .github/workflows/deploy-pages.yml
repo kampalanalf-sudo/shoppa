@@ -32,11 +32,28 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      # Auth is compiled in at BUILD time: if these two are missing the bundle
+      # ships without a Supabase client at all and the live site silently runs
+      # local-only — no sign-up, no wallet, no cashout — with nothing on screen
+      # saying so. The anon key is public by design; RLS is what protects the
+      # data. The service_role key must never appear here.
       - name: Build
         env:
           # "/<repo>/" for project pages, "/" for user/org pages
           BASE_PATH: ${{ format('/{0}/', github.event.repository.name) }}
-        run: npm run build
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://dtroufrfavmjldtlprpn.supabase.co' }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_DGATEWAY_STORE_URL: 'off'
+        run: |
+          if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+            echo "::warning title=Auth disabled::VITE_SUPABASE_ANON_KEY is not set, so this build has no sign-in. Add it in Settings -> Secrets and variables -> Actions."
+          fi
+          npm run build
+          # Fail loudly rather than deploy a bundle where auth is dead.
+          if ! grep -rq "dtroufrfavmjldtlprpn" dist/assets/*.js; then
+            echo "::error title=Auth missing from build::The built bundle contains no Supabase URL, so sign-in cannot work. Set VITE_SUPABASE_ANON_KEY."
+            exit 1
+          fi
 
       - name: Add SPA fallback and disable Jekyll
         run: |

@@ -279,7 +279,37 @@ prompts for the two secrets rather than taking them as arguments. It sets
 everything except `SUPABASE_SERVICE_ROLE_KEY`, which you must add in the
 dashboard so it can be marked *sensitive*.
 
-### 4b. The fastest path: copy-paste this
+### 4b. Which site is actually live?
+
+There are **two** deployments of this repo, and this confused the whole picture
+for a while:
+
+| Host | Project | Signs in? |
+|---|---|---|
+| `https://kampalanalf-sudo.github.io/shoppa/` | GitHub Pages, branch `gh-pages`, built by `.github/workflows/deploy-pages.yml` on every push to `main` | **yes, now** |
+| `https://shoppa-ten.vercel.app` | Vercel project `shoppa` under `iuearadio` | only once the env vars below exist |
+
+The Pages build was publishing with no `VITE_` variables at all, so the bundle it
+served contained no Supabase client: sign-up, wallet and cashout simply did not
+exist, and nothing on screen said so. That is fixed at the source, not in a
+dashboard — `src/lib/backend.ts` now carries the **public** project URL and
+publishable key as defaults, with the env vars still overriding them. A pipeline
+can no longer publish an unauthenticated app by forgetting a setting.
+
+The deploy workflow also refuses to publish if the built bundle has no backend
+in it, so this cannot regress silently again.
+
+Supabase's URL allow-list now includes `https://kampalanalf-sudo.github.io/shoppa/**`,
+and auth redirects are sent as **relative** paths, so a player who signs up on
+Pages stays on Pages instead of being bounced to the Vercel `site_url`.
+
+### 4c. Vercel, if you want that host working too
+
+Optional now: the site on Pages signs in without it. What is still missing on
+Vercel is the two `VITE_` variables — without them that host keeps serving a
+bundle with no backend, exactly as before.
+
+The fastest path:
 
 The integration in this workspace is bound to the `charlielwanga88-4249` Vercel
 account, which only contains `proxicore-visor`. It **cannot** reach `shoppa` un-
