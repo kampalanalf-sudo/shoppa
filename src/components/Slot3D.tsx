@@ -1,19 +1,30 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { SYMBOLS, type Cell, type Grid, type SymbolId } from '../lib/slot'
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { SYMBOLS, ROWS, type Cell, type Grid, type SymbolId } from '../lib/slot'
+import {
+  buildSpinStrip,
+  spinPlan,
+  restOffsetPx,
+  stripHeightPx,
+  SPIN_BLUR,
+  SPIN_EASE,
+  NUDGE_EASE,
+  NUDGE_TRANSFORM,
+  START_TRANSFORM,
+  restTransform,
+} from '../lib/reels'
 
 /* ------------------------------------------------------------------ helpers */
 
-const STRIP_LEN = 24
+const FILLER: SymbolId[] = [
+  'donut', 'key', 'cash', 'badge', 'diamond', 'donut', 'key',
+  'cash', 'clyve', 'bonita', 'donut', 'key', 'badge',
+  'cash', 'diamond', 'donut', 'key', 'clyve', 'bonita', 'wild',
+  'donut', 'cash', 'scatter', 'key',
+]
 
-/** Deterministic-ish filler so reels look like a real strip before the spin. */
+/** Deterministic filler so reels look like a real strip before the spin. */
 function fillStrip(seed: number): SymbolId[] {
-  const pool: SymbolId[] = [
-    'donut', 'key', 'cash', 'badge', 'diamond', 'donut', 'key',
-    'cash', 'clyve', 'bonita', 'donut', 'key', 'badge',
-    'cash', 'diamond', 'donut', 'key', 'clyve', 'bonita', 'wild',
-    'donut', 'cash', 'scatter', 'key',
-  ]
-  return Array.from({ length: STRIP_LEN }, (_, i) => pool[(i + seed * 5) % pool.length])
+  return Array.from({ length: FILLER.length }, (_, i) => FILLER[(i + seed * 5) % FILLER.length])
 }
 
 /* ------------------------------------------------------------------ Siren (SVG) */
@@ -107,64 +118,121 @@ export function SymbolFace({
 
 type ReelProps = {
   reel: number
-  target: SymbolId[]
-  spinning: boolean
-  stopping: boolean
-  highlight: boolean[]
-  winCells: Set<string>
-  delay: number
-  /** css length of one face */
+  /** symbols the drum is showing right now, top to bottom */
+  current: SymbolId[]
+  /** symbols it must land on */
+  next: SymbolId[]
   face: number
   gap: number
-  onSettled?: () => void
+  /** bumped once per spin */
+  spinToken: number
+  /** the whole board's plan, so every drum shares one clock */
+  stopMs: number
+  delayMs: number
+  nudgeMs: number
+  travelMs: number
+  winCells: Set<string>
+  reducedMotion: boolean
 }
 
-function Reel({ reel, target, spinning, stopping, highlight, winCells, delay, face, gap }: ReelProps) {
-  const strip = useMemo(() => {
-    const filler = fillStrip(reel + 3)
-    // final 3 faces of the strip are always the landed symbols
-    return [...filler.slice(0, STRIP_LEN - 3), ...target]
-  }, [reel, target.join(',')])
-
-  const [index, setIndex] = useState(strip.length - 3)
-  const [transitioning, setTransitioning] = useState(false)
-  const timeout = useRef<number>(0)
-
-  // spin: jump repeatedly, then settle with a long eased transition
-  useEffect(() => {
-    if (!spinning) return
-    setTransitioning(false)
-    setIndex(strip.length - 3)
-    let hops = 0
-    const hop = () => {
-      setIndex((i) => (i + 3) % strip.length)
-      hops++
-      if (hops < 14) {
-        timeout.current = window.setTimeout(hop, 55 + hops * 6)
-      } else {
-        // settle
-        setTransitioning(true)
-        setIndex(strip.length - 3)
-      }
-    }
-    timeout.current = window.setTimeout(hop, 20)
-    return () => window.clearTimeout(timeout.current)
-  }, [spinning, strip.length])
-
-  const visible: { id: SymbolId; pos: number }[] = useMemo(() => {
-    const out: { id: SymbolId; pos: number }[] = []
-    for (let k = 0; k < 3; k++) {
-      out.push({ id: strip[(index + k) % strip.length], pos: k - 1 })
-    }
-    return out
-  }, [strip, index])
-
+/**
+ * One drum.
+ *
+ * The strip starts on the symbols the player is already looking at, so the spin
+ * is a continuation of the visible board rather than a swap. Motion is a single
+ * accelerated CSS transition: the compositor runs it independent of the main
+ * thread, so settling the round cannot stall the drums mid-flight.
+ */
+function Reel({
+  reel, current, next, face, gap, spinToken, stopMs, delayMs, nudgeMs, travelMs,
+  winCells, reducedMotion,
+}: ReelProps) {
+  const stripRef = useRef<HTMLDivElement>(null)
+  const [moving, setMoving] = useState(false)
+  const [landed, setLanded] = useState(false)
   const step = face + gap
-  // The three landed symbols stack in a real column. Each face is offset by a
-  // full (face + gap) -- previously every face sat at the same vertical centre
-  // and relied on a translateZ that only moved it ~23px against a 72px face,
-  // so the symbols overlapped and squashed into strips.
-  const stackH = face * 3 + gap * 2
+
+  const stripKey = `${current.join(',')}|${next.join(',')}`
+  const strip = useMemo(
+    () => buildSpinStrip(current, next, FILLER, { travelFaces: 10, rows: ROWS }),
+    // stripKey is the content identity of both windows
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [stripKey],
+  )
+  const height = stripHeightPx(strip.length, face, gap)
+  const offset = restOffsetPx(strip.length, ROWS, step)
+
+  // Transform and transition are written to the node, never declared in JSX:
+  // a React re-render (there are several per spin, from `moving`/`landed`)
+  // would otherwise rewrite the style attribute mid-flight and cancel the
+  // travel. This is the one place where imperative DOM is the correct answer.
+  //
+  // Layout effects run before paint, so the snap-to-rest below is never
+  // visible: the sequence effect immediately overwrites it with the start
+  // transform, which shows exactly the symbols that were already on screen.
+  useLayoutEffect(() => {
+    const el = stripRef.current
+    if (!el) return
+    el.style.transition = 'none'
+    el.style.transform = restTransform(offset)
+  }, [stripKey, offset])
+
+  useLayoutEffect(() => {
+    if (spinToken === 0) return
+    const el = stripRef.current
+    if (!el) return
+
+    if (reducedMotion) {
+      el.style.transition = 'none'
+      el.style.transform = restTransform(offset)
+      setMoving(false)
+      setLanded(true)
+      return
+    }
+
+    // Start exactly where the drum already is: no jump, ever.
+    el.style.transition = 'none'
+    el.style.transform = START_TRANSFORM
+    setMoving(false)
+    setLanded(false)
+
+    let cancelled = false
+    const timers: number[] = []
+
+    // 1. pull back
+    timers.push(window.setTimeout(() => {
+      if (cancelled) return
+      el.style.transition = `transform ${nudgeMs}ms ${NUDGE_EASE}`
+      el.style.transform = NUDGE_TRANSFORM
+      setMoving(true)
+    }, delayMs))
+
+    // 2. launch out of the nudge into the full travel. Reading offsetHeight
+    //    forces a style recalc so the browser cannot batch the nudge and the
+    //    travel into a single paint and drop the nudge entirely.
+    timers.push(window.setTimeout(() => {
+      if (cancelled) return
+      void el.offsetHeight
+      el.style.transition = `transform ${travelMs}ms ${SPIN_EASE}`
+      el.style.transform = restTransform(offset)
+    }, delayMs + nudgeMs))
+
+    // 3. at rest
+    timers.push(window.setTimeout(() => {
+      if (cancelled) return
+      el.style.transition = 'none'
+      el.style.transform = restTransform(offset)
+      setMoving(false)
+      setLanded(true)
+    }, stopMs))
+
+    return () => {
+      cancelled = true
+      timers.forEach((t) => window.clearTimeout(t))
+    }
+  }, [spinToken, offset, delayMs, nudgeMs, travelMs, stopMs, reducedMotion])
+
+  const stackH = face * ROWS + gap * (ROWS - 1)
 
   return (
     <div
@@ -173,41 +241,53 @@ function Reel({ reel, target, spinning, stopping, highlight, winCells, delay, fa
       aria-hidden
     >
       <div
-        className="absolute left-0 right-0 top-1/2"
-        style={{
-          height: stackH,
-          marginTop: -stackH / 2,
-          transformStyle: 'preserve-3d',
-        }}
+        className="absolute left-0 right-0 top-1/2 overflow-hidden"
+        style={{ height: stackH, marginTop: -stackH / 2 }}
       >
-        {visible.map(({ id, pos }, k) => {
-          // pos is -1 / 0 / 1 -> rows 0 / 1 / 2
-          const row = k
-          return (
-            <div
-              key={`${reel}-${k}-${id}-${index}`}
-              className="absolute left-0 right-0 grid place-items-center overflow-hidden rounded-[16%] border border-white/10"
-              style={{
-                height: face,
-                top: row * step,
-                // a gentle rotation away from the viewer on the outer rows keeps
-                // the drum feel without distorting the symbol
-                transform: `rotateX(${pos * 5}deg) translateZ(${pos === 0 ? 0 : -6}px)`,
-                transformOrigin: 'center center',
-                background:
-                  'linear-gradient(180deg, rgba(38,46,66,.96) 0%, rgba(22,27,41,.98) 55%, rgba(15,19,30,1) 100%)',
-                boxShadow:
-                  'inset 0 1px 0 rgba(255,255,255,.12), inset 0 -10px 16px -12px rgba(0,0,0,.9), 0 2px 6px -3px rgba(0,0,0,.7)',
-                opacity: pos === 0 ? 1 : 0.9,
-              }}
-            >
-              <SymbolFace id={id} priority className="h-full w-full" />
-              {winCells.has(`${reel}-${k}`) && (
-                <span className="pointer-events-none absolute inset-0 rounded-[16%] bg-[radial-gradient(circle,rgba(198,242,78,.32),transparent_70%)] ring-2 ring-inset ring-neon-lime/70" />
-              )}
-            </div>
-          )
-        })}
+        <div
+          ref={stripRef}
+          className="absolute left-0 right-0 top-0 will-change-transform"
+          style={{
+            height,
+            // Blur tracks travel only; a resting drum is always sharp.
+            filter: moving ? SPIN_BLUR : 'none',
+            transition: 'filter 120ms linear',
+            backfaceVisibility: 'hidden',
+          }}
+        >
+          {strip.map((f, k) => {
+            const id = f.symId as SymbolId
+            if (!SYMBOLS[id]) return null
+            return (
+              <div
+                key={f.key}
+                className="absolute left-0 right-0 grid place-items-center overflow-hidden rounded-[16%] border border-white/10"
+                style={{
+                  height: face,
+                  top: k * step,
+                  background:
+                    'linear-gradient(180deg, rgba(38,46,66,.96) 0%, rgba(22,27,41,.98) 55%, rgba(15,19,30,1) 100%)',
+                  boxShadow:
+                    'inset 0 1px 0 rgba(255,255,255,.12), inset 0 -10px 16px -12px rgba(0,0,0,.9), 0 2px 6px -3px rgba(0,0,0,.7)',
+                }}
+              >
+                <SymbolFace id={id} priority={k < ROWS} className="h-full w-full" />
+              </div>
+            )
+          })}
+        </div>
+
+        {/* win highlight sits in the window, not on the moving strip */}
+        {landed &&
+          next.map((_, row) =>
+            winCells.has(`${reel}-${row}`) ? (
+              <span
+                key={row}
+                className="pointer-events-none absolute left-0 right-0 rounded-[16%] bg-[radial-gradient(circle,rgba(198,242,78,.32),transparent_70%)] ring-2 ring-inset ring-neon-lime/70"
+                style={{ top: row * step, height: face }}
+              />
+            ) : null,
+          )}
       </div>
     </div>
   )
@@ -218,6 +298,12 @@ function Reel({ reel, target, spinning, stopping, highlight, winCells, delay, fa
 export type Slot3DProps = {
   grid: Grid | null
   spinning: boolean
+  /**
+   * Bumped by the game at the exact moment the outcome has been committed to
+   * `grid`. The drums start their travel on this, never on `spinning` — the
+   * outcome must exist before a drum moves, or a drum would have no target.
+   */
+  spinKey: number
   stopping: boolean
   onSettled?: () => void
   winCells: Set<string>
@@ -225,7 +311,7 @@ export type Slot3DProps = {
   className?: string
 }
 
-export function Slot3D({ grid, spinning, stopping, winCells, glow = 'none', className = '', onSettled }: Slot3DProps) {
+export function Slot3D({ grid, spinning, spinKey, winCells, glow = 'none', className = '' }: Slot3DProps) {
   // fallback board before the first spin
   const fallback = useMemo<Grid>(
     () =>
@@ -235,6 +321,13 @@ export function Slot3D({ grid, spinning, stopping, winCells, glow = 'none', clas
     [],
   )
   const board = grid ?? fallback
+
+  // The symbols each drum is currently sitting on. This is the anchor for the
+  // next spin: the strip starts here, so nothing jumps when the spin begins.
+  const [shown, setShown] = useState<SymbolId[][]>(() =>
+    board.map((col) => col.map((c) => c.id)),
+  )
+
   // Start small and let the observer size the board: guessing a large default
   // produces an oversized board on the first paint on a phone.
   const [face, setFace] = useState(56)
@@ -242,14 +335,10 @@ export function Slot3D({ grid, spinning, stopping, winCells, glow = 'none', clas
 
   // The reel row is measured directly (it has no padding), so the face is the
   // largest whole pixel value that lets 5 reels + 4 gutters fill it exactly.
-  // Previously this subtracted a hardcoded 56px, which on a ~350px phone
-  // collapsed the board to ~54px symbols with dead space either side.
   useEffect(() => {
     const measure = () => {
       const el = wrap.current
       if (!el) return
-      // clientWidth is the whole row and already contains the flex gaps,
-      // so subtract them to get the space the 5 reels actually share.
       const rowW = el.clientWidth || 0
       if (rowW <= 0) return
       const g = rowW < 400 ? 3 : 5
@@ -267,9 +356,39 @@ export function Slot3D({ grid, spinning, stopping, winCells, glow = 'none', clas
   }, [])
 
   const gap = face < 90 ? 3 : 5
-  // the drum needs an explicit height: the three faces are absolutely
-  // positioned, so without this the flex row collapses to 0px.
-  const boardH = face * 3 + gap * 2
+  const boardH = face * ROWS + gap * (ROWS - 1)
+
+  const reducedMotion = useMemo(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return false
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  }, [])
+
+  const plan = useMemo(() => spinPlan(5), [])
+
+  // Freeze the symbols each drum is spinning FROM, and the ones it lands ON,
+  // at the moment the game publishes an outcome. Both are captured together in
+  // one render, so a drum can never start without knowing its target.
+  const [flight, setFlight] = useState<{ from: SymbolId[][]; to: SymbolId[][] } | null>(null)
+  useEffect(() => {
+    if (spinKey === 0) return
+    setFlight({
+      from: shown,
+      to: board.map((col) => col.map((c) => c.id)),
+    })
+    // spinKey only: `shown` and `board` are read at that instant by design.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spinKey])
+
+  // The board has landed: what is on screen is now the resting board.
+  useEffect(() => {
+    if (spinning) return
+    setShown(board.map((col) => col.map((c) => c.id)))
+    setFlight(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [board, spinning])
+
+  const from = flight?.from ?? shown
+  const to = flight?.to ?? board.map((col) => col.map((c) => c.id))
 
   return (
     <div className={`relative ${className}`}>
@@ -314,20 +433,26 @@ export function Slot3D({ grid, spinning, stopping, winCells, glow = 'none', clas
               className="flex w-full"
               style={{ perspective: '1200px', gap: `${gap}px`, height: `${boardH}px` }}
             >
-              {[0, 1, 2, 3, 4].map((reel) => (
-                <Reel
-                  key={reel}
-                  reel={reel}
-                  target={board[reel].map((c) => c.id)}
-                  spinning={spinning}
-                  stopping={stopping}
-                  highlight={[false, false, false]}
-                  winCells={winCells}
-                  delay={reel * 110}
-                  face={face}
-                  gap={gap}
-                />
-              ))}
+              {[0, 1, 2, 3, 4].map((reel) => {
+                const p = plan.reels[reel]
+                return (
+                  <Reel
+                    key={reel}
+                    reel={reel}
+                    current={(from[reel] ?? []).map((id) => id as SymbolId)}
+                    next={(to[reel] ?? []).map((id) => id as SymbolId)}
+                    face={face}
+                    gap={gap}
+                    spinToken={spinKey}
+                    stopMs={p.stopMs}
+                    delayMs={p.delayMs}
+                    nudgeMs={p.nudgeMs}
+                    travelMs={p.travelMs}
+                    winCells={winCells}
+                    reducedMotion={reducedMotion}
+                  />
+                )
+              })}
             </div>
 
             {/* glass + scanlines over the drums */}

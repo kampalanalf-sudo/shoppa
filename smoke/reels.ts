@@ -1,88 +1,99 @@
 import {
-  offsetAt, stopTimes, totalSpinMs, buildStrip, visibleCells, spinDistance, frameScale,
+  buildSpinStrip, spinPlan, stopTimes, totalSpinMs, restOffsetPx, stripHeightPx,
+  travelPx, visibleFaces, restTransform, START_TRANSFORM, TRAVEL_FACES, REEL_TRAVEL_MS,
 } from '../src/lib/reels'
 
 const fails: string[] = []
 const ok = (n: string, c: boolean, e = '') => { if (!c) fails.push(n); console.log(`${c ? 'ok  ' : 'FAIL'} ${n} ${e}`) }
 
 const FACE = 60
+const GAP = 4
+const STEP = FACE + GAP
 const ROWS = 3
-const DIST = spinDistance(FACE)
+const PREV = ['donut', 'key', 'cash']
+const NEXT = ['bonita', 'wild', 'siren']
+const POOL = ['donut', 'key', 'cash', 'badge', 'diamond', 'bonita', 'wild']
 
-// ------------------------------------------------------------- the real bug --
-// The previous reel advanced a counter and applied
-// `transform: translateY(${settling ? 0 : 0}px)` — always zero. These assertions
-// are the regression guard: the offset must actually change over time.
-ok('reel travels a non-zero distance', DIST > 0, `${DIST}px`)
-ok('offset is 0 at t=0', offsetAt(0, 1000, DIST) === 0)
-ok('offset is the full distance at the end', offsetAt(1000, 1000, DIST) === DIST)
-ok('offset moves between frames', offsetAt(100, 1000, DIST) > 0 && offsetAt(200, 1000, DIST) > offsetAt(100, 1000, DIST))
+// ============================================================ THE JUMP BUG ==
+// The board used to rebuild its strip for the outcome the instant the spin
+// began, so the visible symbols were replaced before any motion happened. The
+// first window of a spin strip must therefore be the symbols already on screen.
+const strip = buildSpinStrip(PREV, NEXT, POOL, { travelFaces: TRAVEL_FACES, rows: ROWS })
+ok('strip opens on the symbols already on screen',
+  strip.slice(0, ROWS).map((f) => f.symId).join(',') === PREV.join(','),
+  strip.slice(0, ROWS).map((f) => f.symId).join(','))
+ok('strip ends on the outcome',
+  strip.slice(-ROWS).map((f) => f.symId).join(',') === NEXT.join(','))
+ok('opening window differs from the outcome window (so it is a real spin)',
+  strip.slice(0, ROWS).map((f) => f.symId).join(',') !== strip.slice(-ROWS).map((f) => f.symId).join(','))
+ok('strip is long enough to look like it turns over',
+  strip.length >= ROWS + TRAVEL_FACES + ROWS, `${strip.length} faces`)
 
-// Monotonic and never overshooting: a bounce at the stop reads as a glitch.
-let prev = -1
-let monotonic = true
-let maxSeen = 0
-for (let t = 0; t <= 1000; t += 16) {
-  const v = offsetAt(t, 1000, DIST)
-  if (v < prev) monotonic = false
-  if (v > DIST) maxSeen = v
-  prev = v
+// A fresh board with no known previous grid must not throw or open blank.
+const noPrev = buildSpinStrip([], NEXT, POOL, { rows: ROWS })
+ok('a board with no previous grid still fills its opening window',
+  noPrev.slice(0, ROWS).every((f) => POOL.includes(f.symId)))
+ok('an empty pool still produces a strip', buildSpinStrip(PREV, NEXT, [], { rows: ROWS }).length > 0)
+ok('face keys are unique', new Set(strip.map((f) => f.key)).size === strip.length)
+
+// ========================================================= the travel window ==
+const height = stripHeightPx(strip.length, FACE, GAP)
+const offset = restOffsetPx(strip.length, ROWS, STEP)
+ok('strip height counts the gaps', height === strip.length * FACE + (strip.length - 1) * GAP)
+ok('rest offset is positive', offset > 0, `${offset}px`)
+ok('rest transform is never a zero translate', restTransform(offset) !== 'translate3d(0,0,0)')
+ok('start transform is identity', START_TRANSFORM === 'translate3d(0,0,0)')
+
+// The two ends of the travel must be exactly the two windows we asserted above.
+const atStart = visibleFaces(strip, 0, STEP, ROWS, FACE).map((f) => f.symId).join(',')
+const atEnd = visibleFaces(strip, offset, STEP, ROWS, FACE).map((f) => f.symId).join(',')
+ok('offset 0 shows the previous symbols', atStart === PREV.join(','), atStart)
+ok('rest offset shows the outcome', atEnd === NEXT.join(','), atEnd)
+
+// A window must never run out of faces mid-travel: an empty window is what made
+// the old board look like it had stalled.
+let shortWindow = 0
+for (let px = 0; px <= offset; px += 7) {
+  if (visibleFaces(strip, px, STEP, ROWS, FACE).length < ROWS) shortWindow++
 }
-ok('offset is monotonic across the whole spin', monotonic)
-ok('offset never overshoots the landing point', maxSeen === 0)
+ok('the drum never runs out of symbols mid-travel', shortWindow === 0, `${shortWindow} short frames`)
+ok('travel distance equals the rest offset', travelPx(strip.length, ROWS, STEP) === offset)
 
-// Deceleration: the last quarter must cover far less ground than the first.
-const firstQ = offsetAt(250, 1000, DIST) - offsetAt(0, 1000, DIST)
-const lastQ = offsetAt(1000, 1000, DIST) - offsetAt(750, 1000, DIST)
-ok('reel decelerates into the stop', lastQ < firstQ * 0.5, `${lastQ.toFixed(1)} < ${(firstQ * 0.5).toFixed(1)}`)
-ok('most of the travel happens in the first half', offsetAt(500, 1000, DIST) > DIST * 0.8)
+// The travel must actually cover ground: 10 faces of filler plus a window.
+ok('travel is at least three faces', offset >= 3 * STEP, `${offset}px`)
+ok('travel turns over more than a full window', offset > ROWS * STEP)
+ok('landing window is exactly one window tall',
+  height - offset === (ROWS - 1) * STEP + FACE, `${height - offset}px`)
 
-// Clamped outside the window, so a late frame cannot overshoot.
-ok('negative time is clamped', offsetAt(-50, 1000, DIST) === 0)
-ok('time past the end is clamped', offsetAt(5000, 1000, DIST) === DIST)
+// ================================================================ the timing ==
+const plan = spinPlan(5)
+ok('five reels produce five plans', plan.reels.length === 5)
+ok('drums stop left to right', plan.reels.every((r, i) => i === 0 || r.stopMs > plan.reels[i - 1].stopMs),
+  plan.reels.map((r) => r.stopMs).join(','))
+ok('total equals the last drum stop', plan.totalMs === plan.reels[4].stopMs)
+ok('every drum has an anticipation nudge before it travels', plan.reels.every((r) => r.nudgeMs > 0))
+ok('stop time is delay + nudge + travel',
+  plan.reels.every((r) => r.stopMs === r.delayMs + r.nudgeMs + r.travelMs))
+ok('travel is long enough to read as a spin', REEL_TRAVEL_MS >= 700, `${REEL_TRAVEL_MS}ms`)
+ok('a reel does not drift for ages after it looks stopped', plan.totalMs <= 2200, `${plan.totalMs}ms`)
+ok('the whole spin is at least a second', plan.totalMs >= 1000, `${plan.totalMs}ms`)
 
-// ------------------------------------------------------------------ stagger --
+// Regression: a smaller board must NOT be sped up into a snap. The old
+// `frameScale` compressed 3-reel boards to ~850ms and they felt like a glitch.
+const plan3 = spinPlan(3)
+ok('a 3-reel board travels at the same speed as a 5-reel one',
+  plan3.reels[0].travelMs === plan.reels[0].travelMs,
+  `${plan3.reels[0].travelMs} vs ${plan.reels[0].travelMs}`)
+ok('a 3-reel board still spins for at least a second', plan3.totalMs >= 1000, `${plan3.totalMs}ms`)
+
+// Stop times must be usable as audio cues: ascending and matching the plan.
 const stops = stopTimes(5)
-ok('five reels produce five stop times', stops.length === 5)
-ok('stop times increase left to right', stops.every((v, i) => i === 0 || v > stops[i - 1]), stops.join(','))
-ok('total spin equals the last reel stop', totalSpinMs(5) === stops[4])
-ok('a 3-reel board finishes sooner than a 5-reel board', totalSpinMs(3) < totalSpinMs(5))
-ok('spin is long enough to read as a spin', totalSpinMs(5) >= 900, `${totalSpinMs(5)}ms`)
-ok('spin is not so long it feels laggy', totalSpinMs(5) <= 2000, `${totalSpinMs(5)}ms`)
+ok('stopTimes matches spinPlan', stops.join(',') === plan.reels.map((r) => r.stopMs).join(','))
+ok('totalSpinMs matches spinPlan', totalSpinMs(5) === plan.totalMs)
 
-// ------------------------------------------------------------------- strips --
-const target = ['a', 'b', 'c']
-const pool = ['a', 'b', 'c', 'd', 'e']
-const strip = buildStrip(target, pool, FACE, 3)
-ok('strip has filler above the landing window', strip.cells.length > ROWS)
-ok('strip ends with the landing symbols',
-  strip.cells.slice(-3).map((c) => c.symId).join('') === 'abc')
-ok('strip cells are spaced by the face height', strip.cells[1].y - strip.cells[0].y === FACE)
-ok('strip height matches its cell count', strip.height === strip.cells.length * FACE)
-ok('filler only uses symbols from the pool',
-  strip.cells.slice(0, -3).every((c) => pool.includes(c.symId)))
-
-// The landing offset must put the window exactly at the bottom of the strip.
-const landing = strip.height - ROWS * FACE
-ok('landing offset is positive', landing > 0)
-ok('landing offset leaves exactly one window of content below',
-  strip.height - landing === ROWS * FACE)
-ok('landing window shows the target symbols',
-  visibleCells(strip.cells, landing, FACE, ROWS).map((c) => c.symId).join('') === 'abc')
-
-// During the spin the window must show *something* — an empty window is what
-// made the old board look like it had stalled.
-const mid = offsetAt(400, 1000, landing)
-const midVisible = visibleCells(strip.cells, mid, FACE, ROWS)
-ok('a mid-spin frame shows a full window of symbols', midVisible.length >= ROWS, `${midVisible.length} cells`)
-
-// A degenerate config must not crash the board.
-const empty = buildStrip([], [], FACE, 2)
-ok('empty target produces a strip without throwing', Array.isArray(empty.cells))
-
-// -------------------------------------------------------------- board scale --
-ok('5-reel boards spin at full length', frameScale(5, 3) === 1)
-ok('3-reel boards spin shorter', frameScale(3, 3) < 1)
+// Degenerate boards must not crash.
+ok('a 1-reel board plans without throwing', spinPlan(1).reels.length === 1)
+ok('a 0-reel board plans at least one drum', spinPlan(0).reels.length === 1)
 
 if (fails.length) { console.log(`\n${fails.length} FAILED: ${fails.join(', ')}`); process.exit(1) }
-console.log('\nall reel-motion checks passed')
+console.log('all reel-motion checks passed')
