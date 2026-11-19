@@ -53,7 +53,15 @@ ok('Auth has sign-in', authHtml.includes('Sign in'))
 ok('Auth has create account', authHtml.includes('Create an account'))
 ok('Auth signin copy present', authHtml.includes('Sign in to play'))
 ok('Auth has email + password fields', authHtml.includes('type="email"') && authHtml.includes('type="password"'))
-ok('Auth gates on backend config', authHtml.includes('not configured'))
+// It used to also render a "Backend is not configured" banner, and the live
+// site shipped in exactly that state: auth compiled out, nothing on screen
+// admitting it. The backend location is now part of the source, so the banner
+// must be absent and the form must be live.
+ok('Auth is not sitting in the unconfigured state', !authHtml.includes('not configured'))
+// `disabled` is correct while busy; it must just never be hard-wired on
+// (the old markup could render `disabled=""` when unconfigured and look live).
+ok('Auth buttons are not hard-disabled',
+  !/\sdisabled(=""|>)/.test(authHtml) || /disabled=\"\"/.test(authHtml) === false)
 
 if (fails.length) { console.log(`\n${fails.length} FAILED: ${fails.join(', ')}`); process.exit(1) }
 console.log('\nall new-UI checks passed')

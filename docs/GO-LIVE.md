@@ -127,24 +127,39 @@ order by 1;
 |---|---|
 | Email provider | **Enabled** |
 | Confirm email | **Enabled** (you asked for verification) |
-| Google provider | **Still to do** — paste Client ID + Secret from Google Cloud |
+| Google provider | **Enabled** (verified on the live project — client id `763098030610-...`) |
 | Site URL | `https://shoppa-ten.vercel.app` |
 | Redirect URLs (allow list) | `https://shoppa-ten.vercel.app/**` |
 | | `http://localhost:5173/**` |
 
-### The one remaining manual auth step: Google Sign-In
+### Google Sign-In — enablement is done, the consent screen is yours
 
-This cannot be automated — it needs credentials only you can create.
+The provider is already enabled on `dtroufrfavmjldtlprpn` with a real client id,
+so the button will open the Google sheet. Two things in Google Cloud still need
+a human:
 
-1. **Google Cloud Console** → APIs & Services → Credentials → *Create credentials*
-   → *OAuth client ID* → *Web application*.
-2. Authorized JavaScript origin: `https://shoppa-ten.vercel.app`
-3. Authorized redirect URI: `https://dtroufrfavmjldtlprpn.supabase.co/auth/v1/callback`
-4. Copy the Client ID and Client Secret.
-5. Supabase → Authentication → Providers → **Google** → enable and paste both.
+1. **OAuth consent screen** → *Publishing status* must be **In production**, or
+   only the test users you listed can sign in.
+2. Authorized JavaScript origin `https://shoppa-ten.vercel.app` and redirect URI
+   `https://dtroufrfavmjldtlprpn.supabase.co/auth/v1/callback` must both be
+   present on the client.
 
-Until this is done, the Google button will fail with
-`provider is not enabled`. Email + password sign-in already works.
+If sign-in bounces with `redirect_uri_mismatch`, it is (2). If it works for you
+and nobody else, it is (1).
+
+### How the three sign-in paths actually work
+
+| Path | What happens | Where it can break |
+|---|---|---|
+| Email + password | `signInWithPassword`, session in localStorage | `#auth` shows "Backend is not configured" -> the `VITE_` vars are missing |
+| Email sign-up | `signUp` with `emailRedirectTo=...#verified`; confirm mail required | free tier: **2 mails/hour**. Hits the limit fast while testing |
+| Google | `signInWithOAuth`, redirect back to the site | popup blocked, provider off, or origin not allowed |
+| Password reset | mail -> `#reset-password` -> `exchangeCodeForSession` -> `SetPassword` | a link is single-use and lasts one hour |
+
+The reset path is worth spelling out because it used to be a dead end: GoTrue
+appends its token to the redirect *hash*, and a hash-based router never sees
+`?code=`. `AuthProvider` now parses the params out of the hash itself, exchanges
+them, and strips them from the address bar so the link cannot be replayed.
 
 ### Already configured
 
@@ -263,6 +278,76 @@ The script refuses to run if the directory is linked to `proxicore-visor`, and i
 prompts for the two secrets rather than taking them as arguments. It sets
 everything except `SUPABASE_SERVICE_ROLE_KEY`, which you must add in the
 dashboard so it can be marked *sensitive*.
+
+### 4b. Which site is actually live?
+
+There are **two** deployments of this repo, and this confused the whole picture
+for a while:
+
+| Host | Project | Signs in? |
+|---|---|---|
+| `https://kampalanalf-sudo.github.io/shoppa/` | GitHub Pages, branch `gh-pages`, built by `.github/workflows/deploy-pages.yml` on every push to `main` | **yes, now** |
+| `https://shoppa-ten.vercel.app` | Vercel project `shoppa` under `iuearadio` | only once the env vars below exist |
+
+The Pages build was publishing with no `VITE_` variables at all, so the bundle it
+served contained no Supabase client: sign-up, wallet and cashout simply did not
+exist, and nothing on screen said so. That is fixed at the source, not in a
+dashboard — `src/lib/backend.ts` now carries the **public** project URL and
+publishable key as defaults, with the env vars still overriding them. A pipeline
+can no longer publish an unauthenticated app by forgetting a setting.
+
+The deploy workflow also refuses to publish if the built bundle has no backend
+in it, so this cannot regress silently again.
+
+Supabase's URL allow-list now includes `https://kampalanalf-sudo.github.io/shoppa/**`,
+and auth redirects are sent as **relative** paths, so a player who signs up on
+Pages stays on Pages instead of being bounced to the Vercel `site_url`.
+
+### 4c. Vercel, if you want that host working too
+
+Optional now: the site on Pages signs in without it. What is still missing on
+Vercel is the two `VITE_` variables — without them that host keeps serving a
+bundle with no backend, exactly as before.
+
+The fastest path:
+
+The integration in this workspace is bound to the `charlielwanga88-4249` Vercel
+account, which only contains `proxicore-visor`. It **cannot** reach `shoppa` un-
+der `iuearadio`, so the two variables that switch accounts on cannot be set from
+here. On a machine logged in as `iuearadio`:
+
+```bash
+vercel link --yes --project shoppa
+```
+
+then paste this, once, with the real service role key:
+
+```bash
+SITE=https://shoppa-ten.vercel.app
+PROJECT_REF=dtroufrfavmjldtlprpn
+ANON=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0cm91ZnJmYXZtamxkdGxwcnBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUwNDQyMTAsImV4cCI6MjExMDYyMDIxMH0.LIafhBin2Uy_tx4OWDtRu-DZ6fca3atMz9Ht-XUmf2s
+
+for T in production preview; do
+  printf %s "https://$PROJECT_REF.supabase.co" | vercel env add VITE_SUPABASE_URL          $T --force
+  printf %s "$ANON"                             | vercel env add VITE_SUPABASE_ANON_KEY      $T --force
+  printf %s "https://$PROJECT_REF.supabase.co" | vercel env add SUPABASE_URL                $T --force
+  printf %s "$SITE"                             | vercel env add APP_URL                     $T --force
+  printf %s "off"                               | vercel env add VITE_DGATEWAY_STORE_URL     $T --force
+done
+
+vercel env add SUPABASE_SERVICE_ROLE_KEY production   # paste, mark sensitive
+vercel --prod                                          # env only applies to NEW builds
+```
+
+**The anon key is public by design** — it ships inside the browser bundle and
+every table behind it is guarded by RLS. The `service_role` key must never be
+given a `VITE_` prefix.
+
+How you know it worked: open `https://shoppa-ten.vercel.app/#auth`. The amber
+"Backend is not configured" banner must be **gone**, and the Google button must
+be clickable. If the banner is still there, `VITE_SUPABASE_URL` and
+`VITE_SUPABASE_ANON_KEY` did not reach the build, and no sign-up can succeed
+because the browser has nowhere to send it.
 
 ---
 

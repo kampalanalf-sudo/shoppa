@@ -21,6 +21,24 @@ export const BRAND_GREEN = '#c6f24e'
 export const BRAND_GREEN_DEEP = '#7dd31c'
 export const BRAND_INK = '#0b0d15'
 
+/**
+ * The die's own palette.
+ *
+ * The body is a DEEP green rather than white. On a near-black header a white
+ * die reads as a hole punched out of the bar; a dark green body with a lit top
+ * edge reads as an object sitting in it. The pips stay near-white so the
+ * contrast is still legible at 24px, which is the size it is actually seen at.
+ */
+export const DIE = {
+  front: '#1f6f3f',
+  frontShade: '#11412a',
+  top: '#3fbf5f',
+  right: '#0b2a1b',
+  edge: 'rgba(0,0,0,.55)',
+  pip: '#f2ffe0',
+  pipDeep: '#c9f7a8',
+}
+
 type Pt = [number, number]
 
 /** Pip layout per face: a die face is a 3x3 grid, each entry is [col,row]. */
@@ -98,13 +116,13 @@ export function dicePipsMarkup(fill = '#000', ids = 'mp'): string {
  */
 export function diceSvg({
   id = 'fb',
-  pip = BRAND_GREEN,
-  pipDeep = BRAND_GREEN_DEEP,
-  front = '#ffffff',
-  frontShade = '#eef7da',
-  top = '#ffffff',
-  right = '#c9e08c',
-  edge = 'rgba(11,13,21,.16)',
+  pip = DIE.pip,
+  pipDeep = DIE.pipDeep,
+  front = DIE.front,
+  frontShade = DIE.frontShade,
+  top = DIE.top,
+  right = DIE.right,
+  edge = DIE.edge,
 }: {
   id?: string
   pip?: string
@@ -123,28 +141,50 @@ export function diceSvg({
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="FloatBet die">
   <defs>
-    <linearGradient id="${id}-frontg" x1="0" y1="0" x2="0.35" y2="1">
-      <stop offset="0" stop-color="${top}"/>
+    <linearGradient id="${id}-frontg" x1="0" y1="0" x2="0.45" y2="1">
+      <stop offset="0" stop-color="${front}"/>
+      <stop offset="0.55" stop-color="${frontShade}"/>
       <stop offset="1" stop-color="${frontShade}"/>
     </linearGradient>
-    <linearGradient id="${id}-topg" x1="0" y1="1" x2="0.5" y2="0">
+    <linearGradient id="${id}-topg" x1="0" y1="1" x2="0.4" y2="0">
       <stop offset="0" stop-color="${front}"/>
+      <stop offset="0.6" stop-color="${top}"/>
       <stop offset="1" stop-color="${top}"/>
     </linearGradient>
     <linearGradient id="${id}-rightg" x1="0" y1="0" x2="0" y2="1">
       <stop offset="0" stop-color="${right}"/>
-      <stop offset="1" stop-color="${right}" stop-opacity=".82"/>
+      <stop offset="1" stop-color="${right}" stop-opacity=".9"/>
     </linearGradient>
-    <linearGradient id="${id}-pip" x1="0" y1="0" x2="1" y2="1">
+    <linearGradient id="${id}-pip" x1="0" y1="0" x2="0.7" y2="1">
       <stop offset="0" stop-color="${pip}"/>
       <stop offset="1" stop-color="${pipDeep}"/>
     </linearGradient>
+    <!-- a soft drop shadow under the cube, so it sits on the surface -->
+    <radialGradient id="${id}-shadow" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#000" stop-opacity=".45"/>
+      <stop offset="1" stop-color="#000" stop-opacity="0"/>
+    </radialGradient>
+    <!-- specular sheen across the lit top face -->
+    <linearGradient id="${id}-sheen" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity=".38"/>
+      <stop offset="0.5" stop-color="#fff" stop-opacity=".06"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
   </defs>
-  <g stroke="${edge}" stroke-width="0.7" stroke-linejoin="round">
+  <ellipse cx="50" cy="80" rx="30" ry="6" fill="url(#${id}-shadow)"/>
+  <g stroke="${edge}" stroke-width="0.8" stroke-linejoin="round">
     <path d="${quad([A2, B2, B, A])}" fill="url(#${id}-topg)"/>
     <path d="${quad([B2, C2, C, B])}" fill="url(#${id}-rightg)"/>
     <path d="${quad([A, B, C, D])}" fill="url(#${id}-frontg)"/>
   </g>
+  <!-- bevel: a lit inner edge on the front face and a dark one where it turns -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="${quad([A2, B2, B, A])}" stroke="url(#${id}-sheen)" stroke-width="1.6" fill="url(#${id}-sheen)"/>
+    <path d="M${A[0]} ${A[1]} L${B[0]} ${B[1]}" stroke="#ffffff" stroke-opacity=".5" stroke-width="1.1"/>
+    <path d="M${B[0]} ${B[1]} L${C[0]} ${C[1]}" stroke="#000" stroke-opacity=".45" stroke-width="1.2"/>
+    <path d="M${B[0]} ${B[1]} L${C2[0]} ${C2[1]}" stroke="#000" stroke-opacity=".3" stroke-width="0.9"/>
+  </g>
+  <!-- pips with a tiny inner highlight so they read as drilled, not painted -->
   <g>${topPips}${frontPips}</g>
 </svg>`
 }

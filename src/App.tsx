@@ -10,6 +10,7 @@ import { Home } from './pages/Home'
 import { ProxiCash } from './pages/ProxiCash'
 import { Auth } from './pages/Auth'
 import { Onboarding } from './pages/Onboarding'
+import { SetPassword } from './pages/SetPassword'
 import { Cashout } from './pages/Cashout'
 import { ChatRoom } from './components/ChatRoom'
 import { TopUpPanel } from './components/TopUpPanel'
@@ -35,6 +36,7 @@ type View =
   | { name: 'proxicash' }
   | { name: 'cashout' }
   | { name: 'auth' }
+  | { name: 'set-password' }
   | { name: 'topup-success'; reference: string | null }
   | { name: 'admin-parked' }
 
@@ -62,13 +64,22 @@ function Shell() {
   // URL hash routing so games are shareable/refreshable
   useEffect(() => {
     const apply = () => {
-      const h = window.location.hash.replace('#', '')
+      // Supabase appends its recovery params (`#reset-password&access_token=…`
+      // or `#reset-password?code=…`) to whatever redirect hash it was given, so
+      // split on both separators before matching, and strip a trailing slash.
+      const raw = window.location.hash.replace(/^#/, '')
+      const h = raw.split(/[?&]/)[0].replace(/\/$/, '')
       if (h === 'proxicash') { setView({ name: 'proxicash' }); return }
       if (h === 'cashout') { setView({ name: 'cashout' }); return }
       if (h === 'auth') { setView({ name: 'auth' }); return }
+      // Recovery link landing. Supabase sends the browser back here with a
+      // session already established; without this route the reset link was a
+      // dead end that dropped the player on the home page with a stale hash.
+      if (h === 'reset-password') { setView({ name: 'set-password' }); return }
+      if (h === 'verified') { setView({ name: 'auth' }); return }
       if (h === 'admin/parked') { setView({ name: 'admin-parked' }); return }
       if (h.startsWith('topup-success')) {
-        const ref = new URLSearchParams(h.split('?')[1] || '').get('reference')
+        const ref = new URLSearchParams(raw.split('?')[1] || '').get('reference')
         setView({ name: 'topup-success', reference: ref })
         return
       }
@@ -204,6 +215,7 @@ function Shell() {
         {isProxiCash && <ProxiCash onBack={home} />}
         {view.name === 'cashout' && <Cashout onBack={home} />}
         {view.name === 'auth' && <Auth onDone={home} />}
+        {view.name === 'set-password' && <SetPassword onDone={home} />}
         {view.name === 'admin-parked' && <AdminParked onHome={home} />}
         {view.name === 'topup-success' && (
           <TopUpSuccess

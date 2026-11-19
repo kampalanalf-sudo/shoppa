@@ -38,6 +38,16 @@ type AuthState = {
   signInEmail: (email: string, password: string) => Promise<void>
   signInGoogle: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
+  /**
+   * Set a new password for the signed-in user. This is the second half of the
+   * reset flow: the emailed link signs the user in, then this changes it.
+   */
+  updatePassword: (password: string) => Promise<void>
+  /** True once a recovery link has been exchanged and a session exists. */
+  recoveryReady: boolean
+  /** Set when the link was expired, already used, or malformed. */
+  recoveryError: string | null
+  clearRecovery: () => void
   resendVerification: (email: string) => Promise<void>
   signOut: () => Promise<void>
   refreshWallet: () => Promise<void>
@@ -55,6 +65,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<PlayerProfile | null>(null)
   const [wallet, setWallet] = useState<Wallet | null>(null)
+  const [recoveryReady, setRecoveryReady] = useState(false)
+  const [recoveryError, setRecoveryError] = useState<string | null>(null)
 
   const loadProfile = useCallback(async (uid: string) => {
     if (!supabase) return
@@ -96,6 +108,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [loadProfile])
 
+  /**
+   * Password recovery, explicitly.
+   *
+   * `detectSessionInUrl` handles a normal `?code=…` redirect, but this app
+   * routes on the *hash*, and GoTrue appends its params to the redirect hash it
+   * was given — so the recovery code and the error params both end up inside
+   * `#reset-password…`, where the default parser never looks. Exchange them by
+   * hand and report the outcome so the UI can say whether the link is good.
+   */
+  useEffect(() => {
+    const client = supabase
+    if (!client) return
+    const hash = window.location.hash.replace(/^#/, '')
+    if (!hash.startsWith('reset-password')) return
+
+    const [head, ...rest] = hash.split('?')
+    const params = new URLSearchParams(rest.join('?'))
+    const frag = new URLSearchParams(head.split('&').slice(1).join('&'))
+    const get = (k: string) => params.get(k) ?? frag.get(k)
+
+    const errDesc = get('error_description') ?? get('error')
+    if (errDesc) {
+      setRecoveryError(decodeURIComponent(errDesc.replace(/\+/g, ' ')))
+      return
+    }
+
+    const code = get('code')
+    const tokenHash = get('token_hash')
+    const accessToken = get('access_token')
+    const refreshToken = get('refresh_token')
+
+    void (async () => {
+      try {
+        if (code) {
+          const { error } = await client.auth.exchangeCodeForSession(code)
+          if (error) throw new Error(error.message)
+        } else if (tokenHash) {
+          const { error } = await client.auth.verifyOtp({ token_hash: tokenHash, type: 'recovery' })
+          if (error) throw new Error(error.message)
+        } else if (accessToken && refreshToken) {
+          const { error } = await client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+          if (error) throw new Error(error.message)
+        }
+        setRecoveryReady(true)
+      } catch (err) {
+        setRecoveryError((err as Error).message)
+      } finally {
+        // Consume the tokens: leaving them in the address bar means the link
+        // stays reusable from history, a shared screenshot, or a proxy log.
+        window.history.replaceState(null, '', `${window.location.pathname}#reset-password`)
+      }
+    })()
+  }, [])
+
   // live wallet: subscribe to our own row so gifts and wins show up instantly
   useEffect(() => {
     const client = supabase
@@ -114,6 +180,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session?.user])
 
+  /**
+   * Where this browser actually is.
+   *
+   * Two sites serve this build — the Vercel deployment and GitHub Pages — and
+   * Supabase has a single `site_url` (currently Vercel). Sending an absolute
+   * redirect, which is what the SDK does when handed a full URL, would bounce a
+   * player who signed up on Pages over to Vercel mid-flow. A *relative* path
+   * stays on whichever origin the request came from, and the allow-list already
+   * covers both.
+   */
+  const here = (hash: string) => `${window.location.pathname}${hash}`
+
   const signUpEmail = useCallback(
     async (email: string, password: string, username: string, dob: string) => {
       if (!supabase) throw new Error('Backend is not configured.')
@@ -123,7 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         options: {
           // the handle_new_user() trigger reads these to seed the profile
           data: { username: username.trim(), date_of_birth: dob },
-          emailRedirectTo: `${window.location.origin}${window.location.pathname}#verified`,
+          emailRedirectTo: here('#verified'),
         },
       })
       if (error) throw new Error(error.message)
@@ -142,7 +220,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}${window.location.pathname}`,
+        // relative: stay on the origin the player is actually on
+      redirectTo: here(''),
         queryParams: { access_type: 'offline', prompt: 'consent' },
       },
     })
@@ -152,8 +231,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const resetPassword = useCallback(async (email: string) => {
     if (!supabase) throw new Error('Backend is not configured.')
     const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}${window.location.pathname}#reset-password`,
+      redirectTo: here('#reset-password'),
     })
+    if (error) throw new Error(error.message)
+  }, [])
+
+  const clearRecovery = useCallback(() => {
+    setRecoveryReady(false)
+    setRecoveryError(null)
+  }, [])
+
+  const updatePassword = useCallback(async (password: string) => {
+    if (!supabase) throw new Error('Backend is not configured.')
+    const { error } = await supabase.auth.updateUser({ password })
     if (error) throw new Error(error.message)
   }, [])
 
@@ -162,7 +252,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { error } = await supabase.auth.resend({
       type: 'signup',
       email: email.trim(),
-      options: { emailRedirectTo: `${window.location.origin}${window.location.pathname}#verified` },
+      options: { emailRedirectTo: here('#verified') },
     })
     if (error) throw new Error(error.message)
   }, [])
@@ -237,6 +327,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       signInEmail,
       signInGoogle,
       resetPassword,
+      updatePassword,
+      recoveryReady,
+      recoveryError,
+      clearRecovery,
       resendVerification,
       signOut,
       refreshWallet,
@@ -246,7 +340,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       ready, session, profile, wallet, needsOnboarding, signUpEmail, signInEmail, signInGoogle,
-      resetPassword, resendVerification, signOut, refreshWallet, updateProfile,
+      resetPassword, updatePassword, recoveryReady, recoveryError, clearRecovery, resendVerification, signOut, refreshWallet, updateProfile,
       startPhoneVerification, confirmPhoneVerification,
     ],
   )

@@ -29,6 +29,7 @@
     "test:reels": "vite build --config smoke/vite.reels.config.ts && node smoke/dist-reels/reels.js",
     "test:slotboard": "vite build --config smoke/vite.slotcheck.config.ts && node smoke/dist-slotcheck/slotcheck.js",
     "test:celebrate": "vite build --config smoke/vite.celebrate.config.ts && node smoke/dist-celebrate/celebrate.js",
+    "test:auth": "vite build --config smoke/vite.auth.config.ts && node smoke/dist-auth/auth.js",
     "test:brand": "vite build --config smoke/vite.brand.config.ts && node smoke/dist-brand/brand.js"
   },
   "dependencies": {

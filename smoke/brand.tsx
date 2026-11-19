@@ -3,7 +3,7 @@ import React from 'react'
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import {
-  diceSvg, faviconSvg, dieOnlySvg, monochromeDieSvg, dicePipsMarkup, BRAND_GREEN,
+  diceSvg, faviconSvg, dieOnlySvg, monochromeDieSvg, dicePipsMarkup, BRAND_GREEN, DIE,
 } from '../src/lib/brand'
 import { Logo, Wordmark } from '../src/components/Chrome'
 
@@ -17,8 +17,16 @@ const read = (p: string) => readFileSync(resolve(root, p), 'utf8')
 const die = diceSvg()
 ok('the die is an SVG', die.startsWith('<svg') && die.trim().endsWith('</svg>'))
 ok('the die is labelled for assistive tech', die.includes('aria-label="FloatBet die"'))
-ok('the die has a white body and green pips',
-  die.includes('#ffffff') && die.toLowerCase().includes(BRAND_GREEN))
+// The die is DEEP green with near-white pips. On a near-black header a white
+// body read as a hole punched out of the bar; a dark green body with a lit top
+// edge reads as an object sitting in it.
+ok('the die body is deep green, not white',
+  die.includes(DIE.front) && !die.includes('stop-color="#ffffff"'),
+  DIE.front)
+ok('the die top face is the lit green, and the side is in shadow',
+  die.includes(DIE.top) && die.includes(DIE.right))
+ok('the die pips stay bright enough to read at 24px',
+  die.includes(DIE.pip) && die.includes(DIE.pipDeep))
 ok('the die draws three faces (a cube, not a square)',
   (die.match(/<path /g) || []).length >= 3, `${(die.match(/<path /g) || []).length} faces`)
 ok('the die is not accidentally empty of pips', (die.match(/<circle/g) || []).length >= 8,
@@ -91,7 +99,15 @@ ok('the wordmark scales', renderToString(<Wordmark size="lg" />).includes('text-
 // ============================================================= wiring ====
 const chrome = read('src/components/Chrome.tsx')
 ok('the header puts the die to the LEFT of the wordmark',
-  /<Logo size=\{30\} \/>\s*<span className="hidden sm:block">\s*<Wordmark/.test(chrome))
+  /<Logo size=\{\d+\} \/>\s*<span className="block">\s*<Wordmark/.test(chrome))
+// The lockup is a die PLUS a wordmark, on a phone too. The old header hid the
+// wordmark below `sm`, which left the bar as a bare icon.
+ok('the wordmark is visible at every width', !/hidden sm:block">\s*<Wordmark/.test(chrome))
+ok('the header is pinned (sticky, not scrolled away)',
+  /<header className="fb-header sticky top-0/.test(chrome))
+ok('the die gets its depth from CSS, not a filter chain',
+  read('src/index.css').includes('.fb-die-spin') &&
+  read('src/index.css').includes('perspective: 220px'))
 ok('the footer uses the same lockup', chrome.includes('<Logo size={32} />') && chrome.includes('<Wordmark size="sm" />'))
 ok('the header no longer hand-rolls the wordmark',
   !chrome.includes('Float<span className="text-neon-lime">Bet</span>'))
