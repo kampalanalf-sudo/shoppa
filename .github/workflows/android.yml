@@ -51,7 +51,37 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - uses: android-actions/setup-android@v3
+      # Do NOT use android-actions/setup-android here: it failed on this repo
+      # (step 5 of run 44446434700) and the runner image already ships a
+      # complete SDK. Use the preinstalled one and make sure the pieces this
+      # project needs are present.
+      - name: Android SDK
+        run: |
+          set -e
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "$SDK" ]; then
+            echo "No preinstalled Android SDK at $SDK" >&2
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK"            >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK"       >> "$GITHUB_ENV"
+          echo "$SDK/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
+          echo "$SDK/platform-tools"          >> "$GITHUB_PATH"
+
+          SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKM" ]; then
+            echo "sdkmanager missing at $SDKM" >&2
+            ls -la "$SDK" >&2 || true
+            exit 1
+          fi
+
+          echo "Installed packages:"; "$SDKM" --list_installed 2>/dev/null | head -20 || true
+
+          # compileSdk 36 needs platform 36 and matching build-tools. Accept
+          # licences first or the install is refused.
+          yes | "$SDKM" --licenses > /dev/null 2>&1 || true
+          "$SDKM" "platforms;android-36" > /dev/null 2>&1 || true
+          "$SDKM" "build-tools;36.0.0" > /dev/null 2>&1 || true
 
       - name: Install dependencies
         run: npm ci
