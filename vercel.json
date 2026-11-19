@@ -6,11 +6,11 @@
   "crons": [
     {
       "path": "/api/feed/sync",
-      "schedule": "0 */2 * * *"
+      "schedule": "0 */4 * * *"
     },
     {
       "path": "/api/feed/settle",
-      "schedule": "15 */3 * * *"
+      "schedule": "25 */4 * * *"
     }
   ]
 }

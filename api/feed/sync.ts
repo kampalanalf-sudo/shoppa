@@ -18,12 +18,31 @@ import {
 } from '../_lib/oddsfeed'
 
 /**
- * The sports we publish, newest-first by popularity in Uganda.
+ * The sports we publish, in priority order.
  *
- * Four keys. A poll every 2 hours is 12/day = 360/month, which leaves headroom
- * inside the 500-credit free plan for manual refreshes.
+ * Only IN-SEASON keys belong here. A key for a competition the provider reports
+ * as inactive still costs a credit to request and returns nothing — which is
+ * how a 500-credit month disappears in a fortnight. Re-check with
+ * `GET /api/feed/sports?active=1` before changing this list.
+ *
+ * Verified against the live catalogue on 20 Nov 2026:
+ *   soccer_epl                  active
+ *   soccer_uefa_champs_league   active
+ *   basketball_nba              active
+ *   soccer_africa_cup_of_nations  NOT in the catalogue at all — AFCON is not
+ *                                 listed on this plan, so asking for it would
+ *                                 return a 422 and spend a credit to learn that.
+ *
+ * Three keys x every 2 hours = 36 credits/day, ~1,080 a month, which is over the
+ * 500 free credits. The cron schedule is therefore every 4 hours, not every 2 —
+ * see vercel.json. Re-check before adding a sport: a key for a competition that
+ * is out of season still costs a credit and returns nothing.
  */
-const SPORTS = ['soccer_epl', 'soccer_uefa_champs_league', 'soccer_africa_cup_of_nations', 'basketball_nba']
+const SPORTS = [
+  'soccer_epl',
+  'soccer_uefa_champs_league',
+  'basketball_nba',
+]
 
 /** Margin kept on top of the feed price. Not zero: see applyMargin. */
 const MARGIN_PCT = Number(process.env.ODDS_MARGIN_PCT ?? '4')

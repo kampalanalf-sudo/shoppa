@@ -18,7 +18,11 @@
 import { json, methodNotAllowed, preflight, requireUser, restRpc, restSelect } from '../_lib/http'
 import { OddsFeedError, fetchScores, isFeedConfigured } from '../_lib/oddsfeed'
 
-const SPORTS = ['soccer_epl', 'soccer_uefa_champs_league', 'soccer_africa_cup_of_nations', 'basketball_nba']
+// Must match the list in api/feed/sync.ts. Settling a sport we never ingested
+// would spend a credit to look up fixtures that cannot exist.
+// AFCON is deliberately absent: it is not in the provider's catalogue, so
+// requesting it returns 422 and still costs a credit.
+const SPORTS = ['soccer_epl', 'soccer_uefa_champs_league', 'basketball_nba']
 
 async function isAdmin(userId: string): Promise<boolean> {
   try {

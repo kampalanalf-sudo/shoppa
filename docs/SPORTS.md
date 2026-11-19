@@ -305,14 +305,16 @@ signup is yours.
 
 ### What you do (5 minutes)
 
-1. Go to **https://the-odds-api.com** and click *Get API Key* → **Starter, FREE**.
-   No card. The key arrives by email.
-2. Add it to Vercel as **`ODDS_API_KEY`** — Project → Settings → Environment
-   Variables → Production + Preview. It is a server secret: **no `VITE_` prefix**.
-3. Add **`CRON_SECRET`** — any long random string (`openssl rand -hex 32`).
-   Vercel sends it as a bearer token to the cron routes, which is how they know
-   the caller is the scheduler and not a stranger.
-4. Redeploy.
+The key is live and verified — `/v4/sports` and one `/odds` call both returned
+real EPL fixtures. What is left is putting it where the server can read it.
+
+1. Add **`ODDS_API_KEY`** to Vercel — Project → Settings → Environment Variables
+   → Production + Preview, tick **Sensitive**. No `VITE_` prefix, ever.
+2. Run `./scripts/set-feed-env.sh` after `vercel link --project shoppa`. It
+   generates `CRON_SECRET` and sets it plus `ODDS_MARGIN_PCT` for you. (The CLI
+   cannot mark a variable *sensitive*, which is why the key stays a dashboard
+   step — a billable credential belongs there, not in a shell argument.)
+3. Redeploy: `vercel --prod`.
 
 Then trigger the first pull by hand:
 
@@ -330,25 +332,41 @@ curl -H "Authorization: Bearer $CRON_SECRET" "https://shoppa-ten.vercel.app/api/
 
 | Route | Schedule | Cost | Does |
 |---|---|---|---|
-| `/api/feed/sync` | every 2 hours | 4 credits | Upserts fixtures + prices |
-| `/api/feed/settle` | every 3 hours, at :15 | 4 credits | Settles finished matches |
+| `/api/feed/sync` | every 4 hours | 3 credits | Upserts fixtures + prices |
+| `/api/feed/settle` | every 4 hours, at :25 | 3 credits | Settles finished matches |
 
-Both are in `vercel.json`. Four sports × 12 runs a day = **48 credits/day**,
-which is 1,440 a month — comfortably inside the 500-credit free plan only
-because only *in-season* sports return events, and the sync skips a sport with
-no data. If you add sports, do the arithmetic first.
+Both are in `vercel.json`. Three sports × 6 runs a day = **18 credits/day**, about
+**540 a month** against the 500-credit free plan. That is already at the edge, so
+the schedule is 4-hourly rather than 2-hourly on purpose: at 2-hourly this list
+would cost ~1,080 a month and stop working halfway through the month.
 
-### The four sports
+**If you add a sport, do the arithmetic first**, and shorten the settle window
+rather than the sync window if you are tight — a stale price is recoverable, a
+match that settles four hours late is a player waiting on their money.
+
+### The three sports
 
 ```
-soccer_epl                    Premier League
-soccer_uefa_champs_league     Champions League
-soccer_africa_cup_of_nations  AFCON
-basketball_nba                NBA
+soccer_epl                    Premier League        active
+soccer_uefa_champs_league     Champions League      active
+basketball_nba                NBA                   active
 ```
+
+Checked against the live catalogue on 20 Nov 2026, which also settled a
+question from the earlier research: **`soccer_africa_cup_of_nations` is not in
+this plan's catalogue at all.** Requesting it returns 422 and still bills a
+credit, so it is not in the list.
 
 Change `SPORTS` at the top of `api/feed/sync.ts`. Every key you add costs one
-credit per run, forever.
+credit per run, forever. Re-check with:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" \
+     "https://shoppa-ten.vercel.app/api/feed/sports?active=1"
+```
+
+That endpoint costs **nothing** — the provider does not charge for `/v4/sports`
+— which is why it exists rather than being inferred from memory.
 
 ### The prices are not the feed's prices
 

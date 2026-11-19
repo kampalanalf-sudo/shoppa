@@ -60,6 +60,12 @@ ok('the key is refused loudly when absent', feed.includes('ODDS_KEY_MISSING'))
 // in season would spend it in one run.
 const sportList = sync.slice(sync.indexOf('const SPORTS'), sync.indexOf(']', sync.indexOf('const SPORTS')))
 ok('the sync fetches a short, explicit sport list', (sportList.match(/'/g) ?? []).length <= 8, sportList.replace(/\s+/g, ' '))
+// Verified against the live catalogue on 20 Nov 2026: AFCON is not listed there
+// at all. Requesting it returns 422 and still bills a credit.
+ok('the sync does not request AFCON, which is not in the catalogue',
+  !/^\s*'soccer_africa_cup_of_nations',?\s*$/m.test(sync))
+ok('sync and settle agree on the sport list',
+  (settle.match(/'soccer_epl'/g) ?? []).length === 1 && (sync.match(/'soccer_epl'/g) ?? []).length === 1)
 ok('the sync does not fetch "all in-season sports"', !/fetchSports\(/.test(sync))
 ok('the response headers are read so the remaining budget is visible',
   feed.includes('x-requests-remaining') && sync.includes('credits_remaining') === false && sync.includes('remaining'))
@@ -68,8 +74,11 @@ ok('a 429 is reported as a quota problem, not a generic failure', feed.includes(
 const cron = JSON.parse(vercel).crons as { path: string; schedule: string }[]
 ok('a sync is scheduled', cron.some((c) => c.path === '/api/feed/sync'))
 ok('a settle run is scheduled', cron.some((c) => c.path === '/api/feed/settle'))
-ok('the sync does not run more than every 2 hours',
-  cron.filter((c) => c.path === '/api/feed/sync').every((c) => /^\d+ \*\/[12] \* \* \*$/.test(c.schedule)), cron.find((c) => c.path === '/api/feed/sync')?.schedule)
+// 3 sports x every 4 hours = 18 credits/day, ~540 a month. That is already at
+// the edge of the 500-credit free plan, so a tighter schedule would not fit.
+ok('the sync does not run more often than every 4 hours',
+  cron.filter((c) => c.path === '/api/feed/sync').every((c) => /^\d+ \*\/[4-9]\d*|^\d+ \*\/[4-9] \* \* \*$/.test(c.schedule)),
+  cron.find((c) => c.path === '/api/feed/sync')?.schedule)
 
 // ----------------------------------------------------------------- auth ====
 ok('the sync requires a secret or an admin', sync.includes('CRON_SECRET') && sync.includes('is_admin'))
