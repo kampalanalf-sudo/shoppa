@@ -189,3 +189,109 @@ balance, then **Sign out**. Verified on the built bundle.
 While fixing it I also removed a small lie: that menu printed
 `Level 24 · VIP Platinum` for every player, including brand-new ones, because
 it was hard-coded. It now shows the real handle and address, or nothing.
+
+---
+
+## 8. Can you get a feed for free?
+
+Researched 14 Nov 2026. Short answer: **not from Betradar or LSports**, but yes
+from one place, with a hard catch that matters for your audience.
+
+### The enterprise vendors are all closed
+
+| Vendor | Public price | Free tier |
+|---|---|---|
+| Sportradar / Betradar | none — sales call | none |
+| LSports | one listing: **$180,000 / 12 months** (TRADE360, AWS Marketplace) | "free trial" via a contact form |
+| Genius Sports | none — sales call | none |
+| OddsMatrix | none — sales call | one month, via contact form |
+| Stats Perform | none — sales call | none |
+
+Published market ranges put a managed feed at roughly **$8,000–20,000/month**
+for a mid-tier vendor and **$15,000–50,000/month** at the top. Betradar is
+commonly quoted from **$10,000/month plus 5–15% revenue share**.
+
+All of them also run KYB before granting access. They will ask for your gaming
+licence number, which is the point at which the conversation stops for a
+pre-licence project. A "free trial" here means a sales-led sandbox, not a
+self-serve key.
+
+### The one that is genuinely free
+
+**The Odds API** (`the-odds-api.com`) — self-serve, no card, key emailed:
+
+| Plan | Price | Credits/month |
+|---|---|---|
+| Starter | **$0** | **500** |
+| 20K | $30 | 20,000 |
+| 100K | $59 | 100,000 |
+
+One credit = one request for **one sport + one market + one region**. The free
+tier includes all sports, most bookmakers and all markets; it excludes
+historical odds. There is a **Scores & Results** endpoint, which is what
+settlement needs.
+
+It also aggregates bookmakers' prices rather than holding official league
+rights. That has two consequences before you point real money at it:
+
+- you are republishing a competitor's prices, which is a commercial risk as
+  much as a contract one;
+- there is no official settlement authority behind it, so a result dispute has
+  no adjudicator.
+
+Fine for a play-money launch. Not fine as the spine of a licensed book.
+
+### The catch that decides it for you
+
+**The catalogue contains no Ugandan league.** Verified against the full sports
+list on 14 Nov 2026 — no Uganda Premier League, no Big League, no FUFA
+competition, no NBL Uganda. What it does have that your players watch:
+
+```
+soccer_epl                  Premier League            + scores
+soccer_uefa_champs_league   Champions League          + scores
+soccer_africa_cup_of_nations Africa Cup of Nations
+soccer_fifa_world_cup       World Cup                 + scores
+basketball_nba              NBA                       + scores
+basketball_euroleague       Euroleague                + scores
+cricket_ipl                 IPL
+cricket_international_t20   International T20
+tennis_atp_* / tennis_wta_* majors
+```
+
+So a free feed gets you European football and NBA. It does not get you KCCA v
+Vipers. For local football you are back to manual entry (§3), which is the
+honest answer for a Ugandan book starting out.
+
+### The maths on 500 credits
+
+Polling one sport costs one credit per poll. At one poll every 90 minutes:
+
+```
+24h / 1.5h = 16 polls/day × 30 = 480 credits/month
+```
+
+That fits, with almost nothing to spare. Which means the free tier buys you
+**one sport, pre-match, refreshed slowly** — not a live in-play book. In-play
+needs second-level updates and would burn 500 credits in about 20 minutes.
+
+Realistic free-tier shape: EPL + Champions League + AFCON, pre-match only,
+polled every 90 minutes by a scheduled job.
+
+### What connecting it would take
+
+The schema already fits; this is ingestion, not redesign.
+
+1. `api/feed/sync.ts` — a Vercel cron (or GitHub Action) that polls The Odds
+   API and upserts `sports_fixtures` / `sports_markets` / `sports_selections`.
+   The API key lives in that server route only, never in the bundle. Same rule
+   as the DGateway key.
+2. Map bookmaker prices to `odds_x100` integers, and apply **your** margin —
+   you should not publish another book's number as your own.
+3. `api/feed/settle.ts` — read the Scores endpoint and call
+   `settle_sports_market()`. That function already exists, is service_role
+   only, and is idempotent.
+4. A sync log table so a missed poll is visible rather than silent.
+
+Each of those is small. The reasons not to build them today are §5 and §6, not
+the code.
