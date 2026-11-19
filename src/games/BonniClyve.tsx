@@ -12,6 +12,7 @@ import {
 } from '../lib/slot'
 import { IconBolt, IconFlame, IconTrophy } from '../components/Icons'
 import { spinPlan } from '../lib/reels'
+import { Celebration, celebrationSound, FreeSpinHud } from '../components/Celebration'
 
 const PAY_ROWS: SymbolId[] = ['wild', 'bonita', 'clyve', 'diamond', 'badge', 'cash', 'key', 'donut']
 
@@ -27,11 +28,24 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
   const [glow, setGlow] = useState<'none' | 'win' | 'bigwin' | 'chase'>('none')
   const [lastWin, setLastWin] = useState(0)
   const [freeSpins, setFreeSpins] = useState(0)
+  // total awarded this round, so the HUD can show a progress bar
+  const [freeTotal, setFreeTotal] = useState(0)
+  // running total won during the free-spin round
+  const freeWon = useRef(0)
   const [autoLeft, setAutoLeft] = useState(0)
   const [history, setHistory] = useState<number[]>([4.2, 0, 12.5, 2.1, 0, 8.4])
   // Bumped the instant an outcome is published, so the drums start their travel
   // against a board that already has a target.
   const [spinKey, setSpinKey] = useState(0)
+  // What, if anything, is being celebrated right now. A free-spin trigger or a
+  // big win inside free spins takes over the screen for a couple of seconds.
+  const [party, setParty] = useState<{
+    kind: 'freespins' | 'bigwin' | 'mega'
+    title: string
+    subtitle?: string
+    amount?: number
+    spins?: number
+  } | null>(null)
   const timers = useRef<number[]>([])
 
   const clearTimers = () => {
@@ -98,29 +112,53 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
         })
         setWinCells(lit)
 
+        // If this spin raises the full celebration card, suppress the global
+        // win flash: two overlapping confetti layers is noise, not excitement.
+        const celebrating = res.chase || res.totalMultiplier >= 40
         const paid = res.totalMultiplier > 0 && !free
           ? settleBet({
               game: 'bonni',
               wager: stake,
               multiplier: res.totalMultiplier,
               detail: `${res.wins.length ? res.wins[0].symbol.toUpperCase() : 'no line'} · ${res.totalMultiplier}× ${res.chase ? '· CHASE' : ''}`,
+              silent: celebrating,
             })
           : free && res.totalMultiplier > 0
             ? settleBet({ game: 'bonni', wager: 0, multiplier: 0, detail: 'free spin', silent: true })
             : 0
 
-        if (res.chase) window.setTimeout(() => sfx.freespin(), 260)
-        else if (res.scatters >= 3) window.setTimeout(() => sfx.scatter(), 260)
+        if (!res.chase && res.scatters >= 3) window.setTimeout(() => sfx.scatter(), 260)
 
-        if (res.totalMultiplier > 0) {
-          setGlow(res.totalMultiplier >= 40 ? 'bigwin' : 'win')
-          if (sound) (res.totalMultiplier >= 40 ? sfx.bigwin : sfx.win)()
+        if (res.chase) {
+          // Free spins: full celebration instead of a toast. The board stays
+          // behind it, so the player sees the three sirens that caused it.
+          setParty({
+            kind: 'freespins',
+            title: 'Chase mode',
+            subtitle: `${res.scatters} sirens landed — the chase is on.`,
+            spins: res.freeSpins,
+          })
+          if (sound) celebrationSound('freespins')
+        } else if (res.totalMultiplier >= 40) {
+          setGlow('bigwin')
+          setParty({
+            kind: res.totalMultiplier >= 120 ? 'mega' : 'bigwin',
+            title: res.totalMultiplier >= 120 ? 'Mega win' : 'Big win',
+            subtitle: free ? 'Won on a free spin' : undefined,
+            amount: Math.round(stake * res.totalMultiplier),
+          })
+          if (sound) celebrationSound(res.totalMultiplier >= 120 ? 'mega' : 'bigwin')
+        } else if (res.totalMultiplier > 0) {
+          setGlow('win')
+          if (sound) sfx.win()
         } else if (sound) sfx.omen()
+
+        if (free) freeWon.current += Math.round(stake * res.totalMultiplier)
 
         if (res.chase) {
           setGlow('chase')
           setFreeSpins(res.freeSpins)
-          toast({ kind: 'win', title: 'Chase mode!', body: `3 sirens — ${res.freeSpins} free spins unlocked.` })
+          setFreeTotal(res.freeSpins)
         }
         void paid
       }, plan.totalMs)
@@ -137,25 +175,44 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
 
   useHotkey(spin)
 
-  // free-spin round runs itself
+  // free-spin round runs itself — but waits for any celebration to clear, so
+  // the fanfare is never cut off by the next spin starting underneath it.
   useEffect(() => {
-    if (freeSpins <= 0 || spinning) return
+    if (freeSpins <= 0 || spinning || party) return
     const t = window.setTimeout(() => {
       setFreeSpins((n) => n - 1)
       void spinOnce(bet, true)
     }, 1500)
     return () => window.clearTimeout(t)
-  }, [freeSpins, spinning, bet, spinOnce])
+  }, [freeSpins, spinning, bet, spinOnce, party])
+
+  // The round just finished: celebrate the total before handing the board back.
+  useEffect(() => {
+    if (freeSpins > 0 || freeTotal <= 0) return
+    const total = freeWon.current
+    freeWon.current = 0
+    setFreeTotal(0)
+    if (total <= 0) return
+    setParty({
+      kind: total >= bet * 40 ? 'mega' : 'bigwin',
+      title: 'Free spins complete',
+      subtitle: `All ${freeTotal} spins played.`,
+      amount: total,
+    })
+    if (sound) celebrationSound(total >= bet * 40 ? 'mega' : 'bigwin')
+    // fires once, when the counter reaches zero
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [freeSpins])
 
   // autoplay
   useEffect(() => {
-    if (autoLeft <= 0 || spinning || freeSpins > 0) return
+    if (autoLeft <= 0 || spinning || freeSpins > 0 || party) return
     const t = window.setTimeout(() => {
       setAutoLeft((n) => n - 1)
       void spinOnce(bet)
     }, 1900)
     return () => window.clearTimeout(t)
-  }, [autoLeft, spinning, freeSpins, bet, spinOnce])
+  }, [autoLeft, spinning, freeSpins, bet, spinOnce, party])
 
   const topWin = outcome?.wins[0]
   const potential = Math.round(bet * MAX_WIN * 100) / 100
@@ -251,6 +308,17 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
         </div>
       }
     >
+      {party && (
+        <Celebration
+          kind={party.kind}
+          title={party.title}
+          subtitle={party.subtitle}
+          amount={party.amount}
+          spins={party.spins}
+          onDone={() => setParty(null)}
+        />
+      )}
+
       {/* marquee */}
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 px-1">
         <div className="flex items-center gap-2">
@@ -276,7 +344,8 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
       </div>
 
       {/* on phones break out of the shell's px-3 so the board is full-bleed */}
-      <div className="-mx-3 w-auto sm:mx-auto sm:w-full sm:max-w-[720px]">
+      <div className="relative -mx-3 w-auto sm:mx-auto sm:w-full sm:max-w-[720px]">
+        <FreeSpinHud left={freeSpins} total={Math.max(freeSpins, freeTotal)} tick={freeTotal - freeSpins} />
         <Slot3D
           grid={grid}
           spinning={spinning}

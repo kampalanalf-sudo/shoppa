@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './lib/auth'
 import { setSoundEnabled } from './lib/sound'
 import { Header, Footer, BottomBar, ChatDock, Toasts, WinFlash } from './components/Chrome'
 import { InstallPrompt } from './components/InstallPrompt'
+import { StudioIdent } from './components/StudioIdent'
 import { SearchModal, WalletModal, FairModal, HistoryModal, RewardsModal } from './components/Modals'
 import { Home } from './pages/Home'
 import { ProxiCash } from './pages/ProxiCash'
@@ -268,6 +269,11 @@ export default function App() {
   return (
     <AuthProvider>
       <StoreProvider>
+        {/* Studio ident sits ABOVE the shell, not inside the boot branch:
+            hydration finishes in a few ms, so mounting it there would unmount
+            it before it had animated. Here it covers the whole boot — the
+            landing page and a game opened by hash URL alike. */}
+        <StudioIdent />
         <Shell />
       </StoreProvider>
     </AuthProvider>

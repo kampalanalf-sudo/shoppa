@@ -25,7 +25,8 @@
     "android:sync": "npm run build && npx cap sync android",
     "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug",
     "test:reels": "vite build --config smoke/vite.reels.config.ts && node smoke/dist-reels/reels.js",
-    "test:slotboard": "vite build --config smoke/vite.slotcheck.config.ts && node smoke/dist-slotcheck/slotcheck.js"
+    "test:slotboard": "vite build --config smoke/vite.slotcheck.config.ts && node smoke/dist-slotcheck/slotcheck.js",
+    "test:celebrate": "vite build --config smoke/vite.celebrate.config.ts && node smoke/dist-celebrate/celebrate.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",
