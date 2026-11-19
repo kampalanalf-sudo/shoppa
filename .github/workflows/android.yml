@@ -138,13 +138,35 @@ jobs:
       # user's phone.
       - name: Verify the APKs are signed
         run: |
-          set -e
+          set -euo pipefail
           BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          APKSIGNER="$BUILD_TOOLS/apksigner"
+          [ -x "$APKSIGNER" ] || { echo "apksigner missing at $APKSIGNER" >&2; exit 1; }
+
+          # A glob that matches nothing expands to the literal pattern, so a
+          # naive loop would silently verify zero files and still pass. Count
+          # them and fail if the count is zero.
+          VERIFIED=0
           for f in android/app/build/outputs/apk/release/*.apk android/app/build/outputs/apk/debug/*.apk; do
             [ -f "$f" ] || continue
-            echo "== $f"
-            "$BUILD_TOOLS/apksigner" verify --print-certs "$f" | head -4
+            echo "== $f ($(stat -c%s "$f") bytes)"
+            "$APKSIGNER" verify --print-certs "$f"
+            VERIFIED=$((VERIFIED + 1))
           done
+
+          if [ "$VERIFIED" -eq 0 ]; then
+            echo "No APK was produced — nothing to verify." >&2
+            find android/app/build/outputs -type f >&2 2>/dev/null || true
+            exit 1
+          fi
+          echo "Verified $VERIFIED APK(s)."
+
+      - name: Report artifact sizes
+        run: |
+          echo "### APK outputs" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          find android/app/build/outputs/apk -name '*.apk' -exec ls -lh {} \; >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload release APK
         if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
@@ -152,6 +174,7 @@ jobs:
         with:
           name: FloatBet-release-apk
           path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
           retention-days: 90
 
       - name: Upload debug APK
@@ -159,4 +182,5 @@ jobs:
         with:
           name: FloatBet-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
           retention-days: 30
