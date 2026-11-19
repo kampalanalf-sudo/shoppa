@@ -34,3 +34,5 @@ android/.gradle/
 android/app/build/
 android/build/
 android/local.properties
+smoke/dist-reels
+smoke/dist-slotcheck

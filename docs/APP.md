@@ -155,6 +155,52 @@ npm run android:apk     # build + sync + assembleDebug
 
 ---
 
+## 2b. Reel animation
+
+The engine slots (`chape`, `bluemountain`, `bazaar`, `boda`) share one board
+component, `src/components/SlotBoard3D.tsx`, and one motion model,
+`src/lib/reels.ts`.
+
+**What was wrong.** The previous reel incremented a counter twelve times, then
+applied a CSS `transition` while the rows were positioned by `top` — and the
+transform it transitioned was `translateY(${settling ? 0 : 0}px)`, which is
+always zero. Nothing animated. The reels jumped from one grid to the next and
+the "spin" was 900 ms of a shimmer overlay over a static board.
+
+**How it works now.**
+
+| Piece | Behaviour |
+|---|---|
+| Motion driver | one `requestAnimationFrame` loop per reel, writing `translate3d` straight to the strip |
+| Easing | ease-out quart over the whole travel — fast launch, long settle |
+| Stagger | 620 / 790 / 960 / 1130 / 1300 ms, left to right |
+| Motion blur | applied while travelling via a `filter`, dropped on landing |
+| Landing | offset computed so the window shows exactly the resolved result |
+| Result commit | `EngineSlot` waits for the **last** reel stop, so a win highlight can never precede the reels |
+| Reduced motion | `prefers-reduced-motion` lands the reels instantly, no travel |
+
+React state is deliberately not updated per frame — five reels re-rendering at
+60 fps drops frames on mid-range Android, and a stuttering slot is worse than a
+slower one. The transform is written directly to the DOM node instead.
+
+### Verified
+
+`test:reels` (28 assertions) covers the motion model: offset is non-zero and
+changes between frames, monotonic, never overshoots, decelerates, clamps at both
+ends, stop times stagger, and the landing window shows the resolved symbols.
+
+`test:slotboard` (8 assertions) renders the real component through
+`renderToString` and asserts five strips exist, each carries a non-zero
+`translate3d`, and the blur only appears while spinning.
+
+### Not verified
+
+No headless browser here, so **no frame rate has been measured and the motion
+has not been watched**. The maths and the rendered DOM are checked; whether it
+looks smooth on a real device is not something I can claim.
+
+---
+
 ## 3. Things to know before shipping either
 
 **Google Play will reject this app as-is.** Real-money gambling apps need a
