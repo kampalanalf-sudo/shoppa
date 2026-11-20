@@ -83,12 +83,27 @@ ok('pwa: never auto-reloads on update (explicit user action only)',
 // `shoppa-ten.vercel.app`, which belongs to someone else's project, and then
 // pointed at a Vercel project called `proxicore-visor` that was actually this
 // app under a misleading name. Both cost real time. Pin the truth here.
-const SITE = 'shoppa-sigma.vercel.app'
+//
+// floatbet.space is now the official address. The Vercel host still works and
+// still serves the same deployment, but it is a fallback: anything a player
+// reads, any OAuth redirect, any payment callback must use the domain.
+const SITE = 'floatbet.space'
 const docs = ['docs/GO-LIVE.md', 'docs/PAYMENTS.md', 'docs/PRODUCTION.md', '.env.example']
   .map((f) => readFileSync(f, 'utf8'))
 const cfg = readFileSync('capacitor.config.ts', 'utf8')
-ok('the production URL is the project domain, not a borrowed one',
+ok('the official production URL is the real domain',
   docs.every((d) => d.includes(SITE)) && cfg.includes(SITE))
+// The APK bundles its own assets, so there is deliberately no server.url — the
+// WebView's origin is set by `hostname`, and it must be the real domain.
+ok('the native app origin is the official domain',
+  /hostname:\s*'floatbet\.space'/.test(cfg))
+ok('the native app does not load the site from a remote URL',
+  !/server:\s*\{[^}]*url:/.test(cfg))
+// A Vercel host is a deploy artefact, not a brand. It may appear as a fallback
+// or in an explanation, never as the address a player or an OAuth app is given.
+ok('the Vercel host is not presented as the site address',
+  docs.every((d) => (d.match(/[^\n]*(?:\n[^\n]*){0,2}shoppa-sigma[^\n]*(?:\n[^\n]*){0,2}/g) ?? [])
+    .every((block) => /fallback|still works|preview|also serves|previous/i.test(block))))
 // shoppa-ten was never ours. Allow it only in prose explaining that fact.
 // Allow the mention only where it is being explained as a mistake. The prose
 // wraps, so scan by paragraph rather than by line.
