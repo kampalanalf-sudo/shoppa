@@ -7,7 +7,11 @@ import type { ExchangeOrder } from './proxicash'
 
 const KEY = 'floatbet.v1'
 
-/** Every new player is granted 10,000 PX, worth 1,000 UGX at 10 PX/UGX. */
+/**
+ * Every new player is granted 10,000 PX, worth 100 UGX at 100 PX/UGX. The
+ * 15,000 PX daily login bonus is worth more than this — deliberately: signing
+ * up should not be the reward, showing up should.
+ */
 export const STARTING_PX = 10000
 
 type Persisted = {

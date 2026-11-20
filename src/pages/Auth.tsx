@@ -94,7 +94,7 @@ export function Auth({ onDone }: { onDone?: () => void }) {
         </h1>
         <p className="mt-1 text-[12.5px] text-slate-500">
           {mode === 'signup'
-            ? 'New players get 10,000 PX — worth 1,000 UGX.'
+            ? 'New players get 10,000 PX. Log in daily for 15,000 more.'
             : mode === 'reset'
               ? 'We will email you a link to set a new password.'
               : 'Sign in to play, chat and cash out.'}

@@ -21,7 +21,7 @@ const page = read('src/pages/Sportsbook.tsx')
 const sql = read('supabase/migrations/0006_sportsbook.sql')
 const chrome = read('src/components/Chrome.tsx')
 const app = read('src/App.tsx')
-const auth = read('src/lib/auth.tsx')
+const authSrc = read('src/lib/auth.tsx')
 
 // ------------------------------------------------------------- the odds ====
 ok('odds are stored as integers x100, never a float',
@@ -30,7 +30,7 @@ ok('odds format only at the edge', fmtOdds(250) === '2.50' && fmtOdds(101) === '
 ok('a payout is floored to whole PX', potentialPayout(1000, 250) === 2500)
 ok('a payout never produces a fraction of a PX',
   potentialPayout(999, 333) === Math.floor((999 * 333) / 100))
-ok('stake converts to UGX at the 10:1 peg', stakeUgx(10000) === 1000)
+ok('stake converts to UGX at the 100:1 peg', stakeUgx(100000) === 1000)
 
 // --------------------------------------------------- the client cannot cheat ====
 // The whole design rests on these two. If either regresses, a player can name
@@ -102,10 +102,52 @@ ok('every sport has a label',
   (['football', 'basketball', 'athletics', 'motorsport', 'cricket', 'rugby', 'tennis'] as const)
     .every((s) => Boolean(SPORT_LABEL[s])))
 
+// ------------------------------------------------- in-house currency ========
+// PX is now earned rather than bought: a daily login award, gated conversion.
+// These are the rules the whole economy rests on, so they are asserted here.
+const px = read('supabase/migrations/0009_px_daily_grant_and_peg.sql')
+const pxCode = px.replace(/^\s*--.*$/gm, '')
+
+// The peg is quoted in three places. If any two disagree the UI promises a
+// withdrawal the server will refuse.
+ok('the database converts at 100 PX per UGX', pxCode.includes('p_amount_px / 100.0'))
+ok('the client peg is 100', read('src/lib/proxicash.ts').includes('PX_PER_UGX = 100'))
+ok('the API peg is 100', read('api/_lib/dgateway.ts').includes('PX_PER_UGX = 100'))
+ok('no surface still advertises the old 10:1 peg',
+  !/(^|[^0-9])10 PX = 1 UGX/.test(read('src/components/Chrome.tsx') + read('src/pages/Sportsbook.tsx')))
+
+// The gate: an account must have spent 7 days on the platform.
+ok('conversion is refused before the account is 7 days old',
+  pxCode.includes("v_age_days < 7") && /7 days old before converting/.test(pxCode))
+ok('account age is taken from the profile, not from the client',
+  pxCode.includes('v_profile.created_at'))
+ok('the age check happens before the balance is touched',
+  pxCode.indexOf('v_age_days < 7') < pxCode.indexOf('select balance_px into v_balance'))
+ok('the refusal tells the player which day they are on',
+  pxCode.includes("you are on day %"))
+
+// The daily award.
+ok('the daily award is 15,000 PX', pxCode.includes('p_amount bigint default 15000'))
+ok('a caller cannot name their own reward', pxCode.includes("v_amount <> 15000"))
+ok('the claim is once per calendar day, enforced by the primary key',
+  /primary key \(user_id, claim_date\)/.test(pxCode))
+ok('a second claim the same day awards nothing',
+  /on conflict \(user_id, claim_date\) do nothing/.test(pxCode) && pxCode.includes('already claimed today'))
+ok("the day boundary is Kampala's, not the server's",
+  pxCode.includes("at time zone 'Africa/Kampala'"))
+ok('the award writes a ledger row', pxCode.includes("'grant', v_amount"))
+ok('a suspended account cannot claim', pxCode.includes('account suspended'))
+// The client must not decide the amount, and a failed claim is not an error
+// banner -- "already claimed" is the normal outcome on 364 days in 365.
+ok('the browser never sends the reward amount',
+  /rpc\('claim_daily_px'\)/.test(authSrc) && !/claim_daily_px'.*amount/.test(authSrc))
+ok('an already-claimed day is silent, not an error',
+  /error \|\| typeof data !== 'number'/.test(authSrc))
+
 // ------------------------------------------------------- logout button =======
 // signOut() existed in the provider from the start and NOTHING called it, so a
 // signed-in player had no way out of their account on a shared phone.
-ok('signOut exists on the context', auth.includes('signOut: () => Promise<void>'))
+ok('signOut exists on the context', authSrc.includes('signOut: () => Promise<void>'))
 ok('the account menu calls signOut', chrome.includes('await signOut()'))
 ok('the sign-out control is reachable without guessing', /Sign out/.test(chrome))
 ok('sign-out reports failure instead of a dead click', chrome.includes("title: 'Signed out'"))

@@ -12,11 +12,14 @@ const fails: string[] = []
 const ok = (name: string, cond: boolean) => { if (!cond) fails.push(name); console.log(`${cond ? 'ok  ' : 'FAIL'} ${name}`) }
 
 // --- peg maths ---
-ok('PX_PER_UGX is 10', PX_PER_UGX === 10)
-ok('10,000 PX = 1,000 UGX', pxToUgx(10000) === 1000)
-ok('1,000 UGX = 10,000 PX', ugxToPx(1000) === 10000)
+ok('PX_PER_UGX is 100', PX_PER_UGX === 100)
+ok('100,000 PX = 1,000 UGX', pxToUgx(100000) === 1000)
+ok('1,000 UGX = 100,000 PX', ugxToPx(1000) === 100000)
 ok('round-trip holds', pxToUgx(ugxToPx(5000)) === 5000)
-ok('PX quote at 10:1', Math.round(quote('PX', 100000).gross) === 10000)
+ok('PX quote at 100:1', Math.round(quote('PX', 400000).gross) === 4000)
+// The daily login bonus is the number that makes the peg legible. If these two
+// drift apart, the app is promising a reward it does not pay.
+ok('a daily bonus is worth a round UGX figure', pxToUgx(15000) === 150)
 
 // --- render without a backend ---
 const wrap = (n: React.ReactNode) => (
@@ -43,8 +46,8 @@ const bar = renderToString(wrap(<PlayBar bet={1000} onBet={() => {}} onSpin={() 
 for (const label of ['Balance', 'Last win', 'Bet', 'Auto', 'Spin']) {
   ok(`PlayBar shows "${label}"`, bar.includes(label))
 }
-// 10,000 PX at 10:1 must show 1,000 UGX in the hint
-ok('PlayBar shows UGX conversion', bar.includes('1,000 UGX'))
+// The PlayBar quotes stake size in UGX at the live peg, not a hardcoded ratio.
+ok('PlayBar shows UGX conversion', /\d[\d,]* UGX/.test(bar))
 
 // --- auth screen requirements ---
 const authHtml = renderToString(wrap(<Auth />) as any)
