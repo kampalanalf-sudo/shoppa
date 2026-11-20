@@ -122,9 +122,20 @@ export async function loadBoard(): Promise<{ fixtures: Fixture[]; markets: Marke
   const ids = (fixtures ?? []).map((f) => (f as Fixture).id)
   if (!ids.length) return { fixtures: [], markets: [] }
 
+  // The embed MUST name its foreign key. There are two relationships between
+  // sports_markets and sports_selections:
+  //
+  //   sports_selections.market_id            -> sports_markets.id   (the rows we want)
+  //   sports_markets.winning_selection_id    -> sports_selections.id (settlement pointer)
+  //
+  // A bare `sports_selections(*)` is ambiguous, and PostgREST resolves
+  // ambiguity by failing the request: "more than one relationship was found
+  // for 'sports_markets' and 'sports_selections'". The board then renders empty
+  // with no obvious cause, because the error surfaces as a failed query rather
+  // than a missing fixture.
   const { data: markets, error: mErr } = await supabase
     .from('sports_markets')
-    .select('*, sports_selections(*)')
+    .select('*, sports_selections!sports_selections_market_id_fkey(*)')
     .in('fixture_id', ids)
     .order('created_at', { ascending: true })
   if (mErr) throw new Error(mErr.message)
