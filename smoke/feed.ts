@@ -153,6 +153,12 @@ ok('a failed request is left pending so it can be retried',
   !/exception when others then[\s\S]{0,300}?processed_at/.test(sqlDbCode))
 // Taking each outcome's median independently stacks our margin on the
 // bookmakers' own overround: measured 1.103 while the config said 4%.
+// `on conflict do nothing` with no constraint to conflict with does nothing at
+// all. That is how markets doubled from 114 to 228 selections in two runs, and
+// it would have doubled the board every four hours from then on.
+ok('a market upserts against a real unique constraint',
+  sqlDb.includes('sports_markets_fixture_name') &&
+  /create unique index[\s\S]{0,120}sports_markets \(fixture_id, name\)/.test(sqlDbCode))
 ok('the bookmakers\' overround is stripped before our margin is applied',
   sqlDb.includes('v_overround') && sqlDb.includes('sum(1.0 / price)'))
 ok('markets close at kick-off on a five-minute job',

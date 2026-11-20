@@ -68,6 +68,21 @@ create index if not exists feed_requests_pending
 create unique index if not exists sports_selections_market_name
   on sports_selections (market_id, name);
 
+-- ...and the same for the market itself, which was missing and cost a day.
+--
+-- `feed_ingest_odds` inserts the market with `on conflict do nothing`, but there
+-- was no unique constraint on (fixture_id, name) for it to conflict with, so
+-- "do nothing" did nothing at all. Every successful ingest added a second
+-- "Match result" per fixture and pointed the fresh prices at it, leaving the
+-- previous one behind as a duplicate. Selections went 114 -> 228 in two runs,
+-- and once a real slate is being fetched the board would double every four
+-- hours forever.
+--
+-- The upsert is only idempotent when there is a constraint to upsert against;
+-- this is that constraint.
+create unique index if not exists sports_markets_fixture_name
+  on sports_markets (fixture_id, name);
+
 -- ---------------------------------------------------------------------------
 -- Fire: queue the HTTP requests. No parsing here.
 -- ---------------------------------------------------------------------------

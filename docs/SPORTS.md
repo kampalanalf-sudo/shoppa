@@ -535,8 +535,26 @@ offering month-old odds forever.
 | `error = 'http 401'` | Key invalid or revoked | Re-store it (Step 1) |
 | `error = 'http 422'` | A sport key is not in this plan's catalogue | Remove it from `feed_config` — it bills a credit anyway |
 | `error` mentions `r.status` or `r.body` | The old parser was running | It is fixed; `pg_net` uses `status_code` and `content` |
+| Selections double every four hours | A market has no unique `(fixture_id, name)` | Fixed in `0008`; the index `sports_markets_fixture_name` is what makes ingestion idempotent |
 | Fixtures present, bets refused as "out of date" | No ingest for over 4h | Check the cron jobs are `active` |
 | Bets refused with "betting has closed" | Kick-off has passed | Correct behaviour — the market is closed |
+
+**The second trap is an upsert with nothing to conflict against.**
+`feed_ingest_odds` inserts a market with `on conflict do nothing`, which is only
+idempotent if a unique constraint exists on `(fixture_id, name)`. There wasn't
+one, so "do nothing" did nothing — every successful ingest added a *second*
+"Match result" market and pointed the fresh prices at it. Selections went 114 to
+228 in two runs. Once a full slate is being fetched that doubles the board every
+four hours, forever. The index `sports_markets_fixture_name` is the fix, and it
+is the constraint that makes the word "upsert" mean anything:
+
+```sql
+select indexname from pg_indexes where tablename = 'sports_markets';
+-- sports_markets_pkey, sports_markets_fixture, sports_markets_fixture_name
+```
+
+If `sports_markets_fixture_name` is missing, ingestion will start duplicating
+again. It is not a performance index.
 
 **The two `pg_net` column names are the trap.** The response columns are
 `status_code` and `content`; reading `status` and `body` returns `NULL` rather
