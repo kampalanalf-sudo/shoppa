@@ -77,13 +77,22 @@ ok('the response headers are read so the remaining budget is visible',
 ok('a 429 is reported as a quota problem, not a generic failure', feed.includes('ODDS_QUOTA'))
 // 4 sports x every 2 hours = 48/day is too much; the schedule must be modest.
 const cron = JSON.parse(vercel).crons as { path: string; schedule: string }[]
-ok('a sync is scheduled', cron.some((c) => c.path === '/api/feed/sync'))
-ok('a settle run is scheduled', cron.some((c) => c.path === '/api/feed/settle'))
-// 3 sports x every 4 hours = 18 credits/day, ~540 a month. That is already at
-// the edge of the 500-credit free plan, so a tighter schedule would not fit.
-ok('the sync does not run more often than every 4 hours',
-  cron.filter((c) => c.path === '/api/feed/sync').every((c) => /^\d+ \*\/[4-9]\d*|^\d+ \*\/[4-9] \* \* \*$/.test(c.schedule)),
-  cron.find((c) => c.path === '/api/feed/sync')?.schedule)
+
+// Every deployment of this project was refused before it built, with
+// "Hobby accounts are limited to daily cron jobs". Vercel rejects the whole
+// deployment, not just the cron, so a `crons` entry more frequent than daily
+// does not degrade the feed -- it takes the entire site down. This test used to
+// require a 4-hourly sync cron and so locked that outage in.
+ok('no Vercel cron runs more often than daily (Hobby plan)',
+  cron.every((c) => {
+    const [min, hour] = c.schedule.split(' ')
+    return !min.includes('*') && !hour.includes('*')
+  }),
+  cron.map((c) => c.schedule).join(' | '))
+// The odds sync runs on pg_cron inside Supabase, where there is no plan limit
+// and no redeploy needed. Vercel must not schedule it a second time.
+ok('the odds sync is not scheduled on Vercel', !cron.some((c) => c.path === '/api/feed/sync'))
+ok('a daily settle run is still scheduled', cron.some((c) => c.path === '/api/feed/settle'))
 
 // ----------------------------------------------------------------- auth ====
 ok('the sync requires a secret or an admin', sync.includes('CRON_SECRET') && sync.includes('is_admin'))
