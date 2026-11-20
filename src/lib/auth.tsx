@@ -49,6 +49,8 @@ type AuthState = {
   recoveryError: string | null
   clearRecovery: () => void
   resendVerification: (email: string) => Promise<void>
+  /** PX credited by today's login bonus, or 0 when already claimed. */
+  dailyPxAwarded: number
   signOut: () => Promise<void>
   refreshWallet: () => Promise<void>
   updateProfile: (patch: Partial<Pick<PlayerProfile, 'username' | 'display_name' | 'phone' | 'age_confirmed'>>) => Promise<void>
@@ -67,16 +69,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [wallet, setWallet] = useState<Wallet | null>(null)
   const [recoveryReady, setRecoveryReady] = useState(false)
   const [recoveryError, setRecoveryError] = useState<string | null>(null)
+  const [dailyPxAwarded, setDailyPxAwarded] = useState(0)
+
+  /**
+   * The daily login bonus: 15,000 PX, once per calendar day (Africa/Kampala).
+   *
+   * Deliberately best-effort. `claim_daily_px` raises 'already claimed today'
+   * as its normal, expected outcome, so a failure here is not an error — if it
+   * were, every player would see a red banner every day after the first. The
+   * award is also entirely server-side: the client passes no amount, so a
+   * tampered browser cannot name its own reward.
+   */
+  const claimDaily = useCallback(async (uid: string) => {
+    if (!supabase) return
+    const { data, error } = await supabase.rpc('claim_daily_px')
+    if (error || typeof data !== 'number') {
+      setDailyPxAwarded(0)
+      return
+    }
+    setDailyPxAwarded(15000)
+    void uid
+  }, [])
 
   const loadProfile = useCallback(async (uid: string) => {
     if (!supabase) return
+    // Claim first, then read the wallet, so the balance shown already includes
+    // today's award rather than appearing to change under the player.
+    await claimDaily(uid)
     const [{ data: p }, { data: w }] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', uid).maybeSingle(),
       supabase.from('wallets').select('*').eq('user_id', uid).maybeSingle(),
     ])
     setProfile((p as PlayerProfile) || null)
     setWallet((w as Wallet) || null)
-  }, [])
+  }, [claimDaily])
 
   // boot: restore session, then keep it in sync
   useEffect(() => {
@@ -332,6 +358,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       recoveryError,
       clearRecovery,
       resendVerification,
+      dailyPxAwarded,
       signOut,
       refreshWallet,
       updateProfile,
@@ -341,7 +368,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [
       ready, session, profile, wallet, needsOnboarding, signUpEmail, signInEmail, signInGoogle,
       resetPassword, updatePassword, recoveryReady, recoveryError, clearRecovery, resendVerification, signOut, refreshWallet, updateProfile,
-      startPhoneVerification, confirmPhoneVerification,
+      startPhoneVerification, confirmPhoneVerification, dailyPxAwarded,
     ],
   )
 

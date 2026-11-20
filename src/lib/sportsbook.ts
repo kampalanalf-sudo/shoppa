@@ -100,7 +100,7 @@ export function fmtOdds(oddsX100: number): string {
   return (oddsX100 / 100).toFixed(2)
 }
 
-/** Whole PX, never a fraction: the wallet is BIGINT and 10 PX = 1 UGX. */
+/** Whole PX, never a fraction: the wallet is BIGINT and 100 PX = 1 UGX. */
 export function potentialPayout(stakePx: number, oddsX100: number): number {
   return Math.floor((stakePx * oddsX100) / 100)
 }

@@ -296,7 +296,7 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-[.14em] text-slate-500">Balance after</p>
                 <p className="num text-[15px] font-black text-slate-300">{money(Math.max(0, balance - stakeNum))} PX</p>
-                <p className="text-[10.5px] text-slate-500">10 PX = 1 UGX</p>
+                <p className="text-[10.5px] text-slate-500">100 PX = 1 UGX</p>
               </div>
             </div>
 

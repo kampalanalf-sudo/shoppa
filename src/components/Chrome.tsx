@@ -33,7 +33,7 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
   const { balance, balanceHidden, toggleBalanceHidden, setWalletOpen, setHistoryOpen, setFairOpen, setRewardsOpen, sound, toggleSound, username, bets, toast } = useStore()
   // The account menu needs the real identity, not the local store's handle: the
   // store starts empty on a fresh device even when the player is signed in.
-  const { user, profile, configured, signOut } = useAuth()
+  const { user, profile, configured, signOut, dailyPxAwarded } = useAuth()
   const email = user?.email ?? ''
   const handle = profile?.username ?? username
   const [signingOut, setSigningOut] = useState(false)
@@ -162,7 +162,14 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
                   <p className="truncate text-sm font-semibold text-white">{handle || 'Player'}</p>
                   {email && <p className="truncate text-[11px] text-slate-400">{email}</p>}
                   <p className="num mt-0.5 text-[11px] text-slate-500">
-                    {money(balance)} PX <span className="text-slate-600">· 10 PX = 1 UGX</span>
+                    {money(balance)} PX <span className="text-slate-600">· 100 PX = 1 UGX</span>
+                  </p>
+                  {/* The daily bonus is the reason to come back, so it belongs
+                      where the balance is, not buried in a notification. */}
+                  <p className="mt-0.5 text-[10.5px] text-emerald-400/80">
+                    {dailyPxAwarded > 0
+                      ? `+${money(dailyPxAwarded)} PX daily bonus credited`
+                      : '15,000 PX daily bonus · already claimed today'}
                   </p>
                 </div>
                 <MenuItem icon={<IconHistory size={15} />} onClick={() => { setHistoryOpen(true); setAccountOpen(false) }}>Bet history</MenuItem>

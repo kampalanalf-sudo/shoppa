@@ -262,5 +262,12 @@ export async function verifyWebhookSignature(raw: string, signature: string | nu
   return diff === 0
 }
 
-/** UGX per PX peg used across the app: 10 PX = 1 UGX. */
-export const PX_PER_UGX = 10
+/**
+ * PX per UGX peg used across the app: 100 PX = 1 UGX.
+ *
+ * Must match PX_PER_UGX in src/lib/proxicash.ts and the /100 in
+ * request_cashout. The database is the authority — if these disagree, the UI
+ * quotes a price the server will not honour, which is how a player ends up
+ * told they can withdraw more than they can.
+ */
+export const PX_PER_UGX = 100
