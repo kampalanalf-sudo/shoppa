@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { GAMES, LIVE_WINS, asset } from '../lib/games'
+import { SPORTS_HERO } from '../lib/fixtureArt'
 import type { GameId } from '../lib/types'
 import { compact, money, mult } from '../lib/format'
 import { useStore } from '../lib/store'
@@ -8,11 +9,11 @@ import { WinTicker } from '../components/Chrome'
 import { PromoModal } from '../components/Modals'
 import { sfx } from '../lib/sound'
 
-type Props = { onPlay: (id: GameId) => void; onSearch: () => void; onFair: () => void; onProxiCash?: () => void }
+type Props = { onPlay: (id: GameId) => void; onSearch: () => void; onFair: () => void; onProxiCash?: () => void; onSports?: () => void }
 
 const TABS = ['All', 'Slots', 'Originals', 'Instant', 'Table'] as const
 
-export function Home({ onPlay, onSearch, onFair, onProxiCash }: Props) {
+export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props) {
   const { balance, stats, username } = useStore()
   const [tab, setTab] = useState<(typeof TABS)[number]>('All')
   const [promo, setPromo] = useState(false)
@@ -273,6 +274,39 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash }: Props) {
               </div>
             </button>
           ))}
+        </div>
+
+        {/* sports feature -- the board is the growth lever, so it gets a
+            full-width band with its own art rather than another grid tile. */}
+        <div className="mt-8">
+          <a
+            href="#sports"
+            onClick={(e) => { e.preventDefault(); onSports?.() }}
+            className="group relative block overflow-hidden rounded-2xl border border-white/[0.07]"
+          >
+            <img
+              src={SPORTS_HERO}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="h-[170px] w-full object-cover object-center transition duration-500 group-hover:scale-[1.03] sm:h-[210px]"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#070b14] via-[#070b14]/80 to-transparent" />
+            <div className="absolute inset-0 flex flex-col justify-center px-5 sm:px-7">
+              <span className="mb-1.5 flex items-center gap-1.5 text-[10px] font-black uppercase tracking-[.18em] text-neon-lime">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-neon-lime" /> Live this week
+              </span>
+              <p className="max-w-[260px] text-[19px] font-black leading-tight text-white sm:text-[23px]">
+                Premier League, priced to the minute
+              </p>
+              <p className="mt-1 max-w-[280px] text-[11.5px] leading-relaxed text-slate-400">
+                Real bookmaker prices, settled automatically. Bet in PX, no deposit needed.
+              </p>
+              <span className="mt-3 inline-flex w-fit items-center gap-1 rounded-lg bg-neon-lime px-3 py-1.5 text-[11.5px] font-black text-ink-950 transition group-hover:brightness-110">
+                Open the board <IconArrowUpRight size={13} />
+              </span>
+            </div>
+          </a>
         </div>
 
         {/* promo strip */}
