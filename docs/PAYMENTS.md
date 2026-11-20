@@ -25,7 +25,7 @@ prefix them with `VITE_`.
 | `DGATEWAY_API_URL` | `https://dgatewayapi.desispay.com` |
 | `DGATEWAY_API_KEY` | your `dgw_...` key |
 | `DGATEWAY_WEBHOOK_SECRET` | the webhook signing secret from DGateway |
-| `APP_URL` | `https://shoppa-sigma.vercel.app` (used to build `callback_url`) |
+| `APP_URL` | `https://floatbet.space` (used to build `callback_url`) |
 | `SUPABASE_URL` | `https://<ref>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | service role key — **server only** |
 
@@ -59,8 +59,8 @@ buyer pays on DGateway's own page; we only navigate there.
 |---|---|
 | Store URL | `VITE_DGATEWAY_STORE_URL` — e.g. `https://dgatewayadmin.desispay.com/store/shop/floatbet?products` |
 | Store slug | `DGATEWAY_STORE_SLUG=floatbet` (payments for another shop are rejected 409) |
-| Webhook URL | `https://shoppa-sigma.vercel.app/api/webhooks/dgateway-store` |
-| Success redirect | `https://shoppa-sigma.vercel.app/#topup-success` |
+| Webhook URL | `https://floatbet.space/api/webhooks/dgateway-store` |
+| Success redirect | `https://floatbet.space/#topup-success` |
 
 ### The one real difference from API mode
 
@@ -119,8 +119,8 @@ Creates `store_topups` plus `apply_store_topup`, `claim_store_topup`,
 
 | Field | Value |
 |---|---|
-| Webhook / callback | `https://shoppa-sigma.vercel.app/api/webhooks/dgateway` |
-| Success redirect | `https://shoppa-sigma.vercel.app/#topup-success` |
+| Webhook / callback | `https://floatbet.space/api/webhooks/dgateway` |
+| Success redirect | `https://floatbet.space/#topup-success` |
 
 The webhook is the one that matters: it is what credits the PX. The success
 redirect is cosmetic. A player who closes the tab after approving the prompt
@@ -140,7 +140,7 @@ webhook payloads differ: ours handles the flat `{reference, status}` shape from
 In the DGateway dashboard set the callback URL to:
 
 ```
-https://shoppa-sigma.vercel.app/api/webhooks/dgateway
+https://floatbet.space/api/webhooks/dgateway
 ```
 
 The route also sends this same URL on every collect, so it is registered per
@@ -225,5 +225,5 @@ Check `/api/status` on a known reference with:
 
 ```bash
 curl -H "Authorization: Bearer <supabase access token>" \
-     "https://shoppa-sigma.vercel.app/api/status?reference=YOUR-REF"
+     "https://floatbet.space/api/status?reference=YOUR-REF"
 ```

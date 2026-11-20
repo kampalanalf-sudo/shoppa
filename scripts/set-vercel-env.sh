@@ -2,7 +2,7 @@
 # scripts/set-vercel-env.sh
 #
 # Sets the FloatBet environment variables on the Vercel project that serves
-# shoppa-sigma.vercel.app.
+# floatbet.space.
 #
 # Why a script: the connected Vercel integration authenticates as
 # charlielwanga88-4249, and that project lives in the `iuearadio` account, so
@@ -55,7 +55,7 @@ add() {
 }
 
 echo "Setting public + non-secret values..."
-add APP_URL                 "https://shoppa-sigma.vercel.app"  production preview
+add APP_URL                 "https://floatbet.space"  production preview
 add DGATEWAY_API_URL        "https://dgatewayapi.desispay.com" production preview
 add DGATEWAY_STORE_SLUG     "floatbet"                       production preview
 add SUPABASE_URL            "$SUPABASE_URL"                  production preview

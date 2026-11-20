@@ -128,8 +128,8 @@ order by 1;
 | Email provider | **Enabled** |
 | Confirm email | **Enabled** (you asked for verification) |
 | Google provider | **Enabled** (verified on the live project — client id `763098030610-...`) |
-| Site URL | `https://shoppa-sigma.vercel.app` |
-| Redirect URLs (allow list) | `https://shoppa-sigma.vercel.app/**` |
+| Site URL | `https://floatbet.space` |
+| Redirect URLs (allow list) | `https://floatbet.space/**` |
 | | `http://localhost:5173/**` |
 
 ### Google Sign-In — enablement is done, the consent screen is yours
@@ -140,7 +140,7 @@ a human:
 
 1. **OAuth consent screen** → *Publishing status* must be **In production**, or
    only the test users you listed can sign in.
-2. Authorized JavaScript origin `https://shoppa-sigma.vercel.app` and redirect URI
+2. Authorized JavaScript origin `https://floatbet.space` and redirect URI
    `https://dtroufrfavmjldtlprpn.supabase.co/auth/v1/callback` must both be
    present on the client.
 
@@ -165,8 +165,8 @@ them, and strips them from the address bar so the link cannot be replayed.
 
 | Setting | Value |
 |---|---|
-| Site URL | `https://shoppa-sigma.vercel.app` |
-| Redirect allow list | `https://shoppa-sigma.vercel.app/**`, `**/auth/callback`, `http://localhost:5173/**` |
+| Site URL | `https://floatbet.space` |
+| Redirect allow list | `https://floatbet.space/**`, `**/auth/callback`, `http://localhost:5173/**` |
 | Email provider | enabled |
 | Confirm email | enabled (`mailer_autoconfirm: false`) |
 | Refresh token rotation | enabled, 10s reuse interval |
@@ -187,7 +187,7 @@ DGateway → **My Apps → Settings**, and the FloatBet product.
 
 | Field | Value |
 |---|---|
-| **Webhook URL** | `https://shoppa-sigma.vercel.app/api/webhooks/dgateway-store` |
+| **Webhook URL** | `https://floatbet.space/api/webhooks/dgateway-store` |
 | **API key** | the `dgw_live_…` key — copy it once, it goes into Vercel in step 4 |
 
 ⚠️ Note `/dgateway-store`, **not** `/dgateway`. The plain `/dgateway` path expects
@@ -202,7 +202,7 @@ this store.
 
 | Field | Value |
 |---|---|
-| **Success redirect** | `https://shoppa-sigma.vercel.app/#topup-success` |
+| **Success redirect** | `https://floatbet.space/#topup-success` |
 
 This is **cosmetic**. It is not a security boundary and nothing credits on it.
 If DGateway has no such field, skip it — the webhook still credits and the player
@@ -235,14 +235,14 @@ Both can be registered; they do not conflict.
 
 **Which project?** There is exactly one, and it is called `shoppa`.
 
-- **`shoppa-sigma.vercel.app`** is the public production site. It is project
+- **`floatbet.space`** is the public production site. It is project
   `shoppa`, team `charlielwanga88-4249` (`team_MBLhGymHWx77okkzTOjnw1pY`), linked
   to `kampalanalf-sudo/shoppa` and building `main`.
 - It was previously named **`proxicore-visor`**, which caused a lot of
   confusion: the name suggested a different app, and `shoppa-ten.vercel.app`
   (which older copies of these docs cited) was never ours at all. It belongs to
   another project. Do not put it back.
-- **`shoppa-sigma.vercel.app` must stay added as a *custom domain* on the
+- **`floatbet.space` must stay added as a *custom domain* on the
   project.** Automatic `*.vercel.app` aliases are behind Vercel Deployment
   Protection (SSO), and only custom domains are exempt. Removing it makes
   production private again.
@@ -256,7 +256,7 @@ Set these in **Project → Settings → Environment Variables**, for
 | `DGATEWAY_API_KEY` | `dgw_live_…` | **sensitive**, server only |
 | `DGATEWAY_WEBHOOK_SECRET` | from DGateway | **required in live mode** — without it every collect/disburse returns 503 `WEBHOOK_SECRET_MISSING` and charges nothing |
 | `DGATEWAY_STORE_SLUG` | `floatbet` | rejects payments from another shop |
-| `APP_URL` | `https://shoppa-sigma.vercel.app` | builds the `callback_url` |
+| `APP_URL` | `https://floatbet.space` | builds the `callback_url` |
 | `SUPABASE_URL` | `https://dtroufrfavmjldtlprpn.supabase.co` | |
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role key | **sensitive**, server only |
 | `VITE_SUPABASE_URL` | `https://dtroufrfavmjldtlprpn.supabase.co` | public, shipped to browser |
@@ -292,7 +292,7 @@ for a while:
 | Host | Project | Signs in? |
 |---|---|---|
 | `https://kampalanalf-sudo.github.io/shoppa/` | GitHub Pages, branch `gh-pages`, built by `.github/workflows/deploy-pages.yml` on every push to `main` | **yes** |
-| `https://shoppa-sigma.vercel.app` | Vercel project **`shoppa`** (renamed from `proxicore-visor`) | **yes** |
+| `https://floatbet.space` | Vercel project **`shoppa`** (renamed from `proxicore-visor`) | **yes** |
 
 Both sign in now, because `src/lib/backend.ts` carries the public Supabase URL
 and publishable key as defaults. Neither host needs a `VITE_` variable to work;
@@ -335,7 +335,7 @@ To deploy from here:
 then paste this, once, with the real service role key:
 
 ```bash
-SITE=https://shoppa-sigma.vercel.app
+SITE=https://floatbet.space
 PROJECT_REF=dtroufrfavmjldtlprpn
 ANON=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0cm91ZnJmYXZtamxkdGxwcnBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUwNDQyMTAsImV4cCI6MjExMDYyMDIxMH0.LIafhBin2Uy_tx4OWDtRu-DZ6fca3atMz9Ht-XUmf2s
 
@@ -355,7 +355,7 @@ vercel --prod                                          # env only applies to NEW
 every table behind it is guarded by RLS. The `service_role` key must never be
 given a `VITE_` prefix.
 
-How you know it worked: open `https://shoppa-sigma.vercel.app/#auth`. The amber
+How you know it worked: open `https://floatbet.space/#auth`. The amber
 "Backend is not configured" banner must be **gone**, and the Google button must
 be clickable. If the banner is still there, `VITE_SUPABASE_URL` and
 `VITE_SUPABASE_ANON_KEY` did not reach the build, and no sign-up can succeed
@@ -373,7 +373,7 @@ update profiles set is_admin = true where id = (
 );
 ```
 
-Then open `https://shoppa-sigma.vercel.app/#admin/parked`.
+Then open `https://floatbet.space/#admin/parked`.
 
 Verify it took:
 
@@ -386,8 +386,8 @@ select id, username, is_admin from profiles where is_admin;
 ## 6. Sanity checks before any real money
 
 ```bash
-curl -i https://shoppa-sigma.vercel.app/api/status?reference=TEST
-curl -i https://shoppa-sigma.vercel.app/api/admin/parked
+curl -i https://floatbet.space/api/status?reference=TEST
+curl -i https://floatbet.space/api/admin/parked
 ```
 
 - `/api/status` → **400 or 404 with JSON**, not `500 FUNCTION_INVOCATION_FAILED`.
