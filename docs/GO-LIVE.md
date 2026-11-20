@@ -128,8 +128,8 @@ order by 1;
 | Email provider | **Enabled** |
 | Confirm email | **Enabled** (you asked for verification) |
 | Google provider | **Enabled** (verified on the live project — client id `763098030610-...`) |
-| Site URL | `https://shoppa-ten.vercel.app` |
-| Redirect URLs (allow list) | `https://shoppa-ten.vercel.app/**` |
+| Site URL | `https://shoppa-sigma.vercel.app` |
+| Redirect URLs (allow list) | `https://shoppa-sigma.vercel.app/**` |
 | | `http://localhost:5173/**` |
 
 ### Google Sign-In — enablement is done, the consent screen is yours
@@ -140,7 +140,7 @@ a human:
 
 1. **OAuth consent screen** → *Publishing status* must be **In production**, or
    only the test users you listed can sign in.
-2. Authorized JavaScript origin `https://shoppa-ten.vercel.app` and redirect URI
+2. Authorized JavaScript origin `https://shoppa-sigma.vercel.app` and redirect URI
    `https://dtroufrfavmjldtlprpn.supabase.co/auth/v1/callback` must both be
    present on the client.
 
@@ -165,8 +165,8 @@ them, and strips them from the address bar so the link cannot be replayed.
 
 | Setting | Value |
 |---|---|
-| Site URL | `https://shoppa-ten.vercel.app` |
-| Redirect allow list | `https://shoppa-ten.vercel.app/**`, `**/auth/callback`, `http://localhost:5173/**` |
+| Site URL | `https://shoppa-sigma.vercel.app` |
+| Redirect allow list | `https://shoppa-sigma.vercel.app/**`, `**/auth/callback`, `http://localhost:5173/**` |
 | Email provider | enabled |
 | Confirm email | enabled (`mailer_autoconfirm: false`) |
 | Refresh token rotation | enabled, 10s reuse interval |
@@ -187,7 +187,7 @@ DGateway → **My Apps → Settings**, and the FloatBet product.
 
 | Field | Value |
 |---|---|
-| **Webhook URL** | `https://shoppa-ten.vercel.app/api/webhooks/dgateway-store` |
+| **Webhook URL** | `https://shoppa-sigma.vercel.app/api/webhooks/dgateway-store` |
 | **API key** | the `dgw_live_…` key — copy it once, it goes into Vercel in step 4 |
 
 ⚠️ Note `/dgateway-store`, **not** `/dgateway`. The plain `/dgateway` path expects
@@ -202,7 +202,7 @@ this store.
 
 | Field | Value |
 |---|---|
-| **Success redirect** | `https://shoppa-ten.vercel.app/#topup-success` |
+| **Success redirect** | `https://shoppa-sigma.vercel.app/#topup-success` |
 
 This is **cosmetic**. It is not a security boundary and nothing credits on it.
 If DGateway has no such field, skip it — the webhook still credits and the player
@@ -233,14 +233,19 @@ Both can be registered; they do not conflict.
 
 ## 4. Vercel environment variables
 
-**Which project?** This matters and is easy to get wrong.
+**Which project?** There is exactly one, and it is called `shoppa`.
 
-- `shoppa-ten.vercel.app` is project **`shoppa`** in account `iuearadio`. **This
-  is the live one**, but the connected Vercel integration cannot reach that
-  account, so these must be set by hand.
-- `proxicore-visor` (team `team_MBLhGymHWx77okkzTOjnw1pY`) **is linked to this
-  repo** and builds `main`. Its *name* looks unrelated — do not assume it is
-  unused, and do not put production payment keys in it by accident.
+- **`shoppa-sigma.vercel.app`** is the public production site. It is project
+  `shoppa`, team `charlielwanga88-4249` (`team_MBLhGymHWx77okkzTOjnw1pY`), linked
+  to `kampalanalf-sudo/shoppa` and building `main`.
+- It was previously named **`proxicore-visor`**, which caused a lot of
+  confusion: the name suggested a different app, and `shoppa-ten.vercel.app`
+  (which older copies of these docs cited) was never ours at all. It belongs to
+  another project. Do not put it back.
+- **`shoppa-sigma.vercel.app` must stay added as a *custom domain* on the
+  project.** Automatic `*.vercel.app` aliases are behind Vercel Deployment
+  Protection (SSO), and only custom domains are exempt. Removing it makes
+  production private again.
 
 Set these in **Project → Settings → Environment Variables**, for
 **Production + Preview**:
@@ -251,7 +256,7 @@ Set these in **Project → Settings → Environment Variables**, for
 | `DGATEWAY_API_KEY` | `dgw_live_…` | **sensitive**, server only |
 | `DGATEWAY_WEBHOOK_SECRET` | from DGateway | **required in live mode** — without it every collect/disburse returns 503 `WEBHOOK_SECRET_MISSING` and charges nothing |
 | `DGATEWAY_STORE_SLUG` | `floatbet` | rejects payments from another shop |
-| `APP_URL` | `https://shoppa-ten.vercel.app` | builds the `callback_url` |
+| `APP_URL` | `https://shoppa-sigma.vercel.app` | builds the `callback_url` |
 | `SUPABASE_URL` | `https://dtroufrfavmjldtlprpn.supabase.co` | |
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role key | **sensitive**, server only |
 | `VITE_SUPABASE_URL` | `https://dtroufrfavmjldtlprpn.supabase.co` | public, shipped to browser |
@@ -265,17 +270,17 @@ Set these in **Project → Settings → Environment Variables**, for
 2. `DGATEWAY_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` go in as **Sensitive**.
 3. After adding variables, **redeploy**. Existing deployments keep the old env.
 
-**Automated helper.** Because the connected Vercel integration cannot reach the
-`iuearadio` account, use the CLI with your own login:
+**Automated helper.**
 
 ```bash
 vercel login
-vercel link --project shoppa     # NOT proxicore-visor
+vercel link --project shoppa
 ./scripts/set-vercel-env.sh
 ```
 
-The script refuses to run if the directory is linked to `proxicore-visor`, and it
-prompts for the two secrets rather than taking them as arguments. It sets
+The script now refuses to run unless the linked project is exactly `shoppa` —
+setting variables on the wrong project looks like success and changes nothing.
+It prompts for the two secrets rather than taking them as arguments, and sets
 everything except `SUPABASE_SERVICE_ROLE_KEY`, which you must add in the
 dashboard so it can be marked *sensitive*.
 
@@ -286,8 +291,12 @@ for a while:
 
 | Host | Project | Signs in? |
 |---|---|---|
-| `https://kampalanalf-sudo.github.io/shoppa/` | GitHub Pages, branch `gh-pages`, built by `.github/workflows/deploy-pages.yml` on every push to `main` | **yes, now** |
-| `https://shoppa-ten.vercel.app` | Vercel project `shoppa` under `iuearadio` | only once the env vars below exist |
+| `https://kampalanalf-sudo.github.io/shoppa/` | GitHub Pages, branch `gh-pages`, built by `.github/workflows/deploy-pages.yml` on every push to `main` | **yes** |
+| `https://shoppa-sigma.vercel.app` | Vercel project **`shoppa`** (renamed from `proxicore-visor`) | **yes** |
+
+Both sign in now, because `src/lib/backend.ts` carries the public Supabase URL
+and publishable key as defaults. Neither host needs a `VITE_` variable to work;
+the env vars only exist to point a build at a *different* backend.
 
 The Pages build was publishing with no `VITE_` variables at all, so the bundle it
 served contained no Supabase client: sign-up, wallet and cashout simply did not
@@ -303,27 +312,30 @@ Supabase's URL allow-list now includes `https://kampalanalf-sudo.github.io/shopp
 and auth redirects are sent as **relative** paths, so a player who signs up on
 Pages stays on Pages instead of being bounced to the Vercel `site_url`.
 
-### 4c. Vercel, if you want that host working too
+### 4c. Vercel, and the trap that took it down
 
-Optional now: the site on Pages signs in without it. What is still missing on
-Vercel is the two `VITE_` variables — without them that host keeps serving a
-bundle with no backend, exactly as before.
+**Vercel deployments are refused outright if `vercel.json` declares a cron more
+frequent than the Hobby plan allows.** The message is:
 
-The fastest path:
+> Hobby accounts are limited to daily cron jobs. This cron expression
+> (`0 */4 * * *`) would run more than once per day.
 
-The integration in this workspace is bound to the `charlielwanga88-4249` Vercel
-account, which only contains `proxicore-visor`. It **cannot** reach `shoppa` un-
-der `iuearadio`, so the two variables that switch accounts on cannot be set from
-here. On a machine logged in as `iuearadio`:
+Vercel rejects the **whole deployment** — not just the cron — so a 4-hourly
+`crons` entry takes the entire site down. That happened here: every production
+deploy failed from PR #25 until it was removed, and each one reported
+`buildSkipped: true` with `readyState: ERROR`.
 
-```bash
-vercel link --yes --project shoppa
-```
+The odds sync does **not** belong on Vercel. It runs on `pg_cron` inside
+Supabase (see `docs/SPORTS.md` §9). The only Vercel cron left is a daily settle
+sweep, which Hobby permits. `smoke/feed.ts` asserts the rule, so it cannot come
+back by accident.
+
+To deploy from here:
 
 then paste this, once, with the real service role key:
 
 ```bash
-SITE=https://shoppa-ten.vercel.app
+SITE=https://shoppa-sigma.vercel.app
 PROJECT_REF=dtroufrfavmjldtlprpn
 ANON=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0cm91ZnJmYXZtamxkdGxwcnBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUwNDQyMTAsImV4cCI6MjExMDYyMDIxMH0.LIafhBin2Uy_tx4OWDtRu-DZ6fca3atMz9Ht-XUmf2s
 
@@ -343,7 +355,7 @@ vercel --prod                                          # env only applies to NEW
 every table behind it is guarded by RLS. The `service_role` key must never be
 given a `VITE_` prefix.
 
-How you know it worked: open `https://shoppa-ten.vercel.app/#auth`. The amber
+How you know it worked: open `https://shoppa-sigma.vercel.app/#auth`. The amber
 "Backend is not configured" banner must be **gone**, and the Google button must
 be clickable. If the banner is still there, `VITE_SUPABASE_URL` and
 `VITE_SUPABASE_ANON_KEY` did not reach the build, and no sign-up can succeed
@@ -361,7 +373,7 @@ update profiles set is_admin = true where id = (
 );
 ```
 
-Then open `https://shoppa-ten.vercel.app/#admin/parked`.
+Then open `https://shoppa-sigma.vercel.app/#admin/parked`.
 
 Verify it took:
 
@@ -374,8 +386,8 @@ select id, username, is_admin from profiles where is_admin;
 ## 6. Sanity checks before any real money
 
 ```bash
-curl -i https://shoppa-ten.vercel.app/api/status?reference=TEST
-curl -i https://shoppa-ten.vercel.app/api/admin/parked
+curl -i https://shoppa-sigma.vercel.app/api/status?reference=TEST
+curl -i https://shoppa-sigma.vercel.app/api/admin/parked
 ```
 
 - `/api/status` → **400 or 404 with JSON**, not `500 FUNCTION_INVOCATION_FAILED`.

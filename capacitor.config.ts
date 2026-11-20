@@ -27,7 +27,7 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: 'https',
     // Payments open in the system browser, never inside the WebView.
-    hostname: 'shoppa-ten.vercel.app',
+    hostname: 'shoppa-sigma.vercel.app',
   },
   plugins: {
     SplashScreen: {

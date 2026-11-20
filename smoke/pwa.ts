@@ -42,10 +42,10 @@ ok('sw: found the never-cache list', patterns.length >= 4, `found ${patterns.len
 const isNever = (u: string) => patterns.some((re) => re.test(u))
 
 const mustNever = [
-  ['the collect route', 'https://shoppa-ten.vercel.app/api/collect'],
-  ['the store webhook', 'https://shoppa-ten.vercel.app/api/webhooks/dgateway-store'],
-  ['the admin queue', 'https://shoppa-ten.vercel.app/api/admin/parked'],
-  ['the claim route', 'https://shoppa-ten.vercel.app/api/topup/claim'],
+  ['the collect route', 'https://shoppa-sigma.vercel.app/api/collect'],
+  ['the store webhook', 'https://shoppa-sigma.vercel.app/api/webhooks/dgateway-store'],
+  ['the admin queue', 'https://shoppa-sigma.vercel.app/api/admin/parked'],
+  ['the claim route', 'https://shoppa-sigma.vercel.app/api/topup/claim'],
   ['supabase REST', 'https://dtroufrfavmjldtlprpn.supabase.co/rest/v1/wallets'],
   ['supabase auth', 'https://dtroufrfavmjldtlprpn.supabase.co/auth/v1/token'],
   ['supabase realtime', 'wss://dtroufrfavmjldtlprpn.supabase.co/realtime/v1/websocket'],
@@ -55,9 +55,9 @@ for (const [label, url] of mustNever) {
 }
 
 // ...and it must not over-block, or the app loses its offline shell.
-ok('sw: still caches the shell', !isNever('https://shoppa-ten.vercel.app/index.html'))
-ok('sw: still caches hashed assets', !isNever('https://shoppa-ten.vercel.app/assets/index-DWR88W--.js'))
-ok('sw: still caches the manifest', !isNever('https://shoppa-ten.vercel.app/manifest.webmanifest'))
+ok('sw: still caches the shell', !isNever('https://shoppa-sigma.vercel.app/index.html'))
+ok('sw: still caches hashed assets', !isNever('https://shoppa-sigma.vercel.app/assets/index-DWR88W--.js'))
+ok('sw: still caches the manifest', !isNever('https://shoppa-sigma.vercel.app/manifest.webmanifest'))
 
 ok('sw: deletes caches from older versions on activate', /k !== SHELL_CACHE && k !== ASSET_CACHE/.test(sw))
 ok('sw: offline fallback says it cannot take payments', /Payments are never made offline/.test(sw))
@@ -77,6 +77,28 @@ const pwa = readFileSync('src/lib/pwa.ts', 'utf8')
 ok('pwa: does not register the SW in dev', /if \(!import\.meta\.env\.PROD\) return/.test(pwa))
 ok('pwa: never auto-reloads on update (explicit user action only)',
   !/serviceWorker\.addEventListener\('(?:updatefound|controllerchange)',\s*\(\)\s*=>\s*\{?\s*window\.location\.reload/.test(pwa))
+
+// ------------------------------------------------------------ site identity ====
+// This repo has shipped the wrong production URL in its docs twice: it cited
+// `shoppa-ten.vercel.app`, which belongs to someone else's project, and then
+// pointed at a Vercel project called `proxicore-visor` that was actually this
+// app under a misleading name. Both cost real time. Pin the truth here.
+const SITE = 'shoppa-sigma.vercel.app'
+const docs = ['docs/GO-LIVE.md', 'docs/PAYMENTS.md', 'docs/PRODUCTION.md', '.env.example']
+  .map((f) => readFileSync(f, 'utf8'))
+const cfg = readFileSync('capacitor.config.ts', 'utf8')
+ok('the production URL is the project domain, not a borrowed one',
+  docs.every((d) => d.includes(SITE)) && cfg.includes(SITE))
+// shoppa-ten was never ours. Allow it only in prose explaining that fact.
+// Allow the mention only where it is being explained as a mistake. The prose
+// wraps, so scan by paragraph rather than by line.
+ok('no document tells you to use shoppa-ten.vercel.app',
+  docs.every((d) => (d.match(/[^\n]*(?:\n[^\n]*){0,3}shoppa-ten[^\n]*(?:\n[^\n]*){0,3}/g) ?? [])
+    .every((block) => /never ours|was not ours|belongs to another|belonged/.test(block))))
+// The project was renamed; the old name must not appear as an instruction.
+ok('the Vercel helper refuses any project other than shoppa',
+  readFileSync('scripts/set-vercel-env.sh', 'utf8')
+    .includes('!= "shoppa"'))
 
 if (fails.length) { console.log(`\n${fails.length} FAILED: ${fails.join(', ')}`); process.exit(1) }
 console.log('\nall PWA checks passed')
