@@ -24,6 +24,11 @@ const feed = read('api/_lib/oddsfeed.ts')
 const sync = read('api/feed/sync.ts')
 const settle = read('api/feed/settle.ts')
 const sql = read('supabase/migrations/0007_odds_feed.sql')
+// 0008 moved the feed into the database and re-tuned the staleness guard to the
+// 4-hourly cadence, so the "client matches the database" check must read both.
+const sqlDb = read('supabase/migrations/0008_feed_in_database.sql')
+// Comments describe intent; only the executable statements are asserted on.
+const sqlDbCode = sqlDb.replace(/^\s*--.*$/gm, '')
 const lib = read('src/lib/sportsbook.ts')
 const page = read('src/pages/Sportsbook.tsx')
 const vercel = read('vercel.json')
@@ -113,11 +118,52 @@ ok('a stale board is voided, never silently deleted', sql.includes('void_stale_f
 ok('the client mirrors the ceiling so the player is warned first',
   page.includes('DEFAULT_MAX_STAKE_PX') && page.includes('overMax'))
 ok('the client mirrors the staleness rule', page.includes('isPriceStale'))
-ok('the client defaults match the database defaults',
-  lib.includes('500_000') && sql.includes('500000') && lib.includes('5400') && sql.includes('5400'))
+// The client mirrors the server so the player is warned before the server says
+// no. If these drift, the UI promises something the database will refuse.
+ok('the stake ceiling matches in client and database',
+  lib.includes('500_000') && (sql.includes('500000') || sqlDb.includes('500000')))
+// The staleness guard is now tied to the 4-hourly refresh: 15,000s, not 5,400.
+// A 90-minute guard against a 4-hourly feed would refuse every bet for 2.5h of
+// every 4 — the test used to lock in that bug, so it now asserts the pairing.
+ok('the client staleness window matches the database default',
+  lib.includes('15_000') && sqlDb.includes('set default 15000'))
+ok('a 90-minute guard is gone from the client', !lib.includes('5400'))
 ok('the board says where its prices came from', page.includes('live odds'))
 ok('a refresh does not cost a credit (it only re-reads Supabase)',
   !page.includes('/api/feed/'))
+
+// ------------------------------------------------ in-database feed (0008) ====
+// The feed now runs on pg_cron + pg_net with the key in Vault, so the rules
+// below are what keep it safe without a serverless host mediating anything.
+ok('the key lives in Vault, not in a build environment',
+  sqlDb.includes("vault.decrypted_secrets") && sqlDb.includes("'odds_api_key'"))
+ok('the feed functions are revoked from every client role',
+  sqlDb.includes('revoke all on function feed_fire_sync()'))
+ok('the site may read odds but never write them',
+  sqlDb.includes('revoke insert, update, delete, truncate, references, trigger'))
+// pg_net names its response columns status_code/content. Reading status/body
+// returns NULL rather than raising, which looks identical to an empty payload.
+ok('the parser reads pg_net\'s real column names',
+  sqlDb.includes('r.status_code') && sqlDb.includes('r.content') &&
+  !sqlDb.includes('r.status,') && !sqlDb.includes('r.body'))
+// A failure that stamps processed_at consumes the request, so the retry
+// silently ingests nothing. That is how the first live run lost a cycle.
+ok('a failed request is left pending so it can be retried',
+  /exception when others then[\s\S]{0,300}?update feed_requests set error/.test(sqlDbCode) &&
+  !/exception when others then[\s\S]{0,300}?processed_at/.test(sqlDbCode))
+// Taking each outcome's median independently stacks our margin on the
+// bookmakers' own overround: measured 1.103 while the config said 4%.
+ok('the bookmakers\' overround is stripped before our margin is applied',
+  sqlDb.includes('v_overround') && sqlDb.includes('sum(1.0 / price)'))
+ok('markets close at kick-off on a five-minute job',
+  sqlDb.includes("cron.schedule('feed_close_started'") && sqlDb.includes('*/5 * * * *'))
+ok('the parser ignores events that have already started',
+  sqlDb.includes("if (v_ev->>'commence_time')::timestamptz <= now() then continue; end if;"))
+ok('the board asks only for fixtures that have not started',
+  lib.includes(".gt('starts_at', new Date().toISOString())"))
+// 2 sports x 6 runs/day is ~360 of the 500 free credits. NBA would be ~540.
+ok('the default sport list fits the free credit tier',
+  sqlDb.includes("array['soccer_epl', 'soccer_uefa_champs_league']"))
 
 // ------------------------------------------------------------- config =======
 ok('an unconfigured feed is detectable without throwing', typeof isFeedConfigured() === 'boolean')

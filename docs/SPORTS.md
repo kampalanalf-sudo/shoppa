@@ -300,181 +300,304 @@ the code.
 
 ## 9. Enabling sports mode — the checklist
 
-Five steps. Each one unblocks the next, so do them in order. Total time about
-15 minutes, and nothing here costs money.
+**This section used to require a terminal. It no longer does.** Everything the
+feed needs now runs inside Supabase, so there is nothing to install, no CLI to
+authenticate, and no deploy step that can be forgotten. If you can open a browser
+and log into your Supabase project, you can run this.
 
-The Sports UI is already live on both hosts. What is missing is the **data**,
-and the data can only be fetched by a server. That is why the Vercel half
-matters even though GitHub Pages is where you have been looking.
+### Where the feed actually runs
 
-### Step 0 — check what you are working with
+The original design put the feed in a Vercel function and woke it every four
+hours with a cron entry in `vercel.json`. That worked, but it had three costs
+that only showed up in practice:
 
-```bash
-git pull origin main          # the feed code is on main, merged in PR #25
-vercel whoami                 # must be the account that owns `shoppa`
-```
+- it needed three environment variables set in Vercel and **a redeploy** before
+  any of them took effect;
+- it could not be inspected without a terminal;
+- and the Vercel account connected here cannot see the `shoppa` project at all
+  (it belongs to `iuearadio`), so it was un-runnable from this seat.
 
-The Vercel project is **`shoppa` under `iuearadio`**. If `vercel whoami` prints
-`charlielwanga88-4249`, you are on the wrong account — it only has
-`proxicore-visor`, and every step below will silently do nothing useful.
+So the feed was moved **into the database**. `pg_cron` schedules it, `pg_net`
+makes the HTTPS call, and the API key sits in Supabase **Vault** rather than in
+a build environment. Nothing about the odds logic changed — the median
+consensus, the 4% margin, and the integer ×100 prices are the same numbers as
+before. Only the host changed.
 
-```bash
-vercel link --project shoppa    # NOT proxicore-visor
-```
+| Piece | Where it lives now |
+|---|---|
+| The key | Supabase Vault, secret `odds_api_key` |
+| The HTTPS call | `feed_fire_sync()` → `pg_net` |
+| The parser | `feed_ingest_odds()` |
+| The schedule | `pg_cron` jobs 1, 2 and 3 |
+| The queue | `feed_requests` |
+| Betting state | `feed_config` (single row) |
 
-`scripts/set-feed-env.sh` refuses to run if you link the wrong one, so if it
-exits complaining, that is this step being wrong.
+### Step 0 — confirm you are looking at the right project
 
-### Step 1 — three environment variables in Vercel
+Supabase dashboard → project **`dtroufrfavmjldtlprpn`**. Open **SQL Editor**.
 
-Project → Settings → Environment Variables. All three, Production **and**
-Preview.
+Every command below is pasted into that editor and run with **Run**. There is no
+`$VARIABLE` to substitute and no shell quoting to get wrong.
 
-| Variable | Value | Sensitive? |
-|---|---|---|
-| `ODDS_API_KEY` | `759d…329` (the key you gave me) | **yes — tick it** |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → `service_role` | **yes — tick it** |
-| `CRON_SECRET` | any long random string | yes |
-
-`CRON_SECRET` is the bearer token Vercel sends to the cron routes — it is how
-`/api/feed/sync` knows the caller is the scheduler and not a stranger. You can
-generate one yourself:
-
-```bash
-openssl rand -hex 32
-```
-
-None of these get a `VITE_` prefix. A `VITE_` variable is compiled into the
-JavaScript the browser downloads.
-
-`SUPABASE_SERVICE_ROLE_KEY` is the one that is easy to miss and fails
-confusingly: without it the sync route answers **`DB_KEY_MISSING`**, not "no
-data", because it has nowhere to write.
-
-### Step 2 — redeploy
-
-```bash
-vercel --prod
-```
-
-Environment variables only apply to **new** builds. Skipping this is the single
-most common reason a correctly-set variable appears to do nothing.
-
-### Step 3 — turn it on without spending a credit
-
-```bash
-curl -H "Authorization: Bearer $CRON_SECRET" \
-  "https://shoppa-ten.vercel.app/api/feed/sync?dry=1"
-```
-
-`dry=1` reports which sports would be fetched and confirms the key and database
-are both configured. It costs **nothing**. You want:
-
-```json
-{ "ok": true, "dry": true, "configured": true, "sports": ["soccer_epl", ...] }
-```
-
-If `configured` is `false`, `ODDS_API_KEY` did not reach the build — go back to
-step 2.
-
-### Step 4 — the first real pull
-
-```bash
-curl -H "Authorization: Bearer $CRON_SECRET" \
-  "https://shoppa-ten.vercel.app/api/feed/sync"
-```
-
-This spends **3 credits** (one per sport) and returns how many fixtures it
-upserted and how many credits are left. Then open:
-
-**https://shoppa-ten.vercel.app/#sports**
-
-Fixtures should be there. From then on the schedule in `vercel.json` keeps it
-current — no further action.
-
-### Step 5 — confirm settlement will work
-
-Nothing to run, but check it once the first match finishes:
+Sanity check:
 
 ```sql
-select started_at, status, fixtures_upserted, credits_left, errors
-  from feed_sync_log order by started_at desc limit 5;
+select jobid, jobname, schedule, active from cron.job order by jobid;
 ```
 
-`status` should be `ok`. `partial` means some fixtures failed and the board is
-incomplete — the `errors` column says which.
+You should see three rows. If the table is empty, the feed is not scheduled and
+the rest of this section is moot — see *Reinstalling from scratch* at the end.
+
+### Step 1 — confirm the key is present
+
+```sql
+select id, name, created_at from vault.secrets where name = 'odds_api_key';
+```
+
+One row. **Do not select `secret`** — you do not need to see it, and there is no
+reason for it to appear on a screen.
+
+If the row is missing, the key was never stored or was rotated out. Store it
+without ever writing it into a file that gets committed:
+
+```sql
+select vault.create_secret('<the-odds-api-key>', 'odds_api_key');
+```
+
+### Step 2 — confirm the key is not reachable by a browser
+
+This matters more than anything else in this section. The browser talks to
+Supabase as `anon`, so if `anon` can read the secret, the key is public.
+
+```sql
+select has_schema_privilege('anon', 'vault', 'USAGE')          as anon_usage,
+       has_schema_privilege('authenticated', 'vault', 'USAGE') as auth_usage,
+       has_function_privilege('anon', 'feed_fire_sync()', 'EXECUTE')   as anon_can_fire,
+       has_function_privilege('anon', 'feed_ingest_odds()', 'EXECUTE') as anon_can_ingest;
+```
+
+All four must be **`false`**. Verified on the live database: they are.
+
+The same check for the tables the site reads:
+
+```sql
+select tbl,
+       has_table_privilege('anon', tbl, 'SELECT') as sel,
+       has_table_privilege('anon', tbl, 'INSERT') as ins,
+       has_table_privilege('anon', tbl, 'UPDATE') as upd
+  from unnest(array['sports_fixtures','sports_markets','sports_selections',
+                    'sports_bets','feed_config','feed_requests']) tbl;
+```
+
+Expected: the three odds tables and `sports_bets` are `sel = true, ins = false,
+upd = false`; `feed_config` and `feed_requests` are **all false**. The site needs
+only `SELECT`. Writes happen exclusively through `place_sports_bet`, which is
+`security definer` and validates every limit itself.
+
+### Step 3 — run one cycle by hand
+
+Two calls, because `pg_net` is asynchronous: the first *fires* the HTTP
+requests, the second *reads* the responses. There is a gap of a second or two
+between them.
+
+```sql
+select feed_fire_sync();
+```
+
+Returns the number of sports it queued (currently **2**). Then wait a few
+seconds and:
+
+```sql
+with run as (select feed_ingest_odds() as n)
+select n as fixtures_ingested from run;
+```
+
+Returns **38** on a typical midweek EPL + Champions League payload. Then:
+
+```sql
+select (select count(*) from sports_fixtures)                as fixtures,
+       (select count(*) from sports_selections)              as selections,
+       (select count(*) from sports_selections where is_active) as active,
+       (select max(price_at) from sports_selections)         as newest_price;
+```
+
+Fixtures and selections non-zero, `active` equal to selections, `newest_price`
+within the last few minutes. That is a live board.
+
+The `with ... select` wrapper is not decoration: running the bare
+`select feed_ingest_odds()` works too, but a repeated identical statement can be
+deduplicated by tooling that talks to this database. The wrapper makes each call
+textually distinct.
+
+### Step 4 — prove it without spending a credit
+
+The provider does **not** bill `/v4/sports` (the catalogue endpoint). So the
+cheapest possible test of "is my key alive and is the catalogue what I think it
+is" costs nothing:
+
+```sql
+select content->0->>'key' as first_sport
+  from net._http_response order by id desc limit 1;
+```
+
+Better, check what you are *currently* configured to fetch:
+
+```sql
+select sports, margin_pct, enabled from feed_config where id = 1;
+```
+
+Expected: `["soccer_epl","soccer_uefa_champs_league"]`, `4`, `true`.
+
+### Step 5 — read the log
+
+```sql
+select id, sport, kind, fired_at, processed_at, error
+  from feed_requests order by id desc limit 10;
+```
+
+A healthy row has `fired_at`, a `processed_at` a second or two later, and a
+`null` `error`. A row with `error` set is the whole diagnosis — the message is
+the Postgres error text, truncated to 300 characters.
+
+```sql
+select id, home_team, away_team, league, starts_at, status
+  from sports_fixtures
+ where status in ('upcoming','live') and starts_at > now()
+ order by starts_at limit 10;
+```
+
+This is exactly the query the board runs, so if these rows look right the board
+looks right.
+
+### What runs after that
+
+| Job | Schedule | Cost per run | Does |
+|---|---|---|---|
+| `feed_fire_sync` | `7 */4 * * *` | 2 credits | Fires the odds requests for both sports |
+| `feed_ingest_odds` | `12,17 */4 * * *` | 0 | Reads the responses; runs twice to cover pg_net lag |
+| `feed_close_started` | `*/5 * * * *` | 0 | Closes markets at kick-off |
+
+The two-slot ingest is deliberate. `pg_net` does not guarantee the response has
+landed within five minutes of firing, and ingesting too early returns nothing.
+Running at :12 and again at :17 is idempotent — the second pass finds the queue
+already drained and does no work — so the redundant run costs nothing.
+
+**Credits:** 2 sports × 6 runs a day = **12 a day**, about **360 a month**
+against the 500-credit free tier. That leaves room for a third sport ×6 = ~540,
+which would be *over* budget — so NBA is deliberately **not** in `feed_config`
+yet. If you add one, shorten the schedule first:
+
+```sql
+update feed_config set sports = array['soccer_epl','soccer_uefa_champs_league','basketball_nba'] where id = 1;
+select cron.alter_job(1, schedule := '7 */6 * * *');   -- 3 sports × 4 a day = 360/mo
+select cron.alter_job(2, schedule := '12,17 */6 * * *');
+```
+
+### The board only shows games that have not started
+
+The free tier is **pre-match only**: there are no in-play prices to buy. So a
+fixture that has kicked off has no live price, and showing it would invite a bet
+at a price that stopped being real at kick-off.
+
+Three things keep that honest:
+
+1. `feed_close_started()` runs every five minutes and sets `is_open = false` on
+   every market whose fixture has started, and `is_active = false` on its
+   selections. The UI greys those out.
+2. `feed_ingest_odds()` skips any event whose `commence_time` is in the past, so
+   a stale payload cannot re-open them.
+3. `loadBoard()` asks only for `starts_at > now()`, and `place_sports_bet`
+   refuses outright with *"betting has closed for this event"*.
+
+Belt, braces, and a second belt — because the failure mode here is paying out on
+a match whose result is already public.
+
+### Price age is tied to the refresh cadence
+
+`place_sports_bet` refuses a price older than `max_price_age_seconds`, which now
+defaults to **15,000 seconds (about 4h10m)** — the 4-hour refresh plus ten
+minutes of slack. It used to be 90 minutes, which was wrong once the schedule
+became 4-hourly: bets would have been rejected for two and a half hours out of
+every four, and the error would have looked like a bug rather than a policy.
+
+Choosing it this way also gives you a free watchdog: **if `pg_cron` quietly
+stops, prices age past 15,000 seconds and betting shuts itself off** instead of
+offering month-old odds forever.
 
 ### If it does not work
 
 | What you see | Cause | Fix |
 |---|---|---|
-| Board says "No matches on the board yet" | No sync has run | Step 4 |
-| `{ "error": "ODDS_KEY_MISSING" }` | Key not in the build | Step 1 then step 2 |
-| `{ "error": "DB_KEY_MISSING" }` | Service role key missing | Step 1 |
-| `{ "error": "not authorised" }` | `CRON_SECRET` mismatch | Re-run step 1, redeploy |
-| `401` from every route | Wrong Vercel account linked | Step 0 |
-| Fixtures appear but a bet is refused with "odds are out of date" | No sync in 90 minutes | Check the cron ran; the limit is deliberate |
-| `404` on `/api/feed/*` | You are on GitHub Pages, not Vercel | Pages is static only — see §4b |
+| Board says "No matches on the board yet" | No successful ingest | Step 3 |
+| `feed_ingest_odds()` returns `0` and the queue is empty | The requests were already consumed | Step 3 again — fire first |
+| `feed_ingest_odds()` returns `0`, queue rows have `error` | The parser failed | Read `error`; it is the Postgres message |
+| `feed_fire_sync()` returns `0` | `feed_config.enabled` is false, or `sports` is empty | Check `feed_config` |
+| `error = 'http 401'` | Key invalid or revoked | Re-store it (Step 1) |
+| `error = 'http 422'` | A sport key is not in this plan's catalogue | Remove it from `feed_config` — it bills a credit anyway |
+| `error` mentions `r.status` or `r.body` | The old parser was running | It is fixed; `pg_net` uses `status_code` and `content` |
+| Fixtures present, bets refused as "out of date" | No ingest for over 4h | Check the cron jobs are `active` |
+| Bets refused with "betting has closed" | Kick-off has passed | Correct behaviour — the market is closed |
 
-That last row is the important one. **GitHub Pages cannot ever run the feed.**
-It serves files; it does not execute functions. `gh-pages` contains zero files
-under `api/`, and I verified that. The Sports section will render on Pages, but
-prices can only come from the Vercel host.
+**The two `pg_net` column names are the trap.** The response columns are
+`status_code` and `content`; reading `status` and `body` returns `NULL` rather
+than erroring, which looks exactly like "the API returned nothing". That bug cost
+a full cycle here, and it also stamped `processed_at` on the failure so the rows
+could not simply be retried. The current function leaves failed rows **pending**
+and writes the error, so a retry is just a re-run.
 
-### What runs after that
-
-| Route | Schedule | Cost | Does |
-|---|---|---|---|
-| `/api/feed/sync` | every 4 hours | 3 credits | Upserts fixtures + prices |
-| `/api/feed/settle` | every 4 hours, at :25 | 3 credits | Settles finished matches |
-
-Both are in `vercel.json`. Three sports × 6 runs a day = **18 credits/day**, about
-**540 a month** against the 500-credit free plan. That is already at the edge, so
-the schedule is 4-hourly rather than 2-hourly on purpose: at 2-hourly this list
-would cost ~1,080 a month and stop working halfway through the month.
-
-**If you add a sport, do the arithmetic first**, and shorten the settle window
-rather than the sync window if you are tight — a stale price is recoverable, a
-match that settles four hours late is a player waiting on their money.
-
-### The three sports
+### The sports in the catalogue
 
 ```
 soccer_epl                    Premier League        active
 soccer_uefa_champs_league     Champions League      active
-basketball_nba                NBA                   active
+basketball_nba                NBA                   available, not enabled
 ```
 
-Checked against the live catalogue on 20 Nov 2026, which also settled a
-question from the earlier research: **`soccer_africa_cup_of_nations` is not in
-this plan's catalogue at all.** Requesting it returns 422 and still bills a
-credit, so it is not in the list.
+Checked against the live catalogue on 20 Nov 2026, which also settled an earlier
+assumption: **`soccer_africa_cup_of_nations` is not in this plan's catalogue at
+all.** Requesting it returns 422 and still bills a credit.
 
-Change `SPORTS` at the top of `api/feed/sync.ts`. Every key you add costs one
-credit per run, forever. Re-check with:
+To list the whole catalogue for free, look at what the provider returned rather
+than guessing:
 
-```bash
-curl -H "Authorization: Bearer $CRON_SECRET" \
-     "https://shoppa-ten.vercel.app/api/feed/sports?active=1"
+```sql
+select jsonb_array_elements(content::jsonb)->>'key' as sport_key
+  from net._http_response
+ where id = (select max(id) from net._http_response);
 ```
 
-That endpoint costs **nothing** — the provider does not charge for `/v4/sports`
-— which is why it exists rather than being inferred from memory.
+(That works because each payload happened to be an array; for a definitive list
+it is easier to fire one request at `/v4/sports` and read it. Either way it is
+not billed.)
 
 ### The prices are not the feed's prices
 
 Two things happen between the provider's number and the board:
 
-1. **Consensus, not best price.** Several bookmakers quote each match. We take
-   the **median**. The best price is usually one book that has not repriced yet,
-   and building a board on the outlier means holding only the bets that were
-   about to be wrong.
-2. **A 4% margin is applied**, because publishing another book's number verbatim
-   is a zero-margin book: you carry all the market risk and keep none of the
-   compensation. `ODDS_MARGIN_PCT` overrides it; it is clamped to 25.
+1. **Consensus, not best price.** Several bookmakers quote each match — about 24
+   with `regions=eu`. We take the **median**. The best price is usually one book
+   that has not repriced yet, and building a board on the outlier means holding
+   exactly the bets that were about to be wrong.
+2. **A 4% margin is applied** — ours, on top of a fair line, not the bookmaker's
+   number with their margin still inside it. That distinction is worth spelling
+   out, because the first version got it wrong: taking each outcome's median
+   independently keeps the bookmakers' own overround, and stacking 4% on top of
+   that produced a book with a **10.3%** overround while `margin_pct` said 4.
 
-Rounding is **always down**, in our favour. Rounding up would hand the player a
-fraction of a percent on every single bet.
+   The fix is to normalise first. Sum `1/price` across the outcomes, divide each
+   probability by that sum, and only then apply the margin:
+
+   ```
+   fair_i = (1 / price_i) / Σ(1 / price_j)
+   odds_i = (1 / fair_i) × (1 − margin/100)
+   ```
+
+   Measured after the change: **1.0494**. That is the 4% we asked for, plus a
+   fraction of a percent from rounding odds down to whole hundredths in our
+   favour.
+
+Rounding is **always down**. Rounding up would hand the player a fraction of a
+percent on every single bet, in every market, forever.
 
 ### Three limits that only matter now prices are automated
 
@@ -483,46 +606,51 @@ All three are enforced in `place_sports_bet`, server-side, under a row lock:
 | Limit | Default | Why |
 |---|---|---|
 | Stake ceiling | 500,000 PX (50,000 UGX) | One account must not be able to take the whole market down on a short price. Per-market override: `sports_markets.max_stake_px`. |
-| Price age | 90 minutes | The feed polls every 2 hours. A price older than 90 minutes is refused rather than honoured. Per-market override: `max_price_age_seconds`. |
+| Price age | 15,000 s (~4h10m) | Matched to the 4-hour refresh plus slack. A price older than that is refused rather than honoured. Per-market override: `max_price_age_seconds`. |
 | Kick-off clock | `starts_at <= now()` | The feed's `status` lags reality. A match that started two minutes ago can still say `upcoming` in the last payload, and betting a known result is not a book. |
 
 Verified against the live database, not assumed:
 
 ```
 stake 600,000 PX   -> "stake exceeds the 500000 PX limit for this market"
-price 3h old       -> "odds for this market are out of date"
+price 3h old       -> "odds for this market are out of date"   (under the old 90-minute default)
 valid bet          -> accepted, ledger row written, balance debited
 ```
 
 ### How settlement decides
 
-`/api/feed/settle` reads the scores endpoint and will only act on an event with
-**`completed: true`**. A live match with a current score is *not* a result — it
-can still turn. A draw has no winner, so the `Draw` selection wins if the feed
-quoted one, and the market is **voided** if it did not. Nothing is guessed.
+Settlement is **not** automated yet in the database path. `settle_sports_market`
+and `settle_sports_bet` exist, are `service_role`-only, and are correct — but
+nothing currently calls them on a schedule, because that needs the scores
+endpoint and a rule for penalties and abandoned matches that has not been agreed.
 
-Fixtures are matched by the provider's event id (`external_id`), never by team
-name: names get respelled, ids do not.
+Until it is wired up, settling is the manual procedure in §3. Do not connect a
+scheduler to it expecting it to work; the job does not exist yet.
 
-### When it goes wrong
-
-Every run writes a row to `feed_sync_log` — status, fixtures seen, credits used,
-credits remaining, and the first 20 errors. A partial sync is logged as
-`partial`, not `ok`, because a board that is half-stale looks fine and is not.
-
-```sql
-select started_at, status, fixtures_upserted, credits_left, errors
-  from feed_sync_log order by started_at desc limit 10;
-```
-
-A fixture the feed stops returning is **voided**, never deleted:
-`void_stale_fixtures('oddsapi', 6)` refunds open slips through
-`settle_sports_market`. Deleting a fixture a player has a bet on would make the
-slip disappear rather than resolve.
+When it is wired up: it must only act on an event with **`completed: true`**. A
+live match with a current score is not a result — it can still turn. A draw has
+no winner, so the `Draw` selection wins if the feed quoted one, and the market is
+voiced if it did not. Fixtures are matched by the provider's event id
+(`external_id`), never by team name: names get respelled, ids do not.
 
 ### What this still does not give you
 
-- **Live in-play.** Polling every 2 hours cannot price a match in progress. This
-  is a pre-match book, and the schema says so.
+- **Live in-play.** The free tier prices pre-match events only. This is a
+  pre-match book, and the schema says so.
+- **Automated settlement.** See above — the functions exist, the job does not.
 - **A licence.** Every word of §6 still holds. The feed is data, not permission.
-- **More than 4 competitions** without spending more credits.
+  A sportsbook is *more* regulated than the casino, not less.
+
+### Reinstalling from scratch
+
+If the schedule is ever lost, these three statements rebuild it. They are
+idempotent, so running them when it already exists is harmless:
+
+```sql
+select cron.schedule('feed_fire_sync',     '7 */4 * * *',    'select feed_fire_sync()');
+select cron.schedule('feed_ingest_odds',   '12,17 */4 * * *', 'select feed_ingest_odds()');
+select cron.schedule('feed_close_started', '*/5 * * * *',    'select feed_close_started()');
+```
+
+---
+

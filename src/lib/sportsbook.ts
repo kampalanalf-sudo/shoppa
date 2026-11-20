@@ -60,8 +60,13 @@ export type Market = {
 
 /** Same default the database applies, so the UI blocks what the server blocks. */
 export const DEFAULT_MAX_STAKE_PX = 500_000
-/** Same default as place_sports_bet: prices older than this are refused. */
-export const MAX_PRICE_AGE_SECONDS = 5400
+/**
+ * Same default as place_sports_bet: prices older than this are refused.
+ * Matches the feed cadence (every 4h, pg_cron) plus 10 minutes of slack. If the
+ * cron ever stalls, prices age past this and betting shuts itself off, so this
+ * doubles as a feed-liveness watchdog.
+ */
+export const MAX_PRICE_AGE_SECONDS = 15_000
 
 /** True when a price is old enough that the server will reject a bet on it. */
 export function isPriceStale(priceAt: string | undefined, now = Date.now()): boolean {
@@ -107,8 +112,11 @@ export async function loadBoard(): Promise<{ fixtures: Fixture[]; markets: Marke
     .from('sports_fixtures')
     .select('*')
     .in('status', ['upcoming', 'live'])
+    // The free odds tier is pre-match only, so a fixture that has kicked off
+    // has no live price and must not be on the board.
+    .gt('starts_at', new Date().toISOString())
     .order('starts_at', { ascending: true })
-    .limit(60)
+    .limit(40)
   if (fErr) throw new Error(fErr.message)
 
   const ids = (fixtures ?? []).map((f) => (f as Fixture).id)
