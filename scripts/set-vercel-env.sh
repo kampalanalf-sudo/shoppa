@@ -2,7 +2,7 @@
 # scripts/set-vercel-env.sh
 #
 # Sets the FloatBet environment variables on the Vercel project that serves
-# shoppa-ten.vercel.app.
+# shoppa-sigma.vercel.app.
 #
 # Why a script: the connected Vercel integration authenticates as
 # charlielwanga88-4249, and that project lives in the `iuearadio` account, so
@@ -25,14 +25,17 @@ fi
 
 if [ ! -f .vercel/project.json ]; then
   echo "This directory is not linked to a Vercel project. Run: vercel link" >&2
-  echo "Link it to the project that serves shoppa-ten.vercel.app, NOT proxicore-visor." >&2
+  echo "Link it to the project named shoppa:  vercel link --project shoppa" >&2
   exit 1
 fi
 
 PROJECT_NAME=$(python3 -c "import json;print(json.load(open('.vercel/project.json')).get('projectName',''))" 2>/dev/null || true)
 echo "Linked project: ${PROJECT_NAME:-unknown}"
-if [ "${PROJECT_NAME:-}" = "proxicore-visor" ]; then
-  echo "Refusing to continue: this is linked to proxicore-visor, which is a different app." >&2
+# The live project was renamed proxicore-visor -> shoppa. Refuse anything else,
+# because setting environment variables on the wrong project looks like success
+# and changes nothing.
+if [ "${PROJECT_NAME:-}" != "shoppa" ]; then
+  echo "Refusing to continue: this is linked to '${PROJECT_NAME:-unknown}', not 'shoppa'." >&2
   echo "Re-link with: vercel link --project shoppa" >&2
   exit 1
 fi
@@ -52,7 +55,7 @@ add() {
 }
 
 echo "Setting public + non-secret values..."
-add APP_URL                 "https://shoppa-ten.vercel.app"  production preview
+add APP_URL                 "https://shoppa-sigma.vercel.app"  production preview
 add DGATEWAY_API_URL        "https://dgatewayapi.desispay.com" production preview
 add DGATEWAY_STORE_SLUG     "floatbet"                       production preview
 add SUPABASE_URL            "$SUPABASE_URL"                  production preview

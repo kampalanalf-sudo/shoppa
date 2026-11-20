@@ -41,8 +41,8 @@ profile and a **10,000 PX** welcome grant by the `handle_new_user()` trigger.
 *Authentication → URL Configuration*:
 
 ```
-Site URL:            https://shoppa-ten.vercel.app
-Redirect URLs:       https://shoppa-ten.vercel.app/**
+Site URL:            https://shoppa-sigma.vercel.app
+Redirect URLs:       https://shoppa-sigma.vercel.app/**
                      http://localhost:5173/**
 ```
 
@@ -66,7 +66,7 @@ supabase secrets set \
   DGATEWAY_WEBHOOK_SECRET=... \
   DGATEWAY_API_URL=https://dgatewayapi.desispay.com \
   DGATEWAY_ALLOW_TEST_PAYMENTS=false \
-  APP_URL=https://shoppa-ten.vercel.app
+  APP_URL=https://shoppa-sigma.vercel.app
 ```
 
 You said these are the same credentials Tank Tickets uses. They are not in any
