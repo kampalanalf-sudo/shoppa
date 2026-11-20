@@ -65,14 +65,21 @@ add ODDS_MARGIN_PCT "4"           production preview
 
 echo
 echo "----------------------------------------------------------------------"
-echo "ONE THING LEFT, and it must be done in the dashboard:"
+echo "TWO THINGS LEFT, and both must be done in the dashboard:"
 echo
 echo "  Vercel -> project 'shoppa' -> Settings -> Environment Variables"
-echo "  Add  ODDS_API_KEY   = <your key from the-odds-api.com>"
-echo "  Targets: Production + Preview.  Tick SENSITIVE."
 echo
-echo "  Do not put it in this script or in .env.example: a billable key in a"
-echo "  tracked file is a key that ends up in the bundle one refactor later."
+echo "  1. ODDS_API_KEY              <- your key from the-odds-api.com"
+echo "  2. SUPABASE_SERVICE_ROLE_KEY <- Supabase > Project Settings > API"
+echo
+echo "  Targets: Production + Preview.  Tick SENSITIVE on both."
+echo
+echo "  Without (2) the sync route returns DB_KEY_MISSING and there is"
+echo "  nowhere to write fixtures -- it is the one people forget."
+echo
+echo "  Do not put either in this script or in .env.example: a billable key"
+echo "  in a tracked file is a key that ends up in the bundle one refactor"
+echo "  later."
 echo "----------------------------------------------------------------------"
 echo
 echo "Then redeploy, because env only applies to new builds:"

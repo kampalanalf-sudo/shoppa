@@ -61,6 +61,13 @@ function Shell() {
   const goHome = useCallback(() => {
     setView({ name: 'home' })
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+    // Clear the hash too, or a back-then-refresh sends you straight back to the
+    // view you just left.
+    try {
+      if (window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname)
+      }
+    } catch { /* noop */ }
   }, [])
 
   // URL hash routing so games are shareable/refreshable
@@ -106,6 +113,15 @@ function Shell() {
     setView({ name: 'cashout' })
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
     try { window.history.replaceState(null, '', '#cashout') } catch { /* noop */ }
+  }, [])
+
+  // Sports is a view, not a game, so it needs its own opener. The hash matters:
+  // without it a refresh dropped you back on the home page instead of reloading
+  // the board you were looking at.
+  const openSportsbook = useCallback(() => {
+    setView({ name: 'sportsbook' })
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+    try { window.history.replaceState(null, '', '#sports') } catch { /* noop */ }
   }, [])
 
   const openSuccess = useCallback((reference: string | null) => {
@@ -187,17 +203,22 @@ function Shell() {
   return (
     <div className="min-h-screen">
       <Header
-        view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : 'home'}
+        view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : view.name === 'sportsbook' ? 'sportsbook' : 'home'}
         onNavigate={(v, id) =>
           v === 'game' && id
             ? play(id)
-            : v === 'proxicash'
-              ? openProxiCash()
-              : v === 'cashout'
-                ? openCashout()
-                : v === 'topup'
-                  ? setTopUpOpen(true)
-                  : home()
+            : v === 'sportsbook'
+              // Without this branch every Sports link — the nav item, the
+              // account menu entry, the category pill and the mobile tab — fell
+              // through to home(), so "Sports" looked like a dead button.
+              ? openSportsbook()
+              : v === 'proxicash'
+                ? openProxiCash()
+                : v === 'cashout'
+                  ? openCashout()
+                  : v === 'topup'
+                    ? setTopUpOpen(true)
+                    : home()
         }
         onSearch={() => setSearch(true)}
       />
@@ -236,17 +257,22 @@ function Shell() {
       <Footer />
       <div className="h-16 md:hidden" />
       <BottomBar
-        view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : 'home'}
+        view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : view.name === 'sportsbook' ? 'sportsbook' : 'home'}
         onNavigate={(v, id) =>
           v === 'game' && id
             ? play(id)
-            : v === 'proxicash'
-              ? openProxiCash()
-              : v === 'cashout'
-                ? openCashout()
-                : v === 'topup'
-                  ? setTopUpOpen(true)
-                  : home()
+            : v === 'sportsbook'
+              // Without this branch every Sports link — the nav item, the
+              // account menu entry, the category pill and the mobile tab — fell
+              // through to home(), so "Sports" looked like a dead button.
+              ? openSportsbook()
+              : v === 'proxicash'
+                ? openProxiCash()
+                : v === 'cashout'
+                  ? openCashout()
+                  : v === 'topup'
+                    ? setTopUpOpen(true)
+                    : home()
         }
       />
       <ChatDock onOpenRoom={() => setRoomOpen(true)} />

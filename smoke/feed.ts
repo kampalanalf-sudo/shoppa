@@ -24,6 +24,11 @@ const feed = read('api/_lib/oddsfeed.ts')
 const sync = read('api/feed/sync.ts')
 const settle = read('api/feed/settle.ts')
 const sql = read('supabase/migrations/0007_odds_feed.sql')
+// 0008 moved the feed into the database and re-tuned the staleness guard to the
+// 4-hourly cadence, so the "client matches the database" check must read both.
+const sqlDb = read('supabase/migrations/0008_feed_in_database.sql')
+// Comments describe intent; only the executable statements are asserted on.
+const sqlDbCode = sqlDb.replace(/^\s*--.*$/gm, '')
 const lib = read('src/lib/sportsbook.ts')
 const page = read('src/pages/Sportsbook.tsx')
 const vercel = read('vercel.json')
@@ -72,13 +77,22 @@ ok('the response headers are read so the remaining budget is visible',
 ok('a 429 is reported as a quota problem, not a generic failure', feed.includes('ODDS_QUOTA'))
 // 4 sports x every 2 hours = 48/day is too much; the schedule must be modest.
 const cron = JSON.parse(vercel).crons as { path: string; schedule: string }[]
-ok('a sync is scheduled', cron.some((c) => c.path === '/api/feed/sync'))
-ok('a settle run is scheduled', cron.some((c) => c.path === '/api/feed/settle'))
-// 3 sports x every 4 hours = 18 credits/day, ~540 a month. That is already at
-// the edge of the 500-credit free plan, so a tighter schedule would not fit.
-ok('the sync does not run more often than every 4 hours',
-  cron.filter((c) => c.path === '/api/feed/sync').every((c) => /^\d+ \*\/[4-9]\d*|^\d+ \*\/[4-9] \* \* \*$/.test(c.schedule)),
-  cron.find((c) => c.path === '/api/feed/sync')?.schedule)
+
+// Every deployment of this project was refused before it built, with
+// "Hobby accounts are limited to daily cron jobs". Vercel rejects the whole
+// deployment, not just the cron, so a `crons` entry more frequent than daily
+// does not degrade the feed -- it takes the entire site down. This test used to
+// require a 4-hourly sync cron and so locked that outage in.
+ok('no Vercel cron runs more often than daily (Hobby plan)',
+  cron.every((c) => {
+    const [min, hour] = c.schedule.split(' ')
+    return !min.includes('*') && !hour.includes('*')
+  }),
+  cron.map((c) => c.schedule).join(' | '))
+// The odds sync runs on pg_cron inside Supabase, where there is no plan limit
+// and no redeploy needed. Vercel must not schedule it a second time.
+ok('the odds sync is not scheduled on Vercel', !cron.some((c) => c.path === '/api/feed/sync'))
+ok('a daily settle run is still scheduled', cron.some((c) => c.path === '/api/feed/settle'))
 
 // ----------------------------------------------------------------- auth ====
 ok('the sync requires a secret or an admin', sync.includes('CRON_SECRET') && sync.includes('is_admin'))
@@ -113,11 +127,58 @@ ok('a stale board is voided, never silently deleted', sql.includes('void_stale_f
 ok('the client mirrors the ceiling so the player is warned first',
   page.includes('DEFAULT_MAX_STAKE_PX') && page.includes('overMax'))
 ok('the client mirrors the staleness rule', page.includes('isPriceStale'))
-ok('the client defaults match the database defaults',
-  lib.includes('500_000') && sql.includes('500000') && lib.includes('5400') && sql.includes('5400'))
+// The client mirrors the server so the player is warned before the server says
+// no. If these drift, the UI promises something the database will refuse.
+ok('the stake ceiling matches in client and database',
+  lib.includes('500_000') && (sql.includes('500000') || sqlDb.includes('500000')))
+// The staleness guard is now tied to the 4-hourly refresh: 15,000s, not 5,400.
+// A 90-minute guard against a 4-hourly feed would refuse every bet for 2.5h of
+// every 4 — the test used to lock in that bug, so it now asserts the pairing.
+ok('the client staleness window matches the database default',
+  lib.includes('15_000') && sqlDb.includes('set default 15000'))
+ok('a 90-minute guard is gone from the client', !lib.includes('5400'))
 ok('the board says where its prices came from', page.includes('live odds'))
 ok('a refresh does not cost a credit (it only re-reads Supabase)',
   !page.includes('/api/feed/'))
+
+// ------------------------------------------------ in-database feed (0008) ====
+// The feed now runs on pg_cron + pg_net with the key in Vault, so the rules
+// below are what keep it safe without a serverless host mediating anything.
+ok('the key lives in Vault, not in a build environment',
+  sqlDb.includes("vault.decrypted_secrets") && sqlDb.includes("'odds_api_key'"))
+ok('the feed functions are revoked from every client role',
+  sqlDb.includes('revoke all on function feed_fire_sync()'))
+ok('the site may read odds but never write them',
+  sqlDb.includes('revoke insert, update, delete, truncate, references, trigger'))
+// pg_net names its response columns status_code/content. Reading status/body
+// returns NULL rather than raising, which looks identical to an empty payload.
+ok('the parser reads pg_net\'s real column names',
+  sqlDb.includes('r.status_code') && sqlDb.includes('r.content') &&
+  !sqlDb.includes('r.status,') && !sqlDb.includes('r.body'))
+// A failure that stamps processed_at consumes the request, so the retry
+// silently ingests nothing. That is how the first live run lost a cycle.
+ok('a failed request is left pending so it can be retried',
+  /exception when others then[\s\S]{0,300}?update feed_requests set error/.test(sqlDbCode) &&
+  !/exception when others then[\s\S]{0,300}?processed_at/.test(sqlDbCode))
+// Taking each outcome's median independently stacks our margin on the
+// bookmakers' own overround: measured 1.103 while the config said 4%.
+// `on conflict do nothing` with no constraint to conflict with does nothing at
+// all. That is how markets doubled from 114 to 228 selections in two runs, and
+// it would have doubled the board every four hours from then on.
+ok('a market upserts against a real unique constraint',
+  sqlDb.includes('sports_markets_fixture_name') &&
+  /create unique index[\s\S]{0,120}sports_markets \(fixture_id, name\)/.test(sqlDbCode))
+ok('the bookmakers\' overround is stripped before our margin is applied',
+  sqlDb.includes('v_overround') && sqlDb.includes('sum(1.0 / price)'))
+ok('markets close at kick-off on a five-minute job',
+  sqlDb.includes("cron.schedule('feed_close_started'") && sqlDb.includes('*/5 * * * *'))
+ok('the parser ignores events that have already started',
+  sqlDb.includes("if (v_ev->>'commence_time')::timestamptz <= now() then continue; end if;"))
+ok('the board asks only for fixtures that have not started',
+  lib.includes(".gt('starts_at', new Date().toISOString())"))
+// 2 sports x 6 runs/day is ~360 of the 500 free credits. NBA would be ~540.
+ok('the default sport list fits the free credit tier',
+  sqlDb.includes("array['soccer_epl', 'soccer_uefa_champs_league']"))
 
 // ------------------------------------------------------------- config =======
 ok('an unconfigured feed is detectable without throwing', typeof isFeedConfigured() === 'boolean')
