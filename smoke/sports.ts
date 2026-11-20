@@ -83,6 +83,21 @@ ok('sports has a route', app.includes("h === 'sports' || h === 'sportsbook'") &&
   app.includes("<Sportsbook onBack={home} />"))
 ok('sports is in the desktop nav', chrome.includes("onNavigate('sportsbook')"))
 ok('sports is in the mobile bottom bar', /label: 'Sports'/.test(chrome))
+
+// Checking that the nav emits 'sportsbook' is not the same as checking that
+// anything listens. It did emit, and every handler fell through to home(), so
+// "Sports" was a dead button that bounced the player back to the homepage --
+// and every test above still passed. Assert the wiring, not just the label.
+ok('the header and bottom bar both handle the sportsbook destination',
+  (app.match(/v === 'sportsbook'[\s\S]{0,400}?\? openSportsbook\(\)/g) ?? []).length === 2)
+ok('the sports opener sets the view', /openSportsbook = useCallback\(\(\) => \{\s*setView\(\{ name: 'sportsbook' \}\)/.test(app))
+ok('the sports opener sets a reloadable hash', app.includes("replaceState(null, '', '#sports')"))
+// Without this the nav highlights Home while you are reading the board.
+ok('the header is told it is on the sportsbook view',
+  app.includes("view.name === 'sportsbook' ? 'sportsbook' : 'home'"))
+// Every destination a nav item can emit must have a branch that is not home().
+ok('no nav destination silently falls back to home',
+  !/v === 'sportsbook'[\s\S]{0,80}?: home\(\)/.test(app))
 ok('every sport has a label',
   (['football', 'basketball', 'athletics', 'motorsport', 'cricket', 'rugby', 'tennis'] as const)
     .every((s) => Boolean(SPORT_LABEL[s])))
