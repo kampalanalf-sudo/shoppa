@@ -102,6 +102,16 @@ ok('every sport has a label',
   (['football', 'basketball', 'athletics', 'motorsport', 'cricket', 'rugby', 'tennis'] as const)
     .every((s) => Boolean(SPORT_LABEL[s])))
 
+// ------------------------------------------------------ postgrest embeds ====
+// Two foreign keys join sports_markets and sports_selections: the owning
+// market_id, and the settlement pointer winning_selection_id. A bare
+// `sports_selections(*)` embed is therefore ambiguous and PostgREST rejects the
+// whole query (PGRST201) -- which empties the board with no obvious cause.
+ok('the board embed names its foreign key',
+  lib.includes('sports_selections!sports_selections_market_id_fkey(*)'))
+ok('no embed relies on an ambiguous relationship',
+  !/\.select\('[^']*sports_selections\(\*\)/.test(lib))
+
 // ------------------------------------------------- in-house currency ========
 // PX is now earned rather than bought: a daily login award, gated conversion.
 // These are the rules the whole economy rests on, so they are asserted here.
