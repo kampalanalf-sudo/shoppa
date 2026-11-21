@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { sfx } from '../lib/sound'
+import { artFor } from '../lib/fixtureArt'
 import { coin, money } from '../lib/format'
 import {
   DEFAULT_MAX_STAKE_PX, SPORT_LABEL, fmtOdds, isPriceStale, loadBoard, loadSlips, placeBet,
@@ -361,9 +362,27 @@ function FixtureCard({
   const primary = markets[0]
   const rest = markets.slice(1)
   const countdown = startsIn(fixture.starts_at)
+  // Only the featured fixtures have art; the rest render exactly as before.
+  const art = artFor(fixture.home_team, fixture.away_team)
 
   return (
     <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.02]">
+      {art && (
+        // The banner is decorative: the fixture name below is the accessible
+        // label, so alt stays empty rather than repeating it to a screen
+        // reader. The gradient keeps the odds readable where the image runs
+        // bright behind the market row.
+        <div className="relative h-[104px] w-full overflow-hidden sm:h-[124px]">
+          <img
+            src={art}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="h-full w-full object-cover object-center"
+          />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0a0f1c] via-[#0a0f1c]/25 to-transparent" />
+        </div>
+      )}
       <div className="flex items-center gap-2 border-b border-white/[0.05] px-3 py-2">
         <span className="rounded-md bg-neon-lime/10 px-1.5 py-0.5 text-[9.5px] font-black uppercase tracking-wider text-neon-lime">
           {SPORT_LABEL[fixture.sport]}

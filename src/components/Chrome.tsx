@@ -182,6 +182,29 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
                 <MenuItem icon={<IconGift size={15} />} onClick={() => { setRewardsOpen(true); setAccountOpen(false) }}>Rewards &amp; bonuses</MenuItem>
                 <MenuItem icon={<IconTrophy size={15} />} onClick={() => { setHistoryOpen(true); setAccountOpen(false) }}>Rank &amp; leaderboard</MenuItem>
 
+                {/* Admin-only entries. is_admin comes from the database via
+                    useAuth, but this is still only a shortcut: both screens and
+                    every API call behind them re-check the flag server-side, so
+                    removing this block would not grant anyone access. */}
+                {profile?.is_admin && (
+                  <>
+                    <div className="divider my-1" />
+                    <p className="px-3 pt-1 pb-0.5 text-[9.5px] font-bold uppercase tracking-[.16em] text-violet-400/70">Admin</p>
+                    <MenuItem
+                      icon={<IconUser size={15} />}
+                      onClick={() => { setAccountOpen(false); window.location.hash = 'admin/players' }}
+                    >
+                      Players
+                    </MenuItem>
+                    <MenuItem
+                      icon={<IconShield size={15} />}
+                      onClick={() => { setAccountOpen(false); window.location.hash = 'admin/parked' }}
+                    >
+                      Parked payments
+                    </MenuItem>
+                  </>
+                )}
+
                 {configured && (
                   <MenuItem
                     icon={<IconKey size={15} />}

@@ -17,6 +17,7 @@ import { ChatRoom } from './components/ChatRoom'
 import { TopUpPanel } from './components/TopUpPanel'
 import { TopUpSuccess } from './pages/TopUpSuccess'
 import { AdminParked } from './pages/AdminParked'
+import { AdminPlayers } from './pages/AdminPlayers'
 import { BonniClyve } from './games/BonniClyve'
 import { EngineSlot } from './games/EngineSlot'
 import { CHAPE, BLUE_MOUNTAIN } from './lib/slots/games'
@@ -41,6 +42,7 @@ type View =
   | { name: 'sportsbook' }
   | { name: 'topup-success'; reference: string | null }
   | { name: 'admin-parked' }
+  | { name: 'admin-players' }
 
 function Shell() {
   const { sound, setFairOpen, setWalletOpen, hydrated } = useStore()
@@ -89,6 +91,7 @@ function Shell() {
       if (h === 'reset-password') { setView({ name: 'set-password' }); return }
       if (h === 'verified') { setView({ name: 'auth' }); return }
       if (h === 'admin/parked') { setView({ name: 'admin-parked' }); return }
+      if (h === 'admin/players' || h === 'admin') { setView({ name: 'admin-players' }); return }
       if (h.startsWith('topup-success')) {
         const ref = new URLSearchParams(raw.split('?')[1] || '').get('reference')
         setView({ name: 'topup-success', reference: ref })
@@ -244,6 +247,7 @@ function Shell() {
         {view.name === 'sportsbook' && <Sportsbook onBack={home} />}
         {/* Placeholder kept so the grid does not shift while loading. */}
         {view.name === 'admin-parked' && <AdminParked onHome={home} />}
+        {view.name === 'admin-players' && <AdminPlayers onHome={home} />}
         {view.name === 'topup-success' && (
           <TopUpSuccess
             reference={view.reference}
@@ -251,7 +255,7 @@ function Shell() {
             onTopUpAgain={() => { home(); setTopUpOpen(true) }}
           />
         )}
-        {!current && !isProxiCash && view.name !== 'sportsbook' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} />}
+        {!current && !isProxiCash && view.name !== 'sportsbook' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} onSports={openSportsbook} />}
       </main>
 
       <Footer />
