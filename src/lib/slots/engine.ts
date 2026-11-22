@@ -15,8 +15,15 @@
 export type SlotSymbolDef = {
   id: string
   name: string
-  /** 3 / 4 / 5-of-a-kind multipliers per way. Absent => non-paying blocker. */
-  pay?: [number, number, number]
+  /**
+   * Per-way multipliers for 3-of-a-kind and up, in reel order.
+   *
+   * Indexed from 3, so entry 0 is the 3-of-a-kind pay. A 5-reel game needs
+   * three entries; Craters is 4 reels wide, where a 5-of-a-kind cannot exist,
+   * so it carries two. Declaring a fixed 3-tuple forced it to ship an entry
+   * that could never fire.
+   */
+  pay?: number[]
   weight: number
   tier: 'high' | 'mid' | 'low' | 'special'
   /** emoji/glyph used by the vector symbol renderer */

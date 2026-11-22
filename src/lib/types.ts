@@ -12,6 +12,7 @@ export type GameId =
   | 'bluemountain'
   | 'bazaar'
   | 'boda'
+  | 'craters'
 
 export type GameMeta = {
   id: GameId
