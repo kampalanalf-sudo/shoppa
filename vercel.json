@@ -3,6 +3,18 @@
   "functions": {
     "api/**/*.ts": { "maxDuration": 30 }
   },
+  "rewrites": [
+    {
+      "comment": "The Hobby plan allows 12 Serverless Functions per deployment and this project needs 11. The admin surface therefore lives behind one router (api/admin/ops.ts) and these rewrites map the original paths onto it, so every existing URL and client call keeps working. Add a fifth admin operation by extending ops.ts and adding a line here -- not by adding a file, which is what broke the deploy.",
+      "source": "/api/admin/health",
+      "destination": "/api/admin/ops?op=health"
+    },
+    { "source": "/api/admin/cashouts", "destination": "/api/admin/ops?op=cashouts" },
+    { "source": "/api/admin/audit", "destination": "/api/admin/ops?op=audit" },
+    { "source": "/api/admin/players", "destination": "/api/admin/ops?op=players" },
+    { "source": "/api/admin/lookup", "destination": "/api/admin/ops?op=lookup" },
+    { "source": "/api/admin/actions", "destination": "/api/admin/ops?op=actions" }
+  ],
   "crons": [
     {
       "path": "/api/feed/settle",

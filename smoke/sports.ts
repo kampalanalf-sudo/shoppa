@@ -7,6 +7,7 @@
 // the two invariants that make that impossible, plus the money arithmetic that
 // everything else depends on.
 import { readFileSync } from 'node:fs'
+import { execSync } from 'node:child_process'
 import { resolve } from 'node:path'
 import { fmtOdds, potentialPayout, startsIn, stakeUgx, SPORT_LABEL } from '../src/lib/sportsbook'
 
@@ -104,7 +105,8 @@ ok('every sport has a label',
 
 // --------------------------------------------------- admin operations =====
 const adminSql = read('supabase/migrations/0010_admin_operations.sql')
-const adminApi = read('api/admin/actions.ts')
+const adminApi = read('api/admin/ops.ts')
+const vercelCfg = read('vercel.json')
 const adminConsole = read('src/pages/AdminConsole.tsx')
 
 // The mistake this suite exists to prevent, made once already: revoking from
@@ -142,6 +144,18 @@ ok('an already-settled payout cannot be settled twice',
   adminApi.includes('already ${co.status}'))
 ok('adjustments are capped so a stray zero cannot drain a wallet',
   adminApi.includes('5_000_000'))
+
+// Vercel Hobby allows 12 Serverless Functions per deployment. Exceeding it does
+// not fail the build -- it fails the DEPLOY, after the merge, with production
+// still serving the previous commit. That happened once here; this is the guard.
+{
+  const files = execSync('find api -name "*.ts" -not -path "*/_lib/*"', { encoding: 'utf8' })
+    .trim().split('\n').filter(Boolean)
+  ok('the deployment stays within the 12-function Hobby limit', files.length <= 12)
+  ok('there is headroom for the next endpoint', files.length <= 11)
+  ok('the admin paths are rewritten onto the router, not separate files',
+    (vercelCfg.match(/\/api\/admin\//g) || []).length >= 6)
+}
 
 // Console UI
 ok('paying a payout requires confirmation naming the amount',
