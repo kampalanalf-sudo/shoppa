@@ -269,10 +269,13 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
           )}
 
           <div className="grid gap-2.5">
-            {shown.map((f) => (
+            {shown.map((f, i) => (
               <FixtureCard
                 key={f.id}
                 fixture={f}
+                // The first two cards are what the page opens on; the rest can
+                // wait for the scroll.
+                eager={i < 2}
                 markets={marketsFor(f.id)}
                 onPick={(selection, market) => {
                   sfx.click()
@@ -410,35 +413,45 @@ function SportPill({ active, onClick, children }: { active: boolean; onClick: ()
 }
 
 function FixtureCard({
-  fixture, markets, onPick,
+  fixture, markets, onPick, eager,
 }: {
   fixture: Fixture
   markets: Market[]
   onPick: (s: Selection, m: Market) => void
+  /** Above the fold: load the banner immediately instead of on scroll. */
+  eager?: boolean
 }) {
   const [openAll, setOpenAll] = useState(false)
   const primary = markets[0]
   const rest = markets.slice(1)
   const countdown = startsIn(fixture.starts_at)
   // Only the featured fixtures have art; the rest render exactly as before.
-  const art = artFor(fixture.home_team, fixture.away_team)
+  const art = artFor(fixture.home_team, fixture.away_team, fixture.sport)
 
   return (
     <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.02]">
       {art && (
         // The banner is decorative: the fixture name below is the accessible
         // label, so alt stays empty rather than repeating it to a screen
-        // reader. The gradient keeps the odds readable where the image runs
-        // bright behind the market row.
-        <div className="relative h-[104px] w-full overflow-hidden sm:h-[124px]">
+        // reader.
+        //
+        // The gradient is bottom-weighted and deliberately weak at the top.
+        // An earlier version ran a full-height overlay at 25% opacity, which
+        // washed the brightest part of the image toward the card colour and
+        // made the art look like it had failed to load. It now only firms up
+        // the last few pixels above the fixture row, where the odds sit.
+        <div className="relative h-[112px] w-full overflow-hidden sm:h-[132px]">
           <img
             src={art}
             alt=""
-            loading="lazy"
+            // Above-the-fold cards must not wait for a scroll event. The board
+            // shows ~40 fixtures; the first two are what the page opens on.
+            loading={eager ? 'eager' : 'lazy'}
+            fetchPriority={eager ? 'high' : 'auto'}
             decoding="async"
             className="h-full w-full object-cover object-center"
           />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0a0f1c] via-[#0a0f1c]/25 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-[#0a0f1c] via-[#0a0f1c]/55 to-transparent" />
         </div>
       )}
       <div className="flex items-center gap-2 border-b border-white/[0.05] px-3 py-2">

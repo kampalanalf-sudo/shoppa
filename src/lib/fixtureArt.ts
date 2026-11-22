@@ -1,46 +1,71 @@
 import { asset } from './games'
 
 /**
- * Promotional art for the board's featured fixtures.
+ * Promotional art for the board.
  *
- * Hand-picked rather than generated per fixture, for two reasons:
+ * WHY THIS IS KEYED ON TEAMS AND NOT FIXTURES
  *
- *  1. Cost and weight. A picture per match would mean dozens of images and a
- *     heavy page on a mobile connection. Four marquee banners plus a hero give
- *     the board its visual character for a fraction of the bytes.
- *  2. Editorial control. Fixture art names real players, so each image is a
- *     deliberate choice rather than an automatic consequence of whatever the
- *     feed published. An unattended generator would happily produce a
- *     likeness for a fixture nobody vetted.
+ * The first version mapped four specific fixtures -- "Manchester City v Fulham",
+ * "Newcastle United v Arsenal" -- and it worked for exactly one day. The odds
+ * feed replaces the slate as matches kick off, so within 24 hours every image
+ * was attached to a fixture that had already been played and filtered off the
+ * board. The art did not break; it simply stopped applying, which on screen is
+ * indistinguishable from never having existed.
  *
- * Keyed by a normalised "home away" pair, because the feed re-creates fixtures
- * with new ids on every sync — a key on id would break the moment the feed
- * refreshes. The normaliser strips the suffixes clubs carry in one feed and not
- * another ("Manchester City FC" vs "Manchester City").
+ * Keying on the club instead means an image stays useful for as long as that
+ * club is in the feed, which is months rather than hours.
  *
- * Everything not in this map falls back to `artFor()` returning null, and the
- * card renders exactly as it did before: no art, no empty box.
+ * There is also a sport-level fallback, so every football card has art even when
+ * both teams are ones we have never drawn. A board where some cards have banners
+ * and others have none looks broken; a board where they all have one looks
+ * deliberate. That is the whole point of the fallback.
  */
-const ART: Record<string, string> = {
-  'manchester-city fulham': asset('/art/fixtures/mci-ful.webp'),
-  'newcastle-united arsenal': asset('/art/fixtures/new-ars.webp'),
-  'tottenham-hotspur ipswich-town': asset('/art/fixtures/tot-ips.webp'),
-  'chelsea leeds-united': asset('/art/fixtures/che-lee.webp'),
+
+/** Club banner. Keys are normalised club names -- see `norm()`. */
+const TEAM_ART: Record<string, string> = {
+  'liverpool': asset('/art/teams/liverpool.webp'),
+  'arsenal': asset('/art/teams/arsenal.webp'),
+  'manchester-united': asset('/art/teams/manchester-united.webp'),
+  'manchester-city': asset('/art/teams/manchester-city.webp'),
+  'chelsea': asset('/art/teams/chelsea.webp'),
+  'tottenham-hotspur': asset('/art/teams/tottenham-hotspur.webp'),
+  'aston-villa': asset('/art/teams/aston-villa.webp'),
 }
 
-/** The front-page sports banner. Separate from per-fixture art. */
+/** Used when neither club has its own banner. */
+const SPORT_ART: Record<string, string> = {
+  football: asset('/art/teams/fallback-football.webp'),
+}
+
+/** The front-page sports band. Separate from per-fixture art. */
 export const SPORTS_HERO = asset('/art/sports-hero.webp')
 
-// Only the suffixes that genuinely vary between feeds. "United" is kept: it is
-// part of the club's name and "newcastle" would collide with Newcastle Falcons.
+/**
+ * Only the suffixes that genuinely vary between feeds. "United" and "City" are
+ * kept: they are part of the club's name, and stripping them would collide
+ * Manchester United with Newcastle United and Manchester City with Leicester.
+ */
 const norm = (team: string): string =>
   team
     .toLowerCase()
     .replace(/\b(fc|afc|cf|sc)\b/g, '')
+    .replace(/&/g, 'and')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
 
-/** Art for a fixture, or null when it has none. */
-export function artFor(home: string, away: string): string | null {
-  return ART[`${norm(home)} ${norm(away)}`] ?? null
+/**
+ * Art for a fixture. Never returns null for a sport we have a fallback for, so
+ * the card always has a visual.
+ *
+ * Home club first: the home side is what a banner is normally built around, and
+ * it keeps a given fixture looking stable rather than flipping depending on
+ * which club happens to be listed first.
+ */
+export function artFor(home: string, away: string, sport: string): string | null {
+  return (
+    TEAM_ART[norm(home)] ??
+    TEAM_ART[norm(away)] ??
+    SPORT_ART[sport.toLowerCase()] ??
+    null
+  )
 }
