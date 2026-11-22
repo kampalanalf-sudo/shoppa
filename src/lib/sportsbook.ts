@@ -105,8 +105,47 @@ export function potentialPayout(stakePx: number, oddsX100: number): number {
   return Math.floor((stakePx * oddsX100) / 100)
 }
 
-export async function loadBoard(): Promise<{ fixtures: Fixture[]; markets: Market[] }> {
-  if (!supabase) return { fixtures: [], markets: [] }
+/**
+ * Why the board is empty, when the queries themselves succeeded.
+ *
+ * An empty board has several innocent explanations and one alarming one, and
+ * they look identical on screen. Rather than make the player (or me at 11pm)
+ * guess, ask the database two cheap questions only when the board comes back
+ * empty:
+ *
+ *   - does any fixture exist at all?  ("the feed has never run")
+ *   - is there one whose kickoff has not passed?  ("every match has started")
+ *
+ * If both are yes and the board is still empty, the filter is the bug. That
+ * distinction is the whole point: "no matches yet" is a lie when the cause is
+ * "we asked the wrong question".
+ */
+async function diagnoseEmpty(): Promise<{ total: number; upcoming: number } | null> {
+  if (!supabase) return null
+  try {
+    const nowIso = new Date().toISOString()
+    const [all, future] = await Promise.all([
+      supabase.from('sports_fixtures').select('id', { count: 'exact', head: true }),
+      supabase
+        .from('sports_fixtures')
+        .select('id', { count: 'exact', head: true })
+        .in('status', ['upcoming', 'live'])
+        .gt('starts_at', nowIso),
+    ])
+    if (all.error || future.error) return null
+    return { total: all.count ?? 0, upcoming: future.count ?? 0 }
+  } catch {
+    // Diagnostics must never mask the board itself.
+    return null
+  }
+}
+
+export async function loadBoard(): Promise<{
+  fixtures: Fixture[]
+  markets: Market[]
+  empty?: { total: number; upcoming: number } | null
+}> {
+  if (!supabase) return { fixtures: [], markets: [], empty: null }
 
   const { data: fixtures, error: fErr } = await supabase
     .from('sports_fixtures')
@@ -120,7 +159,7 @@ export async function loadBoard(): Promise<{ fixtures: Fixture[]; markets: Marke
   if (fErr) throw new Error(fErr.message)
 
   const ids = (fixtures ?? []).map((f) => (f as Fixture).id)
-  if (!ids.length) return { fixtures: [], markets: [] }
+  if (!ids.length) return { fixtures: [], markets: [], empty: await diagnoseEmpty() }
 
   // The embed MUST name its foreign key. There are two relationships between
   // sports_markets and sports_selections:

@@ -128,9 +128,34 @@ order by 1;
 | Email provider | **Enabled** |
 | Confirm email | **Enabled** (you asked for verification) |
 | Google provider | **Enabled** (verified on the live project — client id `763098030610-...`) |
-| Site URL | `https://shoppa-sigma.vercel.app` |
-| Redirect URLs (allow list) | `https://shoppa-sigma.vercel.app/**` |
-| | `http://localhost:5173/**` |
+| Site URL | `https://floatbet.space` |
+| Redirect URLs (allow list) | `https://floatbet.space/**`, `https://www.floatbet.space/**` |
+| | `https://shoppa-sigma.vercel.app/**` (kept as a fallback) |
+| | `http://localhost:5173/**`, `**/auth/callback` |
+
+### Launch state, verified 21 Nov 2026
+
+Checked against the live project and live DNS, not from memory:
+
+| Item | State |
+|---|---|
+| `floatbet.space` DNS + TLS | ✅ **live**, serving the app |
+| `shoppa-sigma.vercel.app` | ✅ live (fallback host) |
+| Supabase Site URL | ✅ `https://floatbet.space` |
+| Redirect allow list | ✅ floatbet + www + vercel + localhost |
+| Google provider | ✅ enabled with a real client id |
+| Google OAuth origins | ❌ **`floatbet.space` must be added in Google Cloud** |
+| Email provider | ✅ enabled, confirmation required |
+| Phone OTP (gates cashouts) | ❌ **no Twilio credentials — always fails** |
+| Admin accounts | ✅ one: `kampalanalf` |
+| Free-tier email limit | ⚠️ 2 per hour, will block signup testing |
+
+The phone row is the one to read twice. `external_phone_enabled` is `true` and
+`startPhoneVerification()` calls `signInWithOtp({ phone })`, but `sms_provider`
+is `twilio` with a null SID and auth token, so **every OTP send fails**. Because
+`phone_verified` is checked by `request_cashout` before anything else, no player
+can currently withdraw — even after the 7-day rule, and even with a balance.
+That is not a bug in the app; it is a missing credential.
 
 ### Google Sign-In — enablement is done, the consent screen is yours
 
@@ -140,7 +165,7 @@ a human:
 
 1. **OAuth consent screen** → *Publishing status* must be **In production**, or
    only the test users you listed can sign in.
-2. Authorized JavaScript origin `https://shoppa-sigma.vercel.app` and redirect URI
+2. Authorized JavaScript origin `https://floatbet.space` (and `https://www.floatbet.space`) and redirect URI
    `https://dtroufrfavmjldtlprpn.supabase.co/auth/v1/callback` must both be
    present on the client.
 
@@ -165,8 +190,8 @@ them, and strips them from the address bar so the link cannot be replayed.
 
 | Setting | Value |
 |---|---|
-| Site URL | `https://shoppa-sigma.vercel.app` |
-| Redirect allow list | `https://shoppa-sigma.vercel.app/**`, `**/auth/callback`, `http://localhost:5173/**` |
+| Site URL | `https://floatbet.space` |
+| Redirect allow list | `https://floatbet.space/**`, `https://www.floatbet.space/**`, `https://shoppa-sigma.vercel.app/**`, `**/auth/callback`, `http://localhost:5173/**` |
 | Email provider | enabled |
 | Confirm email | enabled (`mailer_autoconfirm: false`) |
 | Refresh token rotation | enabled, 10s reuse interval |
