@@ -94,6 +94,13 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
   const [openId, setOpenId] = useState<string | null>(null)
   const [detail, setDetail] = useState<Detail | null>(null)
   const [detailBusy, setDetailBusy] = useState(false)
+  // Player-level controls. Every one of these hits /api/admin/actions, which
+  // re-checks the admin flag server-side -- this state is UI only.
+  const [actBusy, setActBusy] = useState(false)
+  const [actNote, setActNote] = useState<{ kind: 'ok' | 'bad'; text: string } | null>(null)
+  const [adjustOpen, setAdjustOpen] = useState(false)
+  const [adjustPx, setAdjustPx] = useState('')
+  const [adjustReason, setAdjustReason] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -152,6 +159,37 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
       setDetailBusy(false)
     }
   }, [])
+
+  const runAction = useCallback(
+    async (payload: Record<string, unknown>) => {
+      setActBusy(true)
+      setActNote(null)
+      try {
+        const t = await token()
+        if (!t) return
+        const res = await fetch('/api/admin/actions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+          body: JSON.stringify(payload),
+        })
+        const body = (await res.json().catch(() => ({}))) as { error?: string; balance?: number }
+        if (!res.ok) {
+          setActNote({ kind: 'bad', text: body.error || 'That action failed.' })
+          return
+        }
+        setActNote({ kind: 'ok', text: 'Done.' })
+        setAdjustOpen(false)
+        setAdjustPx('')
+        setAdjustReason('')
+        if (openId) await openPlayer(openId)
+      } catch {
+        setActNote({ kind: 'bad', text: 'Could not reach the server.' })
+      } finally {
+        setActBusy(false)
+      }
+    },
+    [openId, openPlayer],
+  )
 
   const flagged = useMemo(() => rows.filter((r) => r.risk >= 20 && !r.suspended).length, [rows])
 
@@ -239,6 +277,101 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
                   {detail.profile.is_admin && <span className="ml-1.5 text-violet-300">· admin</span>}
                 </dd>
               </dl>
+            </div>
+
+            {/* ------------------------------------------------ controls --- */}
+            <div className="panel mb-2 px-3 py-2.5">
+              <p className="text-[12px] font-bold text-white">Controls</p>
+              <p className="mb-2 text-[9.5px] leading-relaxed text-slate-500">
+                Every action is recorded against your account. Balance changes also write a ledger row.
+              </p>
+
+              {actNote && (
+                <p
+                  className={`mb-2 rounded-lg border px-2 py-1.5 text-[10.5px] ${
+                    actNote.kind === 'ok'
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                      : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                  }`}
+                >
+                  {actNote.text}
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setAdjustOpen((v) => !v)}
+                  className="btn-ghost !py-1.5 !text-[10.5px]"
+                >
+                  Adjust balance
+                </button>
+                <button
+                  type="button"
+                  disabled={actBusy}
+                  onClick={() =>
+                    void runAction({
+                      action: detail.profile.suspended ? 'unsuspend' : 'suspend',
+                      userId: detail.profile.id,
+                      reason: 'set from the players screen',
+                    })
+                  }
+                  className="btn-ghost !py-1.5 !text-[10.5px] disabled:opacity-40"
+                >
+                  {detail.profile.suspended ? 'Un-suspend' : 'Suspend'}
+                </button>
+                <button
+                  type="button"
+                  disabled={actBusy}
+                  onClick={() =>
+                    void runAction({
+                      action: detail.profile.is_admin ? 'revoke_admin' : 'grant_admin',
+                      userId: detail.profile.id,
+                    })
+                  }
+                  className="btn-ghost !py-1.5 !text-[10.5px] disabled:opacity-40"
+                >
+                  {detail.profile.is_admin ? 'Revoke admin' : 'Make admin'}
+                </button>
+              </div>
+
+              {adjustOpen && (
+                <div className="mt-2 rounded-lg border border-white/10 bg-black/20 p-2">
+                  <p className="text-[10.5px] text-slate-300">
+                    Credit or debit this wallet. A negative number takes PX away.
+                  </p>
+                  <div className="mt-1.5 flex gap-1.5">
+                    <input
+                      value={adjustPx}
+                      onChange={(e) => setAdjustPx(e.target.value)}
+                      inputMode="numeric"
+                      placeholder="PX, e.g. 5000 or -5000"
+                      className="field !py-1.5 !text-[11px]"
+                    />
+                  </div>
+                  <input
+                    value={adjustReason}
+                    onChange={(e) => setAdjustReason(e.target.value)}
+                    placeholder="Reason (required, at least 8 characters)"
+                    className="field mt-1.5 !py-1.5 !text-[11px]"
+                  />
+                  <button
+                    type="button"
+                    disabled={actBusy || adjustReason.trim().length < 8 || !Number.isFinite(Number(adjustPx)) || Number(adjustPx) === 0}
+                    onClick={() =>
+                      void runAction({
+                        action: 'adjust',
+                        userId: detail.profile.id,
+                        deltaPx: Math.trunc(Number(adjustPx)),
+                        reason: adjustReason.trim(),
+                      })
+                    }
+                    className="btn-primary mt-1.5 w-full !py-1.5 !text-[10.5px] disabled:opacity-40"
+                  >
+                    {actBusy ? 'Applying…' : 'Apply adjustment'}
+                  </button>
+                </div>
+              )}
             </div>
 
             <div className="panel mb-2 overflow-hidden">

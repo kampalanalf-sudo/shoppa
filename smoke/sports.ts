@@ -102,6 +102,53 @@ ok('every sport has a label',
   (['football', 'basketball', 'athletics', 'motorsport', 'cricket', 'rugby', 'tennis'] as const)
     .every((s) => Boolean(SPORT_LABEL[s])))
 
+// --------------------------------------------------- admin operations =====
+const adminSql = read('supabase/migrations/0010_admin_operations.sql')
+const adminApi = read('api/admin/actions.ts')
+const adminConsole = read('src/pages/AdminConsole.tsx')
+
+// The mistake this suite exists to prevent, made once already: revoking from
+// anon and authenticated but not from PUBLIC leaves the default EXECUTE grant
+// in place, so `authenticated` still inherits it and a player can call the
+// money functions over PostgREST.
+ok('admin money functions are revoked from public, not just from anon',
+  /revoke all on function admin_adjust_balance[^;]+from public/i.test(adminSql))
+ok('every admin function is revoked from public',
+  (adminSql.match(/revoke all on function admin_\w+[^;]+from public/gi) || []).length >= 4)
+ok('the admin flag is re-checked inside the database',
+  adminSql.includes('if not is_admin(p_admin) then'))
+ok('is_admin treats a suspended admin as not an admin',
+  adminSql.includes('is_admin and not suspended'))
+ok('an adjustment must be non-zero and explained',
+  adminSql.includes("p_delta = 0") && adminSql.includes('length(trim(p_reason)) < 8'))
+ok('an adjustment cannot push a wallet below zero',
+  adminSql.includes("raise exception 'that would take the balance below zero'"))
+ok('the last admin cannot be removed',
+  adminSql.includes('this is the last admin account'))
+ok('an admin cannot suspend themselves',
+  adminSql.includes('you cannot suspend your own account'))
+ok('settling reuses settle_cashout rather than reimplementing the refund',
+  adminSql.includes('perform settle_cashout(p_cashout, p_status, p_reason)'))
+ok('rejecting a payout refunds the held PX', read('supabase/migrations/0001_core.sql').includes('cashout_refund'))
+
+// API layer
+ok('a payout is only marked paid after the provider accepts it',
+  adminApi.indexOf('disbursePayment') < adminApi.indexOf("p_status: body.status"))
+ok('a provider failure does not mark the payout paid',
+  adminApi.includes('Nothing was marked paid'))
+ok('only mobile money can be paid from the console',
+  adminApi.includes("only mobile-money payouts can be sent from here"))
+ok('an already-settled payout cannot be settled twice',
+  adminApi.includes('already ${co.status}'))
+ok('adjustments are capped so a stray zero cannot drain a wallet',
+  adminApi.includes('5_000_000'))
+
+// Console UI
+ok('paying a payout requires confirmation naming the amount',
+  adminConsole.includes('cannot be undone from here'))
+ok('the audit tab states it is written by the database',
+  adminConsole.includes('Written by the database, not by this page'))
+
 // ------------------------------------------------------- empty states ======
 // A failed query, a feed that never ran, and a slate where every match has
 // kicked off all used to render "No matches on the board yet". Three different

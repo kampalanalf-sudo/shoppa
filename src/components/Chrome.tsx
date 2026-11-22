@@ -191,6 +191,12 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
                     <div className="divider my-1" />
                     <p className="px-3 pt-1 pb-0.5 text-[9.5px] font-bold uppercase tracking-[.16em] text-violet-400/70">Admin</p>
                     <MenuItem
+                      icon={<IconGamepad size={15} />}
+                      onClick={() => { setAccountOpen(false); window.location.hash = 'admin/console' }}
+                    >
+                      Console
+                    </MenuItem>
+                    <MenuItem
                       icon={<IconUser size={15} />}
                       onClick={() => { setAccountOpen(false); window.location.hash = 'admin/players' }}
                     >
@@ -201,6 +207,12 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
                       onClick={() => { setAccountOpen(false); window.location.hash = 'admin/parked' }}
                     >
                       Parked payments
+                    </MenuItem>
+                    <MenuItem
+                      icon={<IconHistory size={15} />}
+                      onClick={() => { setAccountOpen(false); window.location.hash = 'admin/console' }}
+                    >
+                      Audit log
                     </MenuItem>
                   </>
                 )}

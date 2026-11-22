@@ -18,6 +18,7 @@ import { TopUpPanel } from './components/TopUpPanel'
 import { TopUpSuccess } from './pages/TopUpSuccess'
 import { AdminParked } from './pages/AdminParked'
 import { AdminPlayers } from './pages/AdminPlayers'
+import { AdminConsole } from './pages/AdminConsole'
 import { BonniClyve } from './games/BonniClyve'
 import { EngineSlot } from './games/EngineSlot'
 import { CHAPE, BLUE_MOUNTAIN } from './lib/slots/games'
@@ -43,6 +44,7 @@ type View =
   | { name: 'topup-success'; reference: string | null }
   | { name: 'admin-parked' }
   | { name: 'admin-players' }
+  | { name: 'admin-console' }
 
 function Shell() {
   const { sound, setFairOpen, setWalletOpen, hydrated } = useStore()
@@ -91,7 +93,10 @@ function Shell() {
       if (h === 'reset-password') { setView({ name: 'set-password' }); return }
       if (h === 'verified') { setView({ name: 'auth' }); return }
       if (h === 'admin/parked') { setView({ name: 'admin-parked' }); return }
-      if (h === 'admin/players' || h === 'admin') { setView({ name: 'admin-players' }); return }
+      if (h === 'admin/players') { setView({ name: 'admin-players' }); return }
+      // 'admin' lands on the console: health first, because the most common
+      // question an operator has is 'is anything broken right now'.
+      if (h === 'admin' || h === 'admin/console') { setView({ name: 'admin-console' }); return }
       if (h.startsWith('topup-success')) {
         const ref = new URLSearchParams(raw.split('?')[1] || '').get('reference')
         setView({ name: 'topup-success', reference: ref })
@@ -248,6 +253,7 @@ function Shell() {
         {/* Placeholder kept so the grid does not shift while loading. */}
         {view.name === 'admin-parked' && <AdminParked onHome={home} />}
         {view.name === 'admin-players' && <AdminPlayers onHome={home} />}
+        {view.name === 'admin-console' && <AdminConsole onHome={home} />}
         {view.name === 'topup-success' && (
           <TopUpSuccess
             reference={view.reference}
