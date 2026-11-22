@@ -21,6 +21,7 @@ import { AdminPlayers } from './pages/AdminPlayers'
 import { AdminConsole } from './pages/AdminConsole'
 import { BonniClyve } from './games/BonniClyve'
 import { EngineSlot } from './games/EngineSlot'
+import { Craters } from './games/Craters'
 import { CHAPE, BLUE_MOUNTAIN } from './lib/slots/games'
 import { BAZAAR, BODA } from './lib/slots/games2'
 import { Plinko } from './games/Plinko'
@@ -237,6 +238,9 @@ function Shell() {
         {current === 'bluemountain' && <EngineSlot config={BLUE_MOUNTAIN} id="bluemountain" {...shared} />}
         {current === 'bazaar' && <EngineSlot config={BAZAAR} id="bazaar" {...shared} />}
         {current === 'boda' && <EngineSlot config={BODA} id="boda" {...shared} />}
+        {/* 4x3 with a real round: crates add spins and raise a multiplier,
+            which is round state the generic engine does not model. */}
+        {current === 'craters' && <Craters id="craters" {...shared} />}
         {current === 'plinko' && <Plinko {...shared} />}
         {current === 'crash' && <Crash {...shared} />}
         {current === 'mines' && <Mines {...shared} />}

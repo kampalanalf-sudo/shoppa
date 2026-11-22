@@ -31,6 +31,7 @@
     "test:celebrate": "vite build --config smoke/vite.celebrate.config.ts && node smoke/dist-celebrate/celebrate.js",
     "test:feed": "vite build --config smoke/vite.feed.config.ts && node smoke/dist-feed/feed.js",
     "test:sports": "vite build --config smoke/vite.sports.config.ts && node smoke/dist-sports/sports.js",
+    "test:craters": "vite build --config smoke/vite.craters.config.ts && node smoke/dist-craters/craters.js",
     "test:deploy": "vite build --config smoke/vite.deploy.config.ts && node smoke/dist-deploy/deploy.js",
     "test:auth": "vite build --config smoke/vite.auth.config.ts && node smoke/dist-auth/auth.js",
     "test:brand": "vite build --config smoke/vite.brand.config.ts && node smoke/dist-brand/brand.js"
