@@ -6,7 +6,7 @@
 // number can ruin the house: odds are the payout multiplier. These checks pin
 // the two invariants that make that impossible, plus the money arithmetic that
 // everything else depends on.
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fmtOdds, potentialPayout, startsIn, stakeUgx, SPORT_LABEL } from '../src/lib/sportsbook'
 
@@ -163,6 +163,32 @@ ok('an empty board is diagnosed rather than guessed',
   lib.includes('diagnoseEmpty') && lib.includes('upcoming: future.count'))
 ok('the diagnostic cannot mask the board itself',
   /catch \{\s*\/\/ Diagnostics must never mask[\s\S]{0,120}return null/.test(lib))
+
+// --------------------------------------------------------- fixture art =====
+const artLib = read('src/lib/fixtureArt.ts')
+
+// The first version keyed art to four fixtures and looked perfect for exactly
+// one day: the board refills with new matches and the images stop applying,
+// which on screen is indistinguishable from never having existed.
+ok('art is keyed on clubs, not on a fixture that expires overnight',
+  artLib.includes('TEAM_ART') && !/ART\['manchester-city fulham'\]/.test(artLib))
+ok('there is a sport-level fallback so no card is blank',
+  artLib.includes('SPORT_ART') && artLib.includes('fallback-football'))
+ok('the resolver tries home, then away, then the sport',
+  /TEAM_ART\[norm\(home\)\]\s*\?\?\s*TEAM_ART\[norm\(away\)\]\s*\?\?\s*SPORT_ART/.test(artLib))
+ok('the gradient no longer washes out the top of the image',
+  page.includes('inset-x-0 bottom-0 h-2/5') && !page.includes('via-[#0a0f1c]/25 to-transparent'))
+ok('the first cards load their banner without waiting for a scroll',
+  page.includes("eager={i < 2}") && page.includes("loading={eager ? 'eager' : 'lazy'}"))
+
+// Every club banner the map promises must exist on disk, or the card silently
+// falls back and the art looks like it never shipped.
+{
+  const referenced = Array.from(artLib.matchAll(/asset\('(\/art\/[^']+)'\)/g)).map((m) => m[1])
+  const missing = referenced.filter((rel) => !existsSync(resolve('public', rel.replace(/^\//, ''))))
+  ok('every referenced image exists in public/', missing.length === 0)
+  ok('the team set covers the clubs that actually appear most', referenced.length >= 8)
+}
 
 // ------------------------------------------------------ postgrest embeds ====
 // Two foreign keys join sports_markets and sports_selections: the owning
