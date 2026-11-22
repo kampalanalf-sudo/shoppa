@@ -36,6 +36,9 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
   const [slips, setSlips] = useState<Slip[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Set only when the board came back empty and the queries themselves worked.
+  // Distinguishes "no fixtures exist" from "every fixture has kicked off".
+  const [emptyWhy, setEmptyWhy] = useState<{ total: number; upcoming: number } | null>(null)
   const [sport, setSport] = useState<Sport | 'all'>('all')
   const [tab, setTab] = useState<'board' | 'slips'>('board')
 
@@ -52,6 +55,7 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
       const board = await loadBoard()
       setFixtures(board.fixtures)
       setMarkets(board.markets)
+      setEmptyWhy(board.empty ?? null)
       if (user) setSlips(await loadSlips(user.id))
     } catch (e) {
       setError((e as Error).message)
@@ -172,7 +176,10 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
-      {error && (
+      {/* Only when there is a board to show below it. With an empty board the
+          failure is explained in the empty state instead, so the player is not
+          told the same thing twice. */}
+      {error && shown.length > 0 && (
         <div className="mb-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2.5 text-[12px] text-rose-200">
           {error}
         </div>
@@ -199,14 +206,65 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
 
           {loading && <p className="py-10 text-center text-[12px] text-slate-500">Loading fixtures…</p>}
 
+          {/* Three different truths used to share one message. A failed query,
+              a feed that has never run, and a slate where every match has
+              kicked off all rendered "No matches on the board yet" -- so a
+              broken board looked exactly like a quiet day. That cost three
+              separate debugging rounds. Each case now says what it is. */}
           {!loading && !shown.length && (
-            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.02] px-4 py-10 text-center">
-              <IconBall size={26} className="mx-auto mb-2 text-slate-600" />
-              <p className="text-[13px] font-bold text-slate-300">No matches on the board yet</p>
-              <p className="mx-auto mt-1 max-w-[380px] text-[11.5px] leading-relaxed text-slate-500">
-                Fixtures appear here once they are published. Every price is snapshotted when you
-                bet, and every slip is settled against the official result.
-              </p>
+            <div
+              className={`rounded-2xl border px-4 py-10 text-center ${
+                error
+                  ? 'border-rose-500/30 bg-rose-500/[0.06]'
+                  : 'border-white/[0.07] bg-white/[0.02]'
+              }`}
+            >
+              {error ? (
+                <>
+                  <IconShield size={26} className="mx-auto mb-2 text-rose-400/70" />
+                  <p className="text-[13px] font-bold text-rose-200">
+                    Couldn’t load the board
+                  </p>
+                  <p className="mx-auto mt-1 max-w-[400px] text-[11.5px] leading-relaxed text-slate-400">
+                    This is a problem on our side, not a lack of matches. Retrying usually
+                    fixes it.
+                  </p>
+                  <p className="mx-auto mt-1.5 max-w-[400px] break-words rounded-lg bg-black/25 px-2 py-1 font-mono text-[10px] text-rose-300/70">
+                    {error}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoading(true)
+                      void refresh()
+                    }}
+                    className="btn-primary mx-auto mt-3 !px-3.5 !py-1.5 !text-[11.5px]"
+                  >
+                    Try again
+                  </button>
+                </>
+              ) : emptyWhy && emptyWhy.total > 0 ? (
+                <>
+                  <IconClock size={26} className="mx-auto mb-2 text-amber-400/70" />
+                  <p className="text-[13px] font-bold text-slate-200">
+                    Every match has already kicked off
+                  </p>
+                  <p className="mx-auto mt-1 max-w-[400px] text-[11.5px] leading-relaxed text-slate-500">
+                    There are {emptyWhy.total} fixture{emptyWhy.total === 1 ? '' : 's'} in the feed,
+                    but none is still to come. Pricing is pre-match only, so a fixture that has
+                    started leaves the board. The next card should appear shortly.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <IconBall size={26} className="mx-auto mb-2 text-slate-600" />
+                  <p className="text-[13px] font-bold text-slate-300">No matches on the board yet</p>
+                  <p className="mx-auto mt-1 max-w-[380px] text-[11.5px] leading-relaxed text-slate-500">
+                    The odds feed hasn&apos;t published any fixtures yet. Every price is snapshotted
+                    when you bet, and every slip is settled against the official result.
+                  </p>
+                </>
+              )}
             </div>
           )}
 

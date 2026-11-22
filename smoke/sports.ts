@@ -102,6 +102,21 @@ ok('every sport has a label',
   (['football', 'basketball', 'athletics', 'motorsport', 'cricket', 'rugby', 'tennis'] as const)
     .every((s) => Boolean(SPORT_LABEL[s])))
 
+// ------------------------------------------------------- empty states ======
+// A failed query, a feed that never ran, and a slate where every match has
+// kicked off all used to render "No matches on the board yet". Three different
+// truths, one message -- so a broken board looked like a quiet day.
+ok('a board that failed does not claim there are no matches',
+  page.includes('load the board') && !page.includes('No matches on the board yet\n                Fixtures appear here once they are published. Every price is snapshotted when you'))
+ok('the failure offers a retry rather than a dead end',
+  page.includes('Try again') && page.includes('void refresh()'))
+ok('an exhausted slate is explained as such, not as an empty feed',
+  page.includes('already kicked off'))
+ok('an empty board is diagnosed rather than guessed',
+  lib.includes('diagnoseEmpty') && lib.includes('upcoming: future.count'))
+ok('the diagnostic cannot mask the board itself',
+  /catch \{\s*\/\/ Diagnostics must never mask[\s\S]{0,120}return null/.test(lib))
+
 // ------------------------------------------------------ postgrest embeds ====
 // Two foreign keys join sports_markets and sports_selections: the owning
 // market_id, and the settlement pointer winning_selection_id. A bare
