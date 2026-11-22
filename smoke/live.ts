@@ -1,4 +1,6 @@
-import collect from '../api/collect'
+import { op } from './payop'
+
+const collect = (req: Request) => op('collect', req)
 
 const fails: string[] = []
 const ok = (n: string, c: boolean, e = '') => { if (!c) fails.push(n); console.log(`${c ? 'ok  ' : 'FAIL'} ${n} ${e}`) }

@@ -3,15 +3,40 @@
 > **Current key is LIVE (`dgw_live_...`).** Real money moves. Read
 > "Live-mode guards" below before deploying.
 
-Four server routes under `/api`. The API key lives **only** in server env and is
-never bundled into the browser — verified by grepping `dist/` for the key.
+Three server functions under `/api` plus the webhook receiver. The API key lives
+**only** in server env and is never bundled into the browser — verified by
+grepping `dist/` for the key.
 
 | Route | Method | Purpose |
 |---|---|---|
 | `/api/collect` | POST | Charge a customer (top-up). Opens the mobile-money prompt. |
 | `/api/disburse` | POST | Pay a customer out (withdrawal) to any MTN/Airtel number. |
 | `/api/status?reference=` | GET | Status proxy the client polls every 10s. |
+| `/api/topup/claim` | POST | Recover a hosted-store top-up by its reference. |
 | `/api/webhooks/dgateway` | POST | Receiver: verifies the signature, credits the order. |
+
+### One function, four operations
+
+Those four routes are **not** four files. They are operations on `api/pay.ts`:
+
+```
+/api/collect      -> /api/pay?op=collect
+/api/disburse     -> /api/pay?op=disburse
+/api/status       -> /api/pay?op=status
+/api/topup/claim  -> /api/pay?op=claim
+```
+
+The Hobby plan allows 12 Serverless Functions per deployment and the project
+reached 16. Vercel does **not** fail the build in that case: the build goes
+green, the deployment fails at `patchBuild` with
+`exceeded_serverless_functions_per_deployment`, and production quietly keeps
+serving the previous commit. That happened three deploys in a row.
+
+So the paths above are rewrites (see `vercel.json`), and every caller and every
+existing URL is unchanged. Add a payment operation by extending `api/pay.ts` and
+adding a rewrite — **never** by adding a file. `npm run test:deploy` fails the
+build if the function count crosses the limit or a rewrite points at a function
+that no longer exists.
 
 ---
 

@@ -1,7 +1,11 @@
-import collect from '../api/collect'
-import disburse from '../api/disburse'
-import status from '../api/status'
+import { op } from './payop'
 import webhook from '../api/webhooks/dgateway'
+
+// collect, disburse and status now live behind api/pay.ts. These thin adapters
+// keep every assertion below exactly as it was.
+const collect = (req: Request) => op('collect', req)
+const disburse = (req: Request) => op('disburse', req)
+const status = (req: Request) => op('status', req)
 
 const fails: string[] = []
 const ok = (n: string, c: boolean, extra = '') => { if (!c) fails.push(n); console.log(`${c ? 'ok  ' : 'FAIL'} ${n} ${extra}`) }

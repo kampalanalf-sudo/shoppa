@@ -1,5 +1,11 @@
 import parked from '../api/admin/parked'
-import lookup from '../api/admin/lookup'
+import router from '../api/admin/ops'
+
+// lookup is now an operation on the admin router. Same assertions, same paths.
+const lookup = (req: Request) => {
+  const url = new URL(req.url)
+  return router(new Request(`http://x/api/admin/ops?op=lookup&${url.searchParams}`, req))
+}
 
 const fails: string[] = []
 const ok = (n: string, c: boolean, e = '') => { if (!c) fails.push(n); console.log(`${c ? 'ok  ' : 'FAIL'} ${n} ${e}`) }

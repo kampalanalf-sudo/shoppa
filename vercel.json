@@ -8,5 +8,48 @@
       "path": "/api/feed/settle",
       "schedule": "25 3 * * *"
     }
+  ],
+  "rewrites": [
+    {
+      "comment": "The Hobby plan allows 12 Serverless Functions per deployment and this project needs 8. Each money endpoint is an operation on api/pay.ts and each admin endpoint is an operation on api/admin/ops.ts; these rewrites map the original paths onto them, so every existing URL and client call keeps working. Add an operation by extending the router and adding a line here -- not by adding a file, which is what broke the deploy.",
+      "source": "/api/collect",
+      "destination": "/api/pay?op=collect"
+    },
+    {
+      "source": "/api/disburse",
+      "destination": "/api/pay?op=disburse"
+    },
+    {
+      "source": "/api/status",
+      "destination": "/api/pay?op=status"
+    },
+    {
+      "source": "/api/topup/claim",
+      "destination": "/api/pay?op=claim"
+    },
+    {
+      "source": "/api/admin/health",
+      "destination": "/api/admin/ops?op=health"
+    },
+    {
+      "source": "/api/admin/cashouts",
+      "destination": "/api/admin/ops?op=cashouts"
+    },
+    {
+      "source": "/api/admin/audit",
+      "destination": "/api/admin/ops?op=audit"
+    },
+    {
+      "source": "/api/admin/players",
+      "destination": "/api/admin/ops?op=players"
+    },
+    {
+      "source": "/api/admin/lookup",
+      "destination": "/api/admin/ops?op=lookup"
+    },
+    {
+      "source": "/api/admin/actions",
+      "destination": "/api/admin/ops?op=actions"
+    }
   ]
 }

@@ -1,2 +1,3 @@
 import { defineConfig } from 'vite'
-export default defineConfig({ build: { ssr: 'api/status.ts', outDir: 'smoke/dist-live/status', emptyOutDir: true, target: 'node20', minify: false } })
+// collect / disburse / status now live in api/pay.ts, so these build the router.
+export default defineConfig({ build: { ssr: 'api/pay.ts', outDir: 'smoke/dist-live/status', emptyOutDir: true, target: 'node20', minify: false } })

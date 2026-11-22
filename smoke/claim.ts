@@ -1,4 +1,6 @@
-import claim from '../api/topup/claim'
+import { op } from './payop'
+
+const claim = (req: Request) => op('claim', req)
 
 const fails: string[] = []
 const ok = (n: string, c: boolean, e = '') => { if (!c) fails.push(n); console.log(`${c ? 'ok  ' : 'FAIL'} ${n} ${e}`) }

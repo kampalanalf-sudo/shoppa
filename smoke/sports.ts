@@ -104,7 +104,9 @@ ok('every sport has a label',
 
 // --------------------------------------------------- admin operations =====
 const adminSql = read('supabase/migrations/0010_admin_operations.sql')
-const adminApi = read('api/admin/actions.ts')
+// The admin money operations moved into the api/admin/ops.ts router when the
+// Hobby plan's 12-function cap broke the deploy. Same source, new home.
+const adminApi = read('api/admin/ops.ts')
 const adminConsole = read('src/pages/AdminConsole.tsx')
 
 // The mistake this suite exists to prevent, made once already: revoking from
