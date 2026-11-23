@@ -218,8 +218,23 @@ jobs:
           # The four support agents are player-facing text support. Unconfigured
           # is a 503 with its own code, which still proves the module booted.
           expect 'support refuses an anonymous caller'         GET  "$BASE/support?op=agents"             401 'not signed in'
-          # The phone line is guarded by Twilio's signature, not a JWT.
-          expect 'support-voice rejects an unsigned call'      POST "$BASE/support-voice?op=answer"       401 'invalid signature' 'CallSid=CA_test&From=%2B256700000000'
+          # The phone line is guarded by Twilio's signature, not a JWT -- but it
+          # fails closed BEFORE that: with no Twilio credentials configured it
+          # refuses every call outright. Both are refusals and both prove the
+          # module booted, so either is a pass. Asserting only the 401 was wrong
+          # the first time and failed a healthy deploy.
+          voice_code=$(curl -sS -o /tmp/voice.json -w '%{http_code}' -X POST \
+            "$BASE/support-voice?op=answer" \
+            -H "apikey: $ANON_KEY" -H 'Content-Type: application/x-www-form-urlencoded' \
+            --data-binary 'CallSid=CA_test&From=%2B256700000000&To=%2B256800000000' || echo 000)
+          if [ "$voice_code" = "401" ] && grep -q 'invalid signature' /tmp/voice.json; then
+            echo "ok   support-voice rejects an unsigned call (401, configured)"
+          elif [ "$voice_code" = "503" ] && grep -q 'VOICE_NOT_CONFIGURED' /tmp/voice.json; then
+            echo "ok   support-voice refuses every call while unconfigured (503)"
+          else
+            echo "::error::support-voice did not refuse cleanly: HTTP $voice_code $(head -c 300 /tmp/voice.json)"
+            fail=1
+          fi
           # These two verify the HMAC before parsing, so the payload is irrelevant.
           expect 'dgateway webhook rejects an unsigned call'   POST "$BASE/webhooks-dgateway"             401 'invalid signature' '{}'
           expect 'store webhook rejects an unsigned call'      POST "$BASE/webhooks-dgateway-store"       401 'invalid signature' '{}'
