@@ -149,6 +149,9 @@ export function describeApiError(e: unknown, fallback = 'That request failed.'):
     // 401 is handled above, but a 403 means the account is real and not an admin.
     if (e.status === 403) return 'This account is not an admin.'
     if (e.status === 404) return 'The server route was not found. The function may not be deployed yet.'
+    // 429 is not a fault: the caller is going too fast, and the server's own
+    // sentence already says so. Returning it verbatim is the whole message.
+    if (e.status === 429) return e.message
     return e.message
   }
   if (e instanceof TypeError) {

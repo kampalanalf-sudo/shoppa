@@ -52,6 +52,35 @@ a support chat is the one place an error is least forgivable.
 
 ---
 
+## In-app chat
+
+A player reaches the agents from the floating **Help** button on every screen, from
+the footer (Help Centre, Live Chat, Responsible Gaming, Self Exclusion, Contact
+Us) or at `#support`. The button carries a badge when an agent has answered while
+the player was elsewhere — that badge is what makes a reply discoverable mid-game.
+
+Three things make it a conversation rather than a form:
+
+| | |
+| --- | --- |
+| **Resumable** | Opening support sends `resume: true` and gets the live thread back. Reloading, closing the app or navigating away does not lose what you said. A thread is live for **12 hours**; after that a new message starts a fresh one, so an agent is never asked to recall a fortnight-old mood. |
+| **Live** | `support_messages` is in the realtime publication and the client subscribes filtered to its own conversation. An agent's reply appears without a refresh. RLS applies to the stream, so a player cannot subscribe into someone else's thread. |
+| **Throttled** | 8 player messages per rolling minute, enforced in SQL (`support_can_speak`) by counting the messages themselves. Checked **before** the model is called, because a limit that runs after the spend is not a limit. Two taps in the same instant cannot both pass. A throttled message is `429 RATE_LIMITED` with the server's own sentence, shown verbatim. |
+
+"New" closes the thread on the server as well as the screen. Clearing only the
+screen would look like a new conversation and then `resume` would drag the old one
+back the next time the screen opened.
+
+The transcript is a `role="log"` live region, so an agent's reply is announced
+rather than only appearing.
+
+### What a player can and cannot write
+
+The RLS policy on `support_messages` allows a player to insert **only** rows with
+`author = 'player'`, and only into a conversation they own. Agent replies are
+written by the server. That is what stops a crafted insert from putting words in
+support's mouth on a screen the player trusts.
+
 ## Turning the phone line on
 
 The voice side is a Twilio webhook. Until these are set, `support-voice` answers

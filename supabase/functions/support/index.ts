@@ -120,10 +120,79 @@ async function thread(userId: string, id: string): Promise<Response> {
 
 // ------------------------------------------------------------------- start ---
 
+/**
+ * The player's live thread, if there is one.
+ *
+ * Chat is not a page you visit, it is a conversation you come back to: closing
+ * the app, reloading or switching screens must not lose what you said. Without
+ * this every reopen started a second thread and the player had to repeat
+ * themselves — which is the complaint that makes people stop using support.
+ *
+ * A thread is live for 12 hours. After that it stays readable but a new message
+ * opens a fresh one, so an agent is never asked to recall a fortnight-old mood.
+ */
+const LIVE_WINDOW_HOURS = 12
+
+async function currentThread(userId: string, db: ReturnType<typeof svc>) {
+  const since = new Date(Date.now() - LIVE_WINDOW_HOURS * 3600_000).toISOString()
+  const { data } = await db
+    .from('support_conversations')
+    .select('id,agent_id,channel,status,topic,needs_human,started_at,last_msg_at')
+    .eq('user_id', userId)
+    .neq('status', 'closed')
+    .gte('last_msg_at', since)
+    .order('last_msg_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  return data ?? null
+}
+
 async function startConversation(userId: string, req: Request): Promise<Response> {
-  const body = (await req.json().catch(() => null)) as { message?: string } | null
+  const body = (await req.json().catch(() => null)) as { message?: string; resume?: boolean } | null
   const opening = String(body?.message ?? '').trim().slice(0, 2000)
   const db = svc()
+
+  // `resume` is the client saying "I am reopening, not starting over". It must
+  // not create a second thread, and — importantly — it must not spend a model
+  // call greeting someone who is already mid-conversation.
+  if (body?.resume) {
+    const live = await currentThread(userId, db)
+    if (live) {
+      const { data: msgs } = await db
+        .from('support_messages')
+        .select('id,author,agent_id,body,created_at')
+        .eq('conversation_id', live.id)
+        .order('id', { ascending: true })
+        .limit(200)
+      return json({ conversation: live, messages: msgs ?? [], resumed: true })
+    }
+    return json({ conversation: null, messages: [], resumed: false })
+  }
+
+  // A live thread takes the message rather than a new one being opened. The
+  // player said "start", but what they mean is "carry on" if there is anything
+  // to carry on with.
+  const live = await currentThread(userId, db)
+  if (live) {
+    if (!opening) {
+      const { data: msgs } = await db
+        .from('support_messages')
+        .select('id,author,agent_id,body,created_at')
+        .eq('conversation_id', live.id)
+        .order('id', { ascending: true })
+        .limit(200)
+      return json({ conversation: live, messages: msgs ?? [], resumed: true })
+    }
+    const reply = await answerAndStore({
+      conversationId: live.id,
+      userId,
+      agentId: live.agent_id,
+      question: opening,
+      history: await historyFor(db, live.id),
+      savePlayerMessage: true,
+    })
+    return json({ conversation: live, messages: reply.messages, resumed: true })
+  }
 
   // Route FIRST, so the greeting can name the right specialist. Routing on an
   // empty string returns the safety seat (priority 5), which is wrong for a
@@ -165,6 +234,17 @@ async function startConversation(userId: string, req: Request): Promise<Response
   return json({ conversation: conv, messages: [] })
 }
 
+/** The recent turns, for the prompt. One reader, so both paths send the same thing. */
+async function historyFor(db: ReturnType<typeof svc>, id: string): Promise<Turn[]> {
+  const { data } = await db
+    .from('support_messages')
+    .select('author,body')
+    .eq('conversation_id', id)
+    .order('id', { ascending: true })
+    .limit(50)
+  return (data ?? []) as Turn[]
+}
+
 async function firstAgentId(db: ReturnType<typeof svc>): Promise<string | null> {
   const { data } = await db
     .from('support_agents')
@@ -195,21 +275,29 @@ async function sendMessage(userId: string, id: string, req: Request): Promise<Re
   if (error) return json({ error: 'could not load that conversation' }, 502)
   if (!conv) return json({ error: 'no such conversation' }, 404)
 
-  const { data: history, error: histErr } = await db
-    .from('support_messages')
-    .select('author,body')
-    .eq('conversation_id', id)
-    .order('id', { ascending: true })
-    .limit(50)
+  // Rate limit BEFORE anything is spent. Every message is a model call, so an
+  // unthrottled box is a bill and a denial-of-service against ourselves. The
+  // check runs in the database so two taps in the same instant cannot both pass.
+  const { data: allowed, error: limitErr } = await db.rpc('support_can_speak', { p_user: userId })
+  if (!limitErr && allowed === false) {
+    return json(
+      {
+        error:
+          'You are sending messages faster than the agents can answer. Please wait a moment.',
+        code: 'RATE_LIMITED',
+      },
+      429,
+    )
+  }
 
-  if (histErr) return json({ error: 'could not load the messages' }, 502)
+  const history = await historyFor(db, id)
 
   const reply = await answerAndStore({
     conversationId: id,
     userId,
     agentId: conv.agent_id,
     question: text,
-    history: (history ?? []) as Turn[],
+    history,
     savePlayerMessage: true,
   })
 

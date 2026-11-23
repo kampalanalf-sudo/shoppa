@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { api, describeApiError } from '../lib/api'
+import { onSupportMessage } from '../lib/supabase'
 import { IconChevronLeft, IconChat, IconInfo, IconRefresh, IconShield, IconUser } from '../components/Icons'
 
 /**
@@ -69,22 +70,50 @@ export function Support({ onHome }: { onHome: () => void }) {
     })
   }, [])
 
-  // Which agents exist. Failure here is not fatal — the thread still works — so
-  // it degrades to "support" rather than blocking the screen behind an error.
+  // Opening support means "carry on where we left off" if there is a live
+  // thread. Without this a reload looked like a brand-new conversation and the
+  // player had to say everything again — which is the thing that makes people
+  // give up on support entirely.
+  //
+  // Neither call is fatal: failing to resume just shows the empty state, and
+  // failing to load the agent list only costs the name in the header.
   useEffect(() => {
     let alive = true
-    void api<{ agents: Agent[] }>('/api/support/agents')
-      .then((b) => {
-        if (alive) setAgents(b.agents ?? [])
+    void Promise.allSettled([
+      api<{ agents: Agent[] }>('/api/support/agents'),
+      api<{ conversation: Conversation | null; messages: Msg[]; resumed: boolean }>(
+        '/api/support/start',
+        { method: 'POST', body: { resume: true } },
+      ),
+    ])
+      .then(([agentsRes, threadRes]) => {
+        if (!alive) return
+        if (agentsRes.status === 'fulfilled') setAgents(agentsRes.value.agents ?? [])
+        if (threadRes.status === 'fulfilled' && threadRes.value.conversation) {
+          setConv(threadRes.value.conversation)
+          setMsgs(threadRes.value.messages ?? [])
+          scroll()
+        }
       })
-      .catch(() => undefined)
       .finally(() => {
         if (alive) setBooting(false)
       })
     return () => {
       alive = false
     }
-  }, [])
+  }, [scroll])
+
+  // Live replies. The agent's answer already comes back in the POST response, so
+  // this is for the cases the response cannot cover: a handoff line written by
+  // the server, and an answer that arrives after the player navigated away and
+  // back. Duplicates are dropped by id.
+  useEffect(() => {
+    if (!conv) return
+    return onSupportMessage(conv.id, (row) => {
+      setMsgs((m) => (m.some((x) => x.id === row.id) ? m : [...m, row as Msg]))
+      scroll()
+    })
+  }, [conv, scroll])
 
   const send = useCallback(
     async (raw: string) => {
@@ -167,6 +196,10 @@ export function Support({ onHome }: { onHome: () => void }) {
           <button
             type="button"
             onClick={() => {
+              // Close it on the server too. Clearing only the screen would look
+              // like a new conversation, then resume would drag the old one back
+              // the next time this screen opened — the worst of both.
+              if (conv) void api('/api/support/close', { method: 'POST', params: { id: conv.id } }).catch(() => undefined)
               setConv(null)
               setMsgs([])
               setError(null)
@@ -189,6 +222,9 @@ export function Support({ onHome }: { onHome: () => void }) {
 
       <div
         ref={scroller}
+        role="log"
+        aria-live="polite"
+        aria-label="Support conversation"
         className="min-h-[280px] flex-1 space-y-2 overflow-y-auto rounded-2xl border border-white/[0.06] bg-black/20 p-2.5"
       >
         {booting && <p className="py-8 text-center text-[12px] text-slate-500">Starting…</p>}
@@ -254,7 +290,7 @@ export function Support({ onHome }: { onHome: () => void }) {
         })}
 
         {busy && (
-          <div className="flex justify-start">
+          <div className="flex justify-start" aria-label={`${activeAgent?.display_name ?? 'Support'} is replying`}>
             <div className="flex items-center gap-1 rounded-2xl rounded-bl-md border border-white/[0.07] bg-white/[0.04] px-3 py-2">
               {[0, 1, 2].map((i) => (
                 <span

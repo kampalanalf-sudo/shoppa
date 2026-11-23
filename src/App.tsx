@@ -19,6 +19,7 @@ import { TopUpSuccess } from './pages/TopUpSuccess'
 import { AdminParked } from './pages/AdminParked'
 import { AdminPlayers } from './pages/AdminPlayers'
 import { Support } from './pages/Support'
+import { SupportBubble } from './components/SupportBubble'
 import { AdminConsole } from './pages/AdminConsole'
 import { BonniClyve } from './games/BonniClyve'
 import { EngineSlot } from './games/EngineSlot'
@@ -271,6 +272,14 @@ function Shell() {
         )}
         {!current && !isProxiCash && view.name !== 'sportsbook' && view.name !== 'support' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} onSports={openSportsbook} />}
       </main>
+
+      <SupportBubble
+        hidden={view.name === 'support' || view.name === 'admin-console' || view.name === 'admin-players' || view.name === 'admin-parked' || view.name === 'auth'}
+        onOpen={() => {
+          setView({ name: 'support' })
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }}
+      />
 
       <Footer
         onSupport={() => {
