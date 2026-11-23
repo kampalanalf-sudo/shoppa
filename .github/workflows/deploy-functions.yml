@@ -215,6 +215,11 @@ jobs:
           expect 'feed-sports refuses an anonymous caller'     GET  "$BASE/feed-sports"                   401 'not authorised'
           expect 'feed-sync refuses an anonymous caller'       GET  "$BASE/feed-sync"                     401 'not authorised'
           expect 'feed-settle refuses an anonymous caller'     GET  "$BASE/feed-settle"                   401 'not authorised'
+          # The four support agents are player-facing text support. Unconfigured
+          # is a 503 with its own code, which still proves the module booted.
+          expect 'support refuses an anonymous caller'         GET  "$BASE/support?op=agents"             401 'not signed in'
+          # The phone line is guarded by Twilio's signature, not a JWT.
+          expect 'support-voice rejects an unsigned call'      POST "$BASE/support-voice?op=answer"       401 'invalid signature' 'CallSid=CA_test&From=%2B256700000000'
           # These two verify the HMAC before parsing, so the payload is irrelevant.
           expect 'dgateway webhook rejects an unsigned call'   POST "$BASE/webhooks-dgateway"             401 'invalid signature' '{}'
           expect 'store webhook rejects an unsigned call'      POST "$BASE/webhooks-dgateway-store"       401 'invalid signature' '{}'

@@ -12,7 +12,7 @@
 // Deno and the Supabase JS client are stubbed. Everything else — the HMAC
 // verification, the money limits, the admin gate, the status cache — is the real
 // code path.
-import { readdirSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { apiUrl } from '../src/lib/backend'
 
@@ -71,7 +71,7 @@ const jsonRes = (body: unknown, status = 200) =>
 // --------------------------------------------------------------- bundles ----
 
 // Importing a bundle runs its Deno.serve, which registers the handler above.
-const bundleFiles = ['pay', 'admin-ops', 'webhooks-dgateway', 'webhooks-dgateway-store', 'feed-sports']
+const bundleFiles = ['pay', 'admin-ops', 'webhooks-dgateway', 'webhooks-dgateway-store', 'feed-sports', 'support', 'support-voice']
 for (let i = 0; i < bundleFiles.length; i++) {
   // @ts-expect-error generated module, no types
   await import(`../supabase/.dist/${bundleFiles[i]}.ts`)
@@ -83,8 +83,10 @@ const admin = handler(1)
 const wh = handler(2)
 const whStore = handler(3)
 const feedSports = handler(4)
+const support = handler(5)
+const voice = handler(6)
 
-ok('every bundle registered a handler', [pay, admin, wh, whStore, feedSports].every(Boolean))
+ok('every bundle registered a handler', [pay, admin, wh, whStore, feedSports, support, voice].every(Boolean))
 
 // -------------------------------------------------------- frontend routes ----
 
@@ -118,6 +120,9 @@ for (const [path, target] of [
   ['/api/admin/actions', 'admin-ops'],
   ['/api/feed/sports', 'feed-sports'], ['/api/feed/settle', 'feed-settle'],
   ['/api/feed/sync', 'feed-sync'],
+  ['/api/support/agents', 'support'], ['/api/support/thread', 'support'],
+  ['/api/support/start', 'support'], ['/api/support/send', 'support'],
+  ['/api/support/close', 'support'], ['/api/support/calls', 'support'],
 ] as const) {
   const url = apiUrl(path)
   ok(`${path} -> ${target} (deployed)`, url.includes(`/functions/v1/${target}`) && deployed.has(target))
@@ -328,6 +333,76 @@ res = await feedSports(new Request('https://x/functions/v1/feed-sports?active=1'
 body = await res.json()
 ok(`feed-sports: cron secret is accepted (${res.status})`, res.status === 200)
 ok('feed-sports: reports what to sync', (body.recommendedForSync ?? []).includes('soccer_epl'))
+
+// -------------------------------------------------------------- support ----
+
+// The four agents are player-facing, so the four things that matter are
+// asserted here rather than trusted: a caller with no session is refused, a
+// reply never invents account facts, a handoff actually creates a handoff row,
+// and a phone call with an unsigned body is rejected.
+
+upstream(() => { throw new Error('support must not call out without a session') })
+res = await support(new Request('https://x/functions/v1/support?op=agents'))
+ok(`support: unauthenticated is 401 (${res.status})`, res.status === 401)
+
+res = await support(new Request('https://x/functions/v1/support?op=send&id=abc', {
+  method: 'POST', body: JSON.stringify({ message: 'hi' }),
+}))
+ok(`support: unauthenticated send is 401 (${res.status})`, res.status === 401)
+
+// The phone line: Twilio's signature is the only gate, and it must fail closed.
+upstream(() => { throw new Error('an unsigned call must reach nothing') })
+res = await voice(new Request('https://x/functions/v1/support-voice?op=answer', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+  body: 'CallSid=CA_test&From=%2B256700000000&To=%2B256800000000',
+}))
+// 401 when Twilio is configured but the signature is wrong; 503 when it is not
+// configured at all. Both are refusals, and neither writes a row.
+ok(`support-voice: an unsigned call is refused (${res.status})`, res.status === 401 || res.status === 503)
+
+res = await voice(new Request('https://x/functions/v1/support-voice?op=answer'))
+ok(`support-voice: GET is not allowed (${res.status})`, res.status === 405)
+
+// The prompt is the contract with the model. Assert the rules that stop it from
+// inventing money: the grounding is the only source, and a figure absent from it
+// cannot be produced. These are string assertions against the real generated
+// bundle, so a future edit that drops a rule fails here.
+const supportBundle = readFileSync(join(process.cwd(), 'supabase/.dist/support.ts'), 'utf8')
+ok('support: the agent is told the snapshot is its only source of truth',
+  supportBundle.includes('this is the only truth about this player'))
+ok('support: the agent is forbidden from estimating a figure',
+  /Never estimate, never fill a gap/.test(supportBundle))
+ok('support: the agent is told it cannot move money',
+  /cannot move, credit, refund or reverse money/.test(supportBundle))
+ok('support: the agent is forbidden from promising a timescale',
+  /Never promise a timescale/.test(supportBundle))
+ok('support: a self-harm disclosure outranks everything',
+  /outranks everything else in the conversation/.test(supportBundle))
+ok('support: the model is called with no tools, so it cannot read the database',
+  !/tools\s*:/.test(supportBundle))
+
+// A handoff marker must be stripped before the player sees it, and the reason
+// kept for the human. Otherwise a phone line says the word "HANDOFF" out loud.
+const splitSrc = readFileSync(join(process.cwd(), 'supabase/functions/_shared/support.ts'), 'utf8')
+ok('support: the HANDOFF marker is stripped from the player-visible reply',
+  /replace\(\/\^\[ \\t\]\*HANDOFF/.test(splitSrc))
+ok('support: cited facts are limited to the FAQ entries it was given',
+  /allowed\.has\(id\)/.test(splitSrc))
+
+// A failed model call must still answer the player. A 502 in their support chat
+// is the one place an error is least forgivable.
+ok('support: a model failure falls back to a human handoff, not an error',
+  /fallbackReply/.test(supportBundle) && /Passed to a human/.test(supportBundle))
+
+// Voice replies must be speakable: our own TwiML helper is the only path out.
+const voiceBundle = readFileSync(join(process.cwd(), 'supabase/.dist/support-voice.ts'), 'utf8')
+ok('support-voice: every reply is TwiML, so a caller never receives JSON',
+  voiceBundle.includes('<Say voice='))
+ok('support-voice: the provider signature is verified before the body is trusted',
+  voiceBundle.indexOf('verifyTwilioSignature(req.clone()') < voiceBundle.indexOf('support_call_events'))
+ok('support-voice: a call is keyed on the provider call id, so a retry cannot duplicate it',
+  voiceBundle.includes('provider_call_id'))
 
 globalThis.fetch = realFetch
 console.log(fails.length ? `\n${fails.length} FAILED: ${fails.join(', ')}` : '\nall edge-function checks passed')

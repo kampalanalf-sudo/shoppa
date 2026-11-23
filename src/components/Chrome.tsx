@@ -585,13 +585,17 @@ export function ChatDock({ onOpenRoom }: { onOpenRoom?: () => void } = {}) {
 
 /* ------------------------------------------------------------------ Footer */
 
-export function Footer() {
+export function Footer({ onSupport }: { onSupport?: () => void } = {}) {
+  // Every support link points at the agents. They previously rendered as plain
+  // buttons that did nothing, which on a betting site is worse than not offering
+  // them: "Contact Us" that ignores a click reads as a company with nobody home.
   const cols = [
     { title: 'Casino', items: ['Originals', 'Slots', 'Live Casino', 'Table Games', 'Instant Win', 'Bonus Buy'] },
     { title: 'Support', items: ['Help Center', 'Live Chat', 'Responsible Gaming', 'Self Exclusion', 'Contact Us'] },
     { title: 'Company', items: ['About FloatBet', 'VIP Club', 'Affiliates', 'Careers', 'Press Kit'] },
     { title: 'Legal', items: ['Terms of Service', 'Privacy Policy', 'AML Policy', 'Provably Fair', 'Licenses'] },
   ]
+  const TO_SUPPORT = new Set(['Help Center', 'Live Chat', 'Responsible Gaming', 'Self Exclusion', 'Contact Us'])
   return (
     <footer className="mt-16 border-t border-white/[0.06] bg-ink-950/80">
       <div className="mx-auto max-w-[1500px] px-5 py-12">
@@ -619,7 +623,13 @@ export function Footer() {
               <ul className="space-y-2">
                 {c.items.map((i) => (
                   <li key={i}>
-                    <button type="button" className="text-[12.5px] text-slate-500 transition hover:text-white">{i}</button>
+                    <button
+                      type="button"
+                      onClick={TO_SUPPORT.has(i) && onSupport ? onSupport : undefined}
+                      className="text-[12.5px] text-slate-500 transition hover:text-white"
+                    >
+                      {i}
+                    </button>
                   </li>
                 ))}
               </ul>
