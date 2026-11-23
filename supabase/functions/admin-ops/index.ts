@@ -93,66 +93,179 @@ async function count(path: string): Promise<number | null> {
 
 type Check = { key: string; label: string; state: 'ok' | 'warn' | 'bad'; detail: string }
 
+/**
+ * A count, or the reason there is not one.
+ *
+ * The first version returned null on failure and the caller rendered that as 0,
+ * so a single unreadable table produced a cheerful "0 fixtures on the board".
+ * Here a failure is a named check with a 'bad' state, so the screen says which
+ * thing is broken instead of pretending everything is empty.
+ */
+async function countOrWhy(
+  table: string,
+  filter?: (q: any) => any,
+): Promise<{ ok: true; n: number } | { ok: false; why: string }> {
+  let q = svc().from(table).select('*', { count: 'exact', head: true }) as any
+  if (filter) q = filter(q)
+  const { count, error } = await q
+  if (error) {
+    return { ok: false, why: `${error.message}${error.code ? ` (${error.code})` : ''}` }
+  }
+  return { ok: true, n: count ?? 0 }
+}
+
 async function health(): Promise<Response> {
   const now = Date.now()
   const checks: Check[] = []
   const db = svc()
 
-  const [fixtures, priced, adminsRes, suspended, pendingCashouts] = await Promise.all([
-    count('sports_fixtures'),
-    count('sports_markets'),
+  // Every check is settled independently. One table being unreadable must not
+  // take the whole screen down with it: the operator needs to see the other
+  // seven answers AND the name of the one that failed.
+  const [fixtures, markets, selections, adminsRes, suspended, waiting, recentSync] = await Promise.all([
+    countOrWhy('sports_fixtures'),
+    countOrWhy('sports_markets'),
+    countOrWhy('sports_selections'),
     db.from('profiles').select('id').eq('is_admin', true),
-    count('profiles'),
-    db.from('cashouts').select('id').eq('status', 'requested'),
+    countOrWhy('profiles', (q) => q.eq('suspended', true)),
+    db.from('cashouts').select('id, created_at').eq('status', 'requested'),
+    db.from('feed_sync_log').select('finished_at, status, fixtures_upserted, credits_left')
+      .order('finished_at', { ascending: false }).limit(1),
   ])
 
-  checks.push({
-    key: 'fixtures',
-    label: 'Fixtures on the board',
-    state: (fixtures ?? 0) > 0 ? 'ok' : 'warn',
-    detail:
-      (fixtures ?? 0) > 0
-        ? `${fixtures} on file`
-        : 'none — the odds feed may not be syncing',
-  })
+  const bump = (r: { ok: true; n: number } | { ok: false; why: string }, key: string, label: string) => {
+    if (!r.ok) {
+      checks.push({ key, label, state: 'bad', detail: `could not be read: ${r.why}` })
+      return null
+    }
+    return r.n
+  }
 
-  checks.push({
-    key: 'priced',
-    label: 'Markets on file',
-    state: (priced ?? 0) > 0 ? 'ok' : 'warn',
-    detail: (priced ?? 0) > 0 ? `${priced} markets` : 'no markets — players cannot bet',
-  })
+  const fixtureCount = bump(fixtures, 'fixtures', 'Fixtures on the board')
+  if (fixtureCount !== null) {
+    checks.push({
+      key: 'fixtures',
+      label: 'Fixtures on the board',
+      state: fixtureCount > 0 ? 'ok' : 'warn',
+      detail: fixtureCount > 0 ? `${fixtureCount} on file` : 'none — the odds feed may not be syncing',
+    })
+  }
 
-  const admins = (adminsRes.data ?? []) as { id: string }[]
-  checks.push({
-    key: 'admins',
-    label: 'Admin accounts',
-    state: admins.length === 1 ? 'warn' : admins.length === 0 ? 'bad' : 'ok',
-    detail:
-      admins.length === 0
-        ? 'nobody can reach the admin screens'
-        : admins.length === 1
-          ? 'only one — if it is lost, there is no way back in'
-          : `${admins.length} accounts`,
-  })
+  const marketCount = bump(markets, 'markets', 'Markets on file')
+  if (marketCount !== null) {
+    checks.push({
+      key: 'markets',
+      label: 'Markets on file',
+      state: marketCount > 0 ? 'ok' : 'warn',
+      detail: marketCount > 0 ? `${marketCount} markets` : 'no markets — players cannot bet',
+    })
+  }
 
-  const waiting = (pendingCashouts.data ?? []) as { id: string }[]
-  checks.push({
-    key: 'cashouts',
-    label: 'Withdrawals waiting',
-    state: waiting.length > 0 ? 'warn' : 'ok',
-    detail:
-      waiting.length > 0
-        ? `${waiting.length} awaiting a decision — every hour is a player who thinks we kept it`
-        : 'queue empty',
-  })
+  const selectionCount = bump(selections, 'selections', 'Prices published')
+  if (selectionCount !== null) {
+    checks.push({
+      key: 'selections',
+      label: 'Prices published',
+      state: selectionCount > 0 ? 'ok' : 'warn',
+      detail: selectionCount > 0 ? `${selectionCount} active selections` : 'no prices — nothing is bettable',
+    })
+  }
 
-  checks.push({
-    key: 'suspended',
-    label: 'Suspended players',
-    state: 'ok',
-    detail: `${suspended ?? 0} accounts`,
-  })
+  // Price freshness: a stale price is a price a player can beat.
+  const { data: newest, error: newestErr } = await db
+    .from('sports_selections')
+    .select('price_at')
+    .eq('is_active', true)
+    .order('price_at', { ascending: false })
+    .limit(1)
+
+  if (newestErr) {
+    checks.push({
+      key: 'price_age', label: 'Newest price', state: 'bad',
+      detail: `could not be read: ${newestErr.message}`,
+    })
+  } else if ((newest ?? [])[0]) {
+    const ageMins = Math.floor((now - new Date(String((newest as any[])[0].price_at)).getTime()) / 60_000)
+    checks.push({
+      key: 'price_age',
+      label: 'Newest price',
+      state: ageMins > 360 ? 'bad' : ageMins > 120 ? 'warn' : 'ok',
+      detail: `${ageMins} min old — a stale price is a price a player can beat`,
+    })
+  }
+
+  if (adminsRes.error) {
+    checks.push({
+      key: 'admins', label: 'Admin accounts', state: 'bad',
+      detail: `could not be read: ${adminsRes.error.message}`,
+    })
+  } else {
+    const admins = (adminsRes.data ?? []) as { id: string }[]
+    checks.push({
+      key: 'admins',
+      label: 'Admin accounts',
+      state: admins.length === 1 ? 'warn' : admins.length === 0 ? 'bad' : 'ok',
+      detail:
+        admins.length === 0
+          ? 'nobody can reach the admin screens'
+          : admins.length === 1
+            ? 'only one — if it is lost, there is no way back in'
+            : `${admins.length} accounts`,
+    })
+  }
+
+  const suspendedCount = bump(suspended, 'suspended', 'Suspended players')
+  if (suspendedCount !== null) {
+    checks.push({
+      key: 'suspended', label: 'Suspended players', state: 'ok',
+      detail: `${suspendedCount} accounts`,
+    })
+  }
+
+  if (waiting.error) {
+    checks.push({
+      key: 'cashouts', label: 'Withdrawals waiting', state: 'bad',
+      detail: `could not be read: ${waiting.error.message}`,
+    })
+  } else {
+    const rows = (waiting.data ?? []) as { created_at: string }[]
+    checks.push({
+      key: 'cashouts',
+      label: 'Withdrawals waiting',
+      state: rows.length > 0 ? 'warn' : 'ok',
+      detail:
+        rows.length > 0
+          ? `${rows.length} awaiting a decision — every hour is a player who thinks we kept it`
+          : 'queue empty',
+    })
+  }
+
+  // The last odds sync. Without this the operator has no way to tell a quiet
+  // board from a dead feed.
+  if (recentSync.error) {
+    checks.push({
+      key: 'sync', label: 'Last odds sync', state: 'bad',
+      detail: `could not be read: ${recentSync.error.message}`,
+    })
+  } else {
+    const sync = ((recentSync.data ?? []) as any[])[0]
+    if (!sync) {
+      checks.push({
+        key: 'sync', label: 'Last odds sync', state: 'warn',
+        detail: 'never run — prices will stay empty until feed-sync runs',
+      })
+    } else {
+      const ageMins = Math.floor((now - new Date(String(sync.finished_at)).getTime()) / 60_000)
+      checks.push({
+        key: 'sync',
+        label: 'Last odds sync',
+        state: sync.status === 'ok' && ageMins < 480 ? 'ok' : sync.status === 'error' ? 'bad' : 'warn',
+        detail: `${sync.status}, ${ageMins} min ago — ${sync.fixtures_upserted ?? 0} fixtures, ${
+          sync.credits_left ?? '?'
+        } credits left`,
+      })
+    }
+  }
 
   const worst = checks.some((c) => c.state === 'bad')
     ? 'bad'

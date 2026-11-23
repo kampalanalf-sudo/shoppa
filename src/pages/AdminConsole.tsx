@@ -251,9 +251,13 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
         <div className="space-y-1.5">
           {healthBusy && <p className="py-8 text-center text-[12px] text-slate-500">Checking…</p>}
           {!healthBusy && checks.length === 0 && (
-            <p className="py-8 text-center text-[12px] text-slate-500">
-              Could not run the checks. The database may be unreachable.
-            </p>
+            <div className="panel px-3 py-4 text-center">
+              <p className="text-[12px] font-bold text-white">No checks came back</p>
+              <p className="mt-1 text-[10.5px] leading-relaxed text-slate-400">
+                {note?.text ??
+                  'The health route returned nothing. This is usually a deployed-function problem, not the database.'}
+              </p>
+            </div>
           )}
           {checks.map((c) => (
             <div key={c.key} className="panel flex items-start gap-2 px-3 py-2">

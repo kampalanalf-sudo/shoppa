@@ -233,6 +233,42 @@ upstream((u) => {
 res = await admin(new Request('https://x/functions/v1/admin-ops?op=health'))
 ok(`admin: no token at all is 401 (${res.status})`, res.status === 401)
 
+// --------------------------------------------------- admin health checks ---
+
+// Health must survive one unreadable table: report it as a failed check and
+// still answer the other eight. The previous version returned null on error and
+// the caller rendered 0, so a broken table looked like an empty platform.
+upstream((u, init) => {
+  if (u.includes('/auth/v1/user')) return jsonRes({ id: 'admin-1' })
+  if (u.includes('/rest/v1/profiles')) {
+    // The count query for suspended players fails; the admin-flag query works.
+    if (String(u).includes('suspended')) {
+      return jsonRes({ message: 'permission denied for table profiles', code: '42501' }, 403)
+    }
+    return jsonRes({ id: 'admin-1', username: 'boss', is_admin: true })
+  }
+  if (u.includes('/rest/v1/sports_fixtures')) return jsonRes([], 200)
+  if (u.includes('/rest/v1/sports_markets')) return jsonRes([], 200)
+  if (u.includes('/rest/v1/sports_selections')) return jsonRes([], 200)
+  if (u.includes('/rest/v1/cashouts')) return jsonRes([], 200)
+  if (u.includes('/rest/v1/feed_sync_log')) return jsonRes([], 200)
+  return null
+})
+
+res = await admin(new Request('https://x/functions/v1/admin-ops?op=health', { headers: auth }))
+body = await res.json()
+const healthChecks = (body.checks ?? []) as { key: string; state: string; detail: string }[]
+ok(`admin health: answers 200 even with a broken table (${res.status})`, res.status === 200)
+ok('admin health: returns checks at all', healthChecks.length >= 6, `(${healthChecks.length})`)
+const failed = healthChecks.find((c) => c.key === 'suspended')
+ok('admin health: names the table it could not read',
+  Boolean(failed) && failed!.state === 'bad' && /permission denied/i.test(failed!.detail))
+ok('admin health: the other checks still answered',
+  healthChecks.filter((c) => c.state !== 'bad').length >= 4)
+ok('admin health: overall reflects the failure', body.overall === 'bad')
+ok('admin health: every check has a readable detail',
+  healthChecks.every((c) => typeof c.detail === 'string' && c.detail.length > 0))
+
 // an adjust above the cap is refused before the database sees it
 res = await admin(new Request('https://x/functions/v1/admin-ops?op=actions', {
   method: 'POST', headers: auth,
