@@ -92,7 +92,9 @@ export async function api<T>(path: string, opts: Opts = {}): Promise<T> {
     if (fresh && fresh !== token) res = await send(fresh)
   }
 
-  const body = (await res.json().catch(() => null)) as (T & { error?: string; code?: string }) | null
+  const body = (await res.json().catch(() => null)) as
+    | (T & { error?: string; message?: string; code?: string })
+    | null
 
   if (res.status === 401) {
     // A refresh token that is also dead means the session cannot be saved here;
@@ -102,7 +104,23 @@ export async function api<T>(path: string, opts: Opts = {}): Promise<T> {
   }
 
   if (!res.ok) {
-    throw new ApiError(body?.error || `Request failed (${res.status})`, res.status, body?.code)
+    // The platform, not our code, answers when a function fails to start. It
+    // uses `message` rather than `error`, so reading only `error` would turn the
+    // one honest explanation available into a bare "Request failed (503)".
+    // A BOOT_ERROR means the function never ran: no query was issued, so
+    // nothing downstream -- the database included -- can be the cause.
+    if (body?.code === 'BOOT_ERROR') {
+      throw new ApiError(
+        'The server function failed to start, so nothing was run. This is a deployment problem, not your data.',
+        res.status,
+        'BOOT_ERROR',
+      )
+    }
+    throw new ApiError(
+      body?.error || body?.message || `Request failed (${res.status})`,
+      res.status,
+      body?.code,
+    )
   }
 
   // A 200 with an HTML body means the request hit a static host that has no such
