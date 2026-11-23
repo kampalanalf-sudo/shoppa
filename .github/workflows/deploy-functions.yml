@@ -160,3 +160,46 @@ jobs:
             fi
             echo "::endgroup::"
           done
+
+      # A deployed bundle is a single minified file assembled by our own inliner.
+      # The failure mode that matters is not "the upload failed" (that is loud) but
+      # "the upload succeeded and the module throws on first request" — which the
+      # dashboard shows as ACTIVE and the app shows as a network error.
+      #
+      # So: call each function once, unauthenticated, and require its own gate to
+      # answer. A 500, a BOOT_ERROR or an HTML body means the bundle is broken.
+      - name: Smoke-test the deployed functions
+        env:
+          ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0cm91ZnJmYXZtamxkdGxwcnBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUwNDQyMTAsImV4cCI6MjExMDYyMDIxfQ.LIafhBin2Uy_tx4OWDtRu-DZ6fca3atMz9Ht-XUmf2s
+        run: |
+          set -euo pipefail
+          BASE="https://$PROJECT_REF.supabase.co/functions/v1"
+          fail=0
+
+          # expect <label> <method> <url> <want-status> <want-substring>
+          expect() {
+            local label="$1" method="$2" url="$3" want="$4" needle="$5"
+            local body code
+            body=$(mktemp)
+            code=$(curl -sS -o "$body" -w '%{http_code}' -X "$method" "$url" \
+              -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+              ${6:+--data-binary "$6"} || echo 000)
+            if [ "$code" != "$want" ] || ! grep -q "$needle" "$body"; then
+              echo "::error::$label: expected $want containing '$needle', got $code: $(head -c 200 "$body")"
+              fail=1
+            else
+              echo "ok   $label ($code)"
+            fi
+          }
+
+          # Every one of these must refuse, and refuse in JSON. A refusal proves
+          # the module booted: an unbuilt function cannot return its own error.
+          expect 'pay refuses an anonymous status read' GET  "$BASE/pay?op=status&reference=X" 401 'not authenticated'
+          expect 'admin-ops refuses an anonymous caller'   GET  "$BASE/admin-ops?op=health"      401 'not authenticated'
+          expect 'feed-sports refuses an anonymous caller' GET  "$BASE/feed-sports"              401 'not authorised'
+          expect 'feed-sync refuses an anonymous caller'   GET  "$BASE/feed-sync"                401 'not authorised'
+          expect 'feed-settle refuses an anonymous caller' GET  "$BASE/feed-settle"              401 'not authorised'
+          expect 'dgateway webhook rejects an unsigned body'    POST "$BASE/webhooks-dgateway"       401 'invalid signature' '{"reference":"x","status":"completed"}'
+          expect 'store webhook rejects an unsigned body'       POST "$BASE/webhooks-dgateway-store" 401 'invalid signature' '{"line_items":[{"product_id":"a"}]}'
+
+          exit $fail
