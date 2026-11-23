@@ -81,6 +81,40 @@ jobs:
             exit 1
           fi
 
+          # Diagnose the token WITHOUT printing it. A 401 from the Management API
+          # has three common causes and they are not interchangeable:
+          #   - the value pasted into the secret is not an sbp_ token at all
+          #     (a project anon/service key looks plausible and is never a PAT)
+          #   - it has a trailing newline or space, which is stored verbatim
+          #   - it is a PAT that has been revoked or expired
+          # Length and a prefix check separate the first from the rest, and an
+          # explicit auth call separates "bad token" from "bad permissions".
+          TOKEN_LEN=${#SUPABASE_ACCESS_TOKEN}
+          case "$SUPABASE_ACCESS_TOKEN" in
+            sbp_*) echo "token: sbp_ prefix found, length $TOKEN_LEN" ;;
+            *)     echo "::error::SUPABASE_ACCESS_TOKEN does not start with sbp_. It is probably a project API key (anon/service_role), not a personal access token. Create one at https://supabase.com/dashboard/account/tokens" ;;
+          esac
+          if [ "$TOKEN_LEN" -lt 40 ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN is only $TOKEN_LEN characters, which is too short for a PAT. It may have been truncated on paste."
+          fi
+          # Detect whitespace without echoing the value: compare against a trimmed
+          # copy. A trailing newline survives the secret UI and breaks the header.
+          if [ "$(printf '%s' "$SUPABASE_ACCESS_TOKEN" | tr -d '\n\r\t ')" != "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN contains whitespace (a trailing space or newline from the paste). Delete the secret and re-add it with no trailing whitespace."
+          fi
+
+          # Prove the token itself works before looping over functions, so a 401
+          # on the first function is not mistaken for a function problem.
+          auth_code=$(curl -sS -o /tmp/me.json -w '%{http_code}' \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            https://api.supabase.com/v1/projects)
+          if [ "$auth_code" != "200" ]; then
+            echo "::error::The Management API rejected the token (HTTP $auth_code). Regenerate it at https://supabase.com/dashboard/account/tokens and re-add the secret."
+            head -c 300 /tmp/me.json; echo
+            exit 1
+          fi
+          echo "token: accepted by the Management API"
+
           for f in .edge-bundles/*.js; do
             name=$(basename "$f" .js)
             if [ "$WANTED" != "all" ] && [[ ",$WANTED," != *",$name,"* ]]; then
