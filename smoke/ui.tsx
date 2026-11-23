@@ -1,4 +1,6 @@
 import { renderToString } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import React from 'react'
 import { PlayBar } from '../src/components/PlayBar'
 import { StoreProvider } from '../src/lib/store'
@@ -6,6 +8,8 @@ import { AuthProvider } from '../src/lib/auth'
 import { Auth } from '../src/pages/Auth'
 import { Cashout } from '../src/pages/Cashout'
 import { Onboarding } from '../src/pages/Onboarding'
+import { Support } from '../src/pages/Support'
+import { SupportBubble } from '../src/components/SupportBubble'
 import { pxToUgx, ugxToPx, PX_PER_UGX, ASSETS, quote } from '../src/lib/proxicash'
 
 const fails: string[] = []
@@ -30,7 +34,37 @@ const renders: [string, React.ReactNode][] = [
   ['Auth', wrap(<Auth />)],
   ['Cashout', wrap(<Cashout onBack={() => {}} />)],
   ['Onboarding', wrap(<Onboarding onDone={() => {}} />)],
+  // Customer care. Rendered signed-out on purpose: an unauthenticated player
+  // must still get a usable screen, not a crash or a blank panel. The empty
+  // state, the disclosure that the agents are automated, and the "never share a
+  // code" warning are all in that first paint.
+  ['Support', wrap(<Support onHome={() => {}} />)],
 ]
+// The screen must tell the player the agents are automated, and must warn about
+// one-time codes. Both are promises the app makes in its own words, so they are
+// checked in the rendered output rather than in the source.
+try {
+  const html = renderToString(wrap(<Support onHome={() => {}} />) as any)
+  ok('Support says the agents are automated', /automated agents/i.test(html))
+  ok('Support warns never to share a one-time code', /one-time code/i.test(html))
+  // The empty state is behind `!booting`, and SSR runs no effects, so the first
+  // paint is the "Starting…" state. Asserting the suggestions here would be
+  // asserting something this render cannot produce — so the starting point is
+  // checked in the source, and the always-rendered copy above is checked here.
+  const supportSrc = readFileSync(join(process.cwd(), 'src/pages/Support.tsx'), 'utf8')
+  ok('Support offers a starting point', /What can we help with/.test(supportSrc) && /SUGGESTIONS/.test(supportSrc))
+  ok('Support shows a loading state before it has a thread', /Starting…/.test(html))
+
+  // Signed out, the floating bubble must render NOTHING. A "Help" button over
+  // the sign-in screen would be a door to a room the visitor cannot enter.
+  const bubbleHtml = renderToString(wrap(<SupportBubble onOpen={() => {}} />) as any)
+  ok('SupportBubble renders nothing when signed out', bubbleHtml.length === 0)
+  ok('Support exposes the transcript to screen readers', /aria-live/.test(html) || /role="log"/.test(html))
+} catch (e) {
+  ok('Support renders for inspection', false)
+  console.log('   ', (e as Error).message)
+}
+
 for (const [name, el] of renders) {
   try {
     const html = renderToString(el as any)

@@ -390,6 +390,52 @@ ok('support: the HANDOFF marker is stripped from the player-visible reply',
 ok('support: cited facts are limited to the FAQ entries it was given',
   /allowed\.has\(id\)/.test(splitSrc))
 
+// ------------------------------------------------- resumable, throttled chat --
+
+// Chat is a conversation you come back to, not a page you visit. `resume` must
+// not create a thread and must not spend a model call greeting someone who is
+// already mid-conversation — the whole point of the flag.
+ok('support: resume is a first-class operation, not a new thread',
+  /body\?\.resume/.test(supportBundle) && /LIVE_WINDOW_HOURS/.test(supportBundle))
+ok('support: start continues a live thread instead of opening a second',
+  /currentThread\(userId, db\)/.test(supportBundle))
+
+// Every message is a model call, so the throttle must be checked BEFORE the
+// model is asked — a limit that runs after the spend is not a limit.
+//
+// Compared within sendMessage's own body. Comparing offsets across the whole
+// bundle is wrong: the shared modules are inlined at the top, so `askModel(`'s
+// DEFINITION always precedes the call site and the comparison passes or fails
+// for reasons that have nothing to do with ordering.
+const sendSrc = readFileSync(join(process.cwd(), 'supabase/functions/support/index.ts'), 'utf8')
+const sendStart = sendSrc.indexOf('async function sendMessage')
+const sendEnd = sendSrc.indexOf('async function', sendStart + 10)
+const sendBody = sendSrc.slice(sendStart, sendEnd)
+const limitAt = sendBody.indexOf('support_can_speak')
+const spendAt = sendBody.indexOf('answerAndStore')
+ok('support: the rate limit is checked before the model is called',
+  sendStart > 0 && limitAt > 0 && spendAt > 0 && limitAt < spendAt)
+ok('support: a throttled message is 429 with its own code',
+  /RATE_LIMITED/.test(supportBundle))
+
+// The database must be the one enforcing it: two taps in the same instant
+// cannot both pass a check that runs in application memory.
+const rateSrc = readFileSync(join(process.cwd(), 'supabase/migrations/0011_support.sql'), 'utf8')
+  + readFileSync(join(process.cwd(), 'supabase/migrations/0012_support_chat.sql'), 'utf8')
+ok('support: the rate limit is enforced in SQL, not in the function',
+  /support_can_speak/.test(rateSrc))
+
+// A player must never be able to write as support. This is the RLS policy that
+// makes the transcript trustworthy, and it is checked at the database, not the
+// client.
+ok('support: a player can only insert messages authored by themselves',
+  /author = 'player'/.test(rateSrc) && /support_msg_player_write/.test(rateSrc))
+
+// Realtime is what makes an agent's reply appear without a refresh, and the
+// stream is filtered to the player's own thread.
+ok('support: the message stream is enabled for realtime',
+  /supabase_realtime add table support_messages/.test(rateSrc))
+
 // A failed model call must still answer the player. A 502 in their support chat
 // is the one place an error is least forgivable.
 ok('support: a model failure falls back to a human handoff, not an error',

@@ -40,6 +40,40 @@ export function onChatMessage(handler: (row: ChatRow) => void): () => void {
   }
 }
 
+/**
+ * Subscribe to new messages in one support thread.
+ *
+ * RLS applies to the realtime stream, so this only ever receives rows from the
+ * conversation it was given — a player cannot subscribe their way into someone
+ * else's thread.
+ *
+ * Filtered by conversation rather than by user because a thread can be answered
+ * while the player is on another screen, and the filter is also what keeps the
+ * stream quiet: one thread's inserts, not every message in the system.
+ */
+export function onSupportMessage(
+  conversationId: string,
+  handler: (row: SupportMessageRow) => void,
+): () => void {
+  if (!supabase) return () => {}
+  const channel = supabase
+    .channel(`support-${conversationId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'support_messages',
+        filter: `conversation_id=eq.${conversationId}`,
+      },
+      (payload) => handler(payload.new as SupportMessageRow),
+    )
+    .subscribe()
+  return () => {
+    void supabase.removeChannel(channel)
+  }
+}
+
 /** Subscribe to gifts where the signed-in user is the recipient. */
 export function onIncomingGift(handler: (row: GiftRow) => void): () => void {
   if (!supabase) return () => {}
@@ -54,6 +88,15 @@ export function onIncomingGift(handler: (row: GiftRow) => void): () => void {
   return () => {
     void supabase.removeChannel(channel)
   }
+}
+
+export type SupportMessageRow = {
+  id: number
+  conversation_id: string
+  author: 'player' | 'agent' | 'system'
+  agent_id: string | null
+  body: string
+  created_at: string
 }
 
 export type ChatRow = {
