@@ -169,37 +169,53 @@ jobs:
       # So: call each function once, unauthenticated, and require its own gate to
       # answer. A 500, a BOOT_ERROR or an HTML body means the bundle is broken.
       - name: Smoke-test the deployed functions
-        env:
-          ANON_KEY: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0cm91ZnJmYXZtamxkdGxwcnBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUwNDQyMTAsImV4cCI6MjExMDYyMDIxfQ.LIafhBin2Uy_tx4OWDtRu-DZ6fca3atMz9Ht-XUmf2s
         run: |
           set -euo pipefail
           BASE="https://$PROJECT_REF.supabase.co/functions/v1"
+
+          # Read the publishable key out of the source rather than restating it
+          # here. It is not a secret (it ships in the browser bundle by design),
+          # but a second copy in a workflow is a second copy to forget to rotate.
+          ANON_KEY=$(sed -n "s/^[[:space:]]*'\(eyJ[^']*\)'/\1/p" src/lib/backend.ts | head -1)
+          if [ -z "$ANON_KEY" ]; then
+            echo "::error::could not read DEFAULT_ANON from src/lib/backend.ts"
+            exit 1
+          fi
+
           fail=0
 
-          # expect <label> <method> <url> <want-status> <want-substring>
+          # expect <label> <method> <url> <want-status> <want-substring> [body]
           expect() {
-            local label="$1" method="$2" url="$3" want="$4" needle="$5"
+            local label="$1" method="$2" url="$3" want="$4" needle="$5" data="${6:-}"
             local body code
             body=$(mktemp)
-            code=$(curl -sS -o "$body" -w '%{http_code}' -X "$method" "$url" \
-              -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
-              ${6:+--data-binary "$6"} || echo 000)
+            if [ -n "$data" ]; then
+              code=$(curl -sS -o "$body" -w '%{http_code}' -X "$method" "$url" \
+                -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+                --data-binary "$data" || echo 000)
+            else
+              code=$(curl -sS -o "$body" -w '%{http_code}' -X "$method" "$url" \
+                -H "apikey: $ANON_KEY" || echo 000)
+            fi
             if [ "$code" != "$want" ] || ! grep -q "$needle" "$body"; then
-              echo "::error::$label: expected $want containing '$needle', got $code: $(head -c 200 "$body")"
+              echo "::error::$label: expected $want containing '$needle', got $code: $(head -c 300 "$body")"
               fail=1
             else
               echo "ok   $label ($code)"
             fi
+            rm -f "$body"
           }
 
-          # Every one of these must refuse, and refuse in JSON. A refusal proves
-          # the module booted: an unbuilt function cannot return its own error.
-          expect 'pay refuses an anonymous status read' GET  "$BASE/pay?op=status&reference=X" 401 'not authenticated'
-          expect 'admin-ops refuses an anonymous caller'   GET  "$BASE/admin-ops?op=health"      401 'not authenticated'
-          expect 'feed-sports refuses an anonymous caller' GET  "$BASE/feed-sports"              401 'not authorised'
-          expect 'feed-sync refuses an anonymous caller'   GET  "$BASE/feed-sync"                401 'not authorised'
-          expect 'feed-settle refuses an anonymous caller' GET  "$BASE/feed-settle"              401 'not authorised'
-          expect 'dgateway webhook rejects an unsigned body'    POST "$BASE/webhooks-dgateway"       401 'invalid signature' '{"reference":"x","status":"completed"}'
-          expect 'store webhook rejects an unsigned body'       POST "$BASE/webhooks-dgateway-store" 401 'invalid signature' '{"line_items":[{"product_id":"a"}]}'
+          # Every call below must be refused, and refused in JSON. A refusal is
+          # the proof we want: an unbuilt or throwing bundle cannot return its
+          # own error message — it returns a 500, a BOOT_ERROR or an HTML page.
+          expect 'pay refuses an anonymous status read'        GET  "$BASE/pay?op=status&reference=smoke" 401 'not authenticated'
+          expect 'admin-ops refuses an anonymous caller'       GET  "$BASE/admin-ops?op=health"           401 'not signed in'
+          expect 'feed-sports refuses an anonymous caller'     GET  "$BASE/feed-sports"                   401 'not authorised'
+          expect 'feed-sync refuses an anonymous caller'       GET  "$BASE/feed-sync"                     401 'not authorised'
+          expect 'feed-settle refuses an anonymous caller'     GET  "$BASE/feed-settle"                   401 'not authorised'
+          # These two verify the HMAC before parsing, so the payload is irrelevant.
+          expect 'dgateway webhook rejects an unsigned call'   POST "$BASE/webhooks-dgateway"             401 'invalid signature' '{}'
+          expect 'store webhook rejects an unsigned call'      POST "$BASE/webhooks-dgateway-store"       401 'invalid signature' '{}'
 
           exit $fail
