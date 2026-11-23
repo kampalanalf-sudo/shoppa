@@ -12,7 +12,7 @@
 // thing standing between an anonymous request and a wallet credit. That is why
 // every check below fails closed.
 import { CORS, json, readEnv } from '../_shared/http.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4'
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
 import {
   fetchTransactionStatus, normalizeStatus, transactionMatches, verifyWebhookSignature,
 } from '../_shared/dgateway.ts'

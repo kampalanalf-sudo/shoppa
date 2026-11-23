@@ -15,7 +15,7 @@
 //
 // Public route, like its sibling: verify_jwt is false and the HMAC is the gate.
 import { CORS, json, readEnv } from '../_shared/http.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4'
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
 import { fetchTransactionStatus, normalizeStatus, verifyWebhookSignature } from '../_shared/dgateway.ts'
 
 /** Env var, trimmed. Missing becomes '' and never the string "undefined". */

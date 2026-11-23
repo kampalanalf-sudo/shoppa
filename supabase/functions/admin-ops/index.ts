@@ -22,7 +22,7 @@
 // The parked-payment operations moved in from their own endpoint because they
 // share that gate exactly and they are the other place that moves money.
 import { CORS, json, readEnv } from '../_shared/http.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4'
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
 import {
   GatewayError, disbursePayment, normalizePhone, assertLiveSafety,
 } from '../_shared/dgateway.ts'
