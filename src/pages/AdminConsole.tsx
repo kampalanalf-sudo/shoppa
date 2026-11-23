@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 import { money } from '../lib/format'
+import { SUPABASE_ANON_KEY, apiUrl } from '../lib/backend'
 import { IconChevronLeft, IconShield, IconCheck, IconClock, IconLive } from '../components/Icons'
 
 /**
@@ -91,7 +92,9 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
     try {
       const t = await token()
       if (!t) return
-      const res = await fetch('/api/admin/health', { headers: { Authorization: `Bearer ${t}` } })
+      const res = await fetch(apiUrl('/api/admin/health'), {
+        headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY },
+      })
       const body = (await res.json().catch(() => ({}))) as { checks?: Check[] }
       setChecks(res.ok ? body.checks ?? [] : [])
     } finally {
@@ -104,8 +107,8 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
     try {
       const t = await token()
       if (!t) return
-      const res = await fetch(`/api/admin/cashouts?status=${cashStatus}`, {
-        headers: { Authorization: `Bearer ${t}` },
+      const res = await fetch(apiUrl('/api/admin/cashouts', { status: cashStatus }), {
+        headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY },
       })
       const body = (await res.json().catch(() => ({}))) as {
         rows?: Cashout[]
@@ -125,7 +128,9 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
     try {
       const t = await token()
       if (!t) return
-      const res = await fetch('/api/admin/audit?limit=150', { headers: { Authorization: `Bearer ${t}` } })
+      const res = await fetch(apiUrl('/api/admin/audit', { limit: '150' }), {
+        headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY },
+      })
       const body = (await res.json().catch(() => ({}))) as { rows?: AuditRow[] }
       setAudit(res.ok ? body.rows ?? [] : [])
     } finally {
@@ -145,9 +150,13 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
       const t = await token()
       if (!t) return
       setNote(null)
-      const res = await fetch('/api/admin/actions', {
+      const res = await fetch(apiUrl('/api/admin/actions'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${t}`,
+          apikey: SUPABASE_ANON_KEY,
+        },
         body: JSON.stringify({
           action: 'settle_cashout',
           cashoutId: co.id,

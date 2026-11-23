@@ -3,6 +3,7 @@ import { useAuth } from '../lib/auth'
 import { fetchStatus, type StatusResponse } from '../lib/payments'
 import { supabase } from '../lib/supabase'
 import { money } from '../lib/format'
+import { SUPABASE_ANON_KEY, apiUrl } from '../lib/backend'
 import { sfx } from '../lib/sound'
 import { IconCheck, IconChevronLeft, IconShield } from '../components/Icons'
 
@@ -94,9 +95,13 @@ export function TopUpSuccess({ reference, onHome, onTopUpAgain }: Props) {
         setClaimMsg('Sign in first, then paste the reference from your payment SMS.')
         return
       }
-      const res = await fetch('/api/topup/claim', {
+      const res = await fetch(apiUrl('/api/topup/claim'), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+          apikey: SUPABASE_ANON_KEY,
+        },
         body: JSON.stringify({ reference: ref }),
       })
       const body = (await res.json().catch(() => ({}))) as { error?: string; px?: number }

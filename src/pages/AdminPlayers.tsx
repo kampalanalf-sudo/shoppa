@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 import { money } from '../lib/format'
+import { SUPABASE_ANON_KEY, apiUrl } from '../lib/backend'
 import { IconChevronLeft, IconShield, IconSearch, IconClock } from '../components/Icons'
 
 /**
@@ -113,8 +114,8 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
       }
       const qs = new URLSearchParams({ sort, limit: '100' })
       if (query.trim().length >= 3) qs.set('q', query.trim())
-      const res = await fetch(`/api/admin/players?${qs}`, {
-        headers: { Authorization: `Bearer ${t}` },
+      const res = await fetch(apiUrl('/api/admin/players', Object.fromEntries(qs)), {
+        headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY },
       })
       const body = (await res.json().catch(() => ({}))) as {
         rows?: Row[]
@@ -147,8 +148,8 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
     try {
       const t = await token()
       if (!t) return
-      const res = await fetch(`/api/admin/players?id=${encodeURIComponent(id)}`, {
-        headers: { Authorization: `Bearer ${t}` },
+      const res = await fetch(apiUrl('/api/admin/players', { id }), {
+        headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY },
       })
       const body = (await res.json().catch(() => ({}))) as Detail & { error?: string }
       if (res.ok) setDetail(body)
@@ -167,9 +168,13 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
       try {
         const t = await token()
         if (!t) return
-        const res = await fetch('/api/admin/actions', {
+        const res = await fetch(apiUrl('/api/admin/actions'), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${t}`,
+            apikey: SUPABASE_ANON_KEY,
+          },
           body: JSON.stringify(payload),
         })
         const body = (await res.json().catch(() => ({}))) as { error?: string; balance?: number }

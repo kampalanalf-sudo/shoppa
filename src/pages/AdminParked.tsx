@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 import { money } from '../lib/format'
+import { SUPABASE_ANON_KEY, apiUrl } from '../lib/backend'
 import { IconChevronLeft, IconShield, IconSearch, IconClose } from '../components/Icons'
 
 type ParkedRow = {
@@ -63,8 +64,8 @@ export function AdminParked({ onHome }: { onHome: () => void }) {
         setError('Please sign in again.')
         return
       }
-      const res = await fetch(`/api/admin/parked?status=${status}&limit=100`, {
-        headers: { Authorization: `Bearer ${t}` },
+      const res = await fetch(apiUrl('/api/admin/parked', { status, limit: '100' }), {
+        headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY },
       })
       const body = (await res.json().catch(() => ({}))) as { rows?: ParkedRow[]; error?: string }
       if (!res.ok) {
@@ -96,8 +97,8 @@ export function AdminParked({ onHome }: { onHome: () => void }) {
     }
     const t = await token()
     if (!t) return
-    const res = await fetch(`/api/admin/lookup?q=${encodeURIComponent(q.trim())}`, {
-      headers: { Authorization: `Bearer ${t}` },
+    const res = await fetch(apiUrl('/api/admin/lookup', { q: q.trim() }), {
+      headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY },
     })
     const body = (await res.json().catch(() => ({}))) as { rows?: Account[] }
     setResults(res.ok ? body.rows ?? [] : [])
@@ -110,9 +111,13 @@ export function AdminParked({ onHome }: { onHome: () => void }) {
       setBusy(true)
       setNote(null)
       try {
-        const res = await fetch('/api/admin/parked', {
+        const res = await fetch(apiUrl('/api/admin/parked'), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${t}`,
+            apikey: SUPABASE_ANON_KEY,
+          },
           body: JSON.stringify({ reference: row.reference, action, userId }),
         })
         const body = (await res.json().catch(() => ({}))) as {

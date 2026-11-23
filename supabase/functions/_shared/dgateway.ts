@@ -24,13 +24,18 @@ export type Transaction = {
 }
 
 export class GatewayError extends Error {
-  constructor(message: string, public code = 'PROVIDER_ERROR', public status = 502) {
+  code: string
+  httpStatus: number
+  constructor(message: string, code = 'PROVIDER_ERROR', httpStatus = 502) {
     super(message)
     this.name = 'GatewayError'
+    this.code = code
+    this.httpStatus = httpStatus
   }
 }
 
-export const env = {
+/** Secrets, read through one place. */
+export const secrets = {
   get apiUrl() {
     return (Deno.env.get('DGATEWAY_API_URL') || 'https://dgatewayapi.desispay.com').replace(/\/$/, '')
   },
@@ -49,14 +54,14 @@ export const env = {
 }
 
 export function requireApiKey() {
-  if (!env.apiKey) {
+  if (!secrets.apiKey) {
     throw new GatewayError(
       'Mobile money is not configured. No payment has been requested.',
       'PAYMENT_NOT_CONFIGURED',
       503,
     )
   }
-  return env.apiKey
+  return secrets.apiKey
 }
 
 /** DGateway accepts the leading 0 or +256 country code form. */
@@ -78,6 +83,69 @@ export function isWholeUnitAmount(amount: unknown, currency: string) {
   return ['UGX', 'KES', 'TZS', 'RWF', 'USD'].includes(currency)
 }
 
+/** Whole unit amounts only, in a currency we support. (Vercel name, kept so the
+ *  ported routes read identically to api/pay.ts.) */
+export function isWholeAmount(amount: unknown): amount is number {
+  return typeof amount === 'number' && Number.isInteger(amount) && amount > 0
+}
+
+/**
+ * Normalise a mobile-money number to the form DGateway accepts, or null.
+ *
+ * Returns null rather than a best guess: a plausibly-wrong number is a charge
+ * sent to a stranger.
+ */
+export function normalizePhone(input: string): string | null {
+  const raw = String(input || '').trim().replace(/[\s().-]/g, '')
+  if (!raw) return null
+
+  // +2567..., +2547..., +2556..., +2507...
+  if (/^\+(?:256[17]\d{8}|2547\d{8}|255[67]\d{8}|2507[2389]\d{7})$/.test(raw)) return raw
+
+  // 2567... (no plus)
+  if (/^(?:256[17]\d{8}|2547\d{8}|255[67]\d{8}|2507[2389]\d{7})$/.test(raw)) return raw
+
+  // 07... / 01... local form — keep the 0, which is what the provider expects
+  if (/^0[17]\d{8}$/.test(raw)) return raw
+
+  return null
+}
+
+/**
+ * True when a LIVE key is configured. Live mode moves real money, so it is held
+ * to stricter rules than sandbox: a webhook secret is mandatory.
+ */
+export function isLiveMode(): boolean {
+  return secrets.apiKey.startsWith('dgw_live')
+}
+
+/**
+ * Refuse to move real money when the webhook cannot be verified.
+ *
+ * Without a secret, every webhook fails the HMAC check, so a real charge would
+ * be taken and never credited. Blocking the charge is the only safe outcome.
+ */
+export function assertLiveSafety(): void {
+  // No key at all: refuse before anything is sent, so a misconfigured function
+  // reads as "not set up" rather than as a provider outage.
+  if (!secrets.apiKey) {
+    throw new GatewayError(
+      'Mobile money is not configured. No payment has been requested.',
+      'PAYMENT_NOT_CONFIGURED',
+      503,
+    )
+  }
+  if (!isLiveMode()) return
+  if (!secrets.webhookSecret) {
+    throw new GatewayError(
+      'Live payments are enabled but DGATEWAY_WEBHOOK_SECRET is not set. ' +
+        'Payments are blocked until the webhook can be verified.',
+      'WEBHOOK_SECRET_MISSING',
+      503,
+    )
+  }
+}
+
 /** Only the exact terminal states from DGateway may fulfil or fail an order. */
 export function normalizeStatus(value: unknown): PaymentStatus {
   const s = String(value || '').toLowerCase()
@@ -91,7 +159,7 @@ async function request(path: string, init?: { method?: string; body?: unknown })
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 25_000)
   try {
-    const res = await fetch(`${env.apiUrl}${path}`, {
+    const res = await fetch(`${secrets.apiUrl}${path}`, {
       method: init?.method || 'GET',
       headers: { 'X-API-Key': key, 'Content-Type': 'application/json' },
       body: init?.body === undefined ? undefined : JSON.stringify(init.body),
@@ -182,7 +250,7 @@ export function transactionMatches(
 
 /** Constant-time HMAC check of the raw webhook body. Fails closed. */
 export async function verifyWebhookSignature(raw: string, signature: string | null) {
-  const secret = env.webhookSecret
+  const secret = secrets.webhookSecret
   if (!secret) return false // no secret configured => reject, never trust blindly
   if (!signature) return false
   const received = signature.trim().replace(/^sha256=/i, '').toLowerCase()
@@ -196,17 +264,4 @@ export async function verifyWebhookSignature(raw: string, signature: string | nu
     diff |= expected[i] ^ parseInt(received.slice(i * 2, i * 2 + 2), 16)
   }
   return diff === 0
-}
-
-export const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-}
-
-export function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  })
 }
