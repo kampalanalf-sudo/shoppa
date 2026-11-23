@@ -39,8 +39,18 @@ jobs:
       # data. The service_role key must never appear here.
       - name: Build
         env:
-          # "/<repo>/" for project pages, "/" for user/org pages
-          BASE_PATH: ${{ format('/{0}/', github.event.repository.name) }}
+          # "/" because this app is served from the ROOT of floatbet.space via
+          # public/CNAME. It used to be "/<repo>/" for a project-pages URL, but
+          # every asset in public/ — the manifest's /icons/*, its start_url "/",
+          # the service-worker scope and the art paths — was written root-relative.
+          # Under the /shoppa/ subpath those all resolved to the wrong origin
+          # path: the icons 404'd and install-to-homescreen was broken, while the
+          # page itself still rendered, so it was easy to miss.
+          #
+          # If you ever go back to a project-pages URL, this must go back to
+          # format('/{0}/', ...) AND public/manifest.webmanifest has to be made
+          # relative, or the PWA breaks again.
+          BASE_PATH: '/'
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://dtroufrfavmjldtlprpn.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
           VITE_DGATEWAY_STORE_URL: 'off'
@@ -59,6 +69,18 @@ jobs:
         run: |
           cp dist/index.html dist/404.html
           touch dist/.nojekyll
+          # Without this the custom domain is dropped on every deploy and
+          # floatbet.space starts serving GitHub's 404. Fail loudly instead.
+          if [ ! -s dist/CNAME ]; then
+            echo "::error title=CNAME missing::public/CNAME did not reach dist/, so the custom domain would be dropped."
+            exit 1
+          fi
+          echo "publishing for $(cat dist/CNAME)"
+          # A root-relative build must not ship assets under a subpath.
+          if grep -q '/shoppa/assets/' dist/index.html; then
+            echo "::error title=Wrong base path::dist/index.html references /shoppa/assets, but this deploy serves from the domain root."
+            exit 1
+          fi
 
       - name: Publish to gh-pages
         uses: peaceiris/actions-gh-pages@v4

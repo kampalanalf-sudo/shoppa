@@ -87,6 +87,32 @@ const SITE = 'shoppa-sigma.vercel.app'
 const docs = ['docs/GO-LIVE.md', 'docs/PAYMENTS.md', 'docs/PRODUCTION.md', '.env.example']
   .map((f) => readFileSync(f, 'utf8'))
 const cfg = readFileSync('capacitor.config.ts', 'utf8')
+// ---- custom domain wiring -------------------------------------------------
+// floatbet.space is served by GitHub Pages, so two things have to be true or
+// the domain breaks in ways that look like an app bug: the CNAME has to ship
+// inside dist/, and the build has to be root-relative because the manifest and
+// the service worker use absolute paths.
+const cname = readFileSync('public/CNAME', 'utf8').trim()
+ok('public/CNAME names the production domain', cname === 'floatbet.space', cname)
+ok('public/CNAME is a single line', cname.split('\n').length === 1)
+
+const pagesFlow = readFileSync('.github/workflows/deploy-pages.yml', 'utf8')
+ok('the Pages build uses a root base path', /BASE_PATH: '\/'/.test(pagesFlow))
+ok('the Pages build does not use the /shoppa/ subpath',
+  !/BASE_PATH: \$\{\{ format\('\/\{0\}\/'/.test(pagesFlow))
+ok('the workflow fails if the CNAME does not reach dist/', /dist\/CNAME/.test(pagesFlow))
+ok('the workflow fails on a subpath build', /shoppa\/assets/.test(pagesFlow))
+
+// The manifest's paths are absolute, so they only resolve under a root deploy.
+// If the base path and the manifest ever disagree the PWA 404s its own icons.
+const manifestJson = JSON.parse(readFileSync('public/manifest.webmanifest', 'utf8'))
+ok('the manifest is root-relative',
+  manifestJson.start_url.startsWith('/') && manifestJson.scope === '/')
+ok('the manifest icons are root-relative',
+  manifestJson.icons.every((i: { src: string }) => i.src.startsWith('/')))
+ok('the service worker scope follows the build base',
+  readFileSync('src/lib/pwa.ts', 'utf8').includes('scope: import.meta.env.BASE_URL'))
+
 ok('the production URL is the project domain, not a borrowed one',
   docs.every((d) => d.includes(SITE)) && cfg.includes(SITE))
 // shoppa-ten was never ours. Allow it only in prose explaining that fact.
