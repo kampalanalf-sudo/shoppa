@@ -32,6 +32,21 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      # The app's server routes are Supabase Edge Functions now, not files in
+      # this deployment. A call to a function nobody deployed returns Supabase's
+      # HTML 404, which `res.json().catch(...)` turns into null — so the failure
+      # shows up as an empty admin table or a spinner, not as an error. This
+      # verifies every /api path the bundle can request resolves to a function
+      # directory that exists, and that the shared-module imports resolve.
+      - name: Verify edge-function routes
+        run: npm run test:edge
+
+      # Every page must go through api(), which refreshes an expired token once
+      # instead of sending a dead one. A page that reads the raw access token
+      # brings back an error that reads as a server failure.
+      - name: Verify the API client
+        run: npm run test:api
+
       # Auth is compiled in at BUILD time: if these two are missing the bundle
       # ships without a Supabase client at all and the live site silently runs
       # local-only — no sign-up, no wallet, no cashout — with nothing on screen
@@ -54,6 +69,9 @@ jobs:
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://dtroufrfavmjldtlprpn.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
           VITE_DGATEWAY_STORE_URL: 'off'
+          # No VITE_API_BASE: the function origin is derived from
+          # VITE_SUPABASE_URL in src/lib/backend.ts, so there is one fewer value
+          # that can be wrong at build time.
         run: |
           if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
             echo "::warning title=Auth disabled::VITE_SUPABASE_ANON_KEY is not set, so this build has no sign-in. Add it in Settings -> Secrets and variables -> Actions."

@@ -1,0 +1,123 @@
+name: Deploy edge functions
+
+# Deploys the Supabase Edge Functions that replaced the Vercel /api routes.
+#
+# WHY A WORKFLOW AND NOT `supabase functions deploy`
+#
+# Each function here imports from ../_shared/ (one DGateway client, one odds-feed
+# client, one set of CORS/JSON helpers). A deployed Edge Function is a single
+# module, so those imports cannot resolve in the uploaded bundle. The CLI's
+# `deploy` does not follow them. `scripts/build-edge-functions.mjs` inlines the
+# shared modules in dependency order, esbuild bundles and minifies the result,
+# and this workflow POSTs one file per function to the Management API.
+#
+# One source of truth, one generated artifact, nothing to hand-copy.
+#
+# Requires repository secret: SUPABASE_ACCESS_TOKEN (a personal access token from
+# supabase.com/dashboard/account/tokens). PROJECT_REF is not secret.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+      - 'scripts/build-edge-functions.mjs'
+      - '.github/workflows/deploy-functions.yml'
+  workflow_dispatch:
+    inputs:
+      functions:
+        description: 'Comma-separated slugs, or "all"'
+        required: false
+        default: 'all'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edge-functions
+  cancel-in-progress: false
+
+env:
+  PROJECT_REF: dtroufrfavmjldtlprpn
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Inline shared modules and bundle
+        run: |
+          node scripts/build-edge-functions.mjs --check
+          mkdir -p .edge-bundles
+          for f in supabase/.dist/*.ts; do
+            name=$(basename "$f" .ts)
+            ./node_modules/.bin/esbuild "$f" \
+              --bundle --format=esm --platform=neutral --target=es2022 \
+              --external:'https://*' --minify-whitespace --legal-comments=none \
+              --outfile=".edge-bundles/$name.js"
+            echo "bundled $name ($(wc -c < ".edge-bundles/$name.js") bytes)"
+          done
+
+      - name: Deploy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          WANTED: ${{ github.event.inputs.functions || 'all' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN is not set. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+          for f in .edge-bundles/*.js; do
+            name=$(basename "$f" .js)
+            if [ "$WANTED" != "all" ] && [[ ",$WANTED," != *",$name,"* ]]; then
+              echo "skip $name"
+              continue
+            fi
+
+            # verify_jwt=false for every function here, deliberately:
+            #   pay / admin-ops        -> each calls auth.getUser() itself and
+            #                             distinguishes 401 from 403, which the
+            #                             platform gate cannot do
+            #   webhooks-*             -> the caller is DGateway, and the HMAC
+            #                             signature over the raw body is the only
+            #                             gate that can admit it
+            #   feed-*                 -> CRON_SECRET bearer, or an admin JWT
+            #                             checked in-function
+            # Leaving the platform default (true) would break the webhooks and
+            # the cron, and would turn a "signed in but not an admin" 403 into an
+            # indistinguishable 401.
+            jq -n --rawfile body "$f" --arg name "$name" \
+              '{slug: $name, name: $name, verify_jwt: false, body: $body}' > payload.json
+
+            echo "::group::deploy $name"
+            code=$(curl -sS -o resp.json -w '%{http_code}' -X POST \
+              "https://api.supabase.com/v1/projects/$PROJECT_REF/functions?slug=$name" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              -H 'Content-Type: application/json' \
+              --data-binary @payload.json)
+
+            # A function that already exists must be PATCHed, not POSTed.
+            if [ "$code" = "409" ] || [ "$code" = "400" ]; then
+              code=$(curl -sS -o resp.json -w '%{http_code}' -X PATCH \
+                "https://api.supabase.com/v1/projects/$PROJECT_REF/functions/$name" \
+                -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+                -H 'Content-Type: application/json' \
+                --data-binary @payload.json)
+            fi
+
+            cat resp.json; echo
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              echo "::error::deploying $name failed with HTTP $code"
+              exit 1
+            fi
+            echo "::endgroup::"
+          done

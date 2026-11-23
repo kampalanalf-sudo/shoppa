@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { supabase } from './supabase'
+import { api } from './api'
 
 /**
- * Client helpers for the /api payment routes.
+ * Client helpers for the payment routes.
  *
  * The browser never talks to DGateway and never sees the API key: it calls our
- * own server routes, which hold the key.
+ * own server routes, which hold the key. Those routes are Supabase Edge
+ * Functions (`pay?op=...`); `apiUrl()` maps the old `/api/...` names onto them.
  */
 
 export type PaymentState = 'idle' | 'pending' | 'completed' | 'failed' | 'timeout' | 'error'
@@ -18,22 +19,8 @@ export type CollectResponse = {
   message: string
 }
 
-async function authHeaders(): Promise<Record<string, string>> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (supabase) {
-    const { data } = await supabase.auth.getSession()
-    const token = data.session?.access_token
-    if (token) headers.Authorization = `Bearer ${token}`
-  }
-  return headers
-}
-
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, { method: 'POST', headers: await authHeaders(), body: JSON.stringify(body) })
-  const json = (await res.json().catch(() => null)) as (T & { error?: string }) | null
-  if (!res.ok) throw new Error(json?.error || `Request failed (${res.status})`)
-  return json as T
-}
+const post = <T,>(path: string, body: unknown): Promise<T> =>
+  api<T>(path, { method: 'POST', body })
 
 /** Start a top-up. Opens a mobile-money prompt on the payer's phone. */
 export function collect(input: {
@@ -69,11 +56,9 @@ export type StatusResponse = {
 
 /** One status read through our server proxy. */
 export async function fetchStatus(reference: string, fresh = false): Promise<StatusResponse> {
-  const qs = new URLSearchParams({ reference, ...(fresh ? { fresh: '1' } : {}) })
-  const res = await fetch(`/api/status?${qs}`, { headers: await authHeaders() })
-  const json = (await res.json().catch(() => null)) as (StatusResponse & { error?: string }) | null
-  if (!res.ok) throw new Error(json?.error || `Request failed (${res.status})`)
-  return json as StatusResponse
+  return api<StatusResponse>('/api/status', {
+    params: { reference, ...(fresh ? { fresh: '1' } : {}) },
+  })
 }
 
 const POLL_MS = 10_000

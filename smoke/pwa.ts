@@ -27,6 +27,36 @@ const missing = icons
 ok('manifest: every declared icon file exists', missing.length === 0, missing.join(', '))
 
 // --------------------------------------------------------- service worker ---
+// ---- update delivery -------------------------------------------------------
+//
+// A cached shell is cache-first and the document is network-first, so a deploy
+// lands on a fresh load. What it cannot do is reach an app that is already open:
+// nothing re-reads the document, so without an announcement the device stays on
+// its old build forever. That announcement was missing — `pwa.ts` listened for
+// an UPDATED message that no worker ever sent, so the installed "Update
+// available — Reload now" sheet could not appear.
+ok('sw: announces UPDATED when an update installs', /postMessage\(\{ type: 'UPDATED' \}\)/.test(sw))
+ok('sw: announces on install only when it is an update, not a first install',
+  /firstInstall = !self\.registration\.active/.test(sw))
+ok('sw: announces again once it takes control (activate)', (() => {
+  const at = sw.indexOf("addEventListener('activate'")
+  return at > -1 && sw.slice(at).includes("postMessage({ type: 'UPDATED' })")
+})())
+ok('sw: takes over immediately, so an update cannot sit waiting', /skipWaiting\(\)/.test(sw))
+
+const pwaSrc = readFileSync('src/lib/pwa.ts', 'utf8')
+ok('pwa: listens for the UPDATED message', pwaSrc.includes("e.data?.type === 'UPDATED'"))
+ok('pwa: re-checks for an update when the app returns to the foreground',
+  /visibilitychange/.test(pwaSrc) && /reg\.update\(\)/.test(pwaSrc))
+ok('pwa: reloads when the new worker takes control', /controllerchange/.test(pwaSrc))
+ok('pwa: applyUpdate does not reload before the worker activates', (() => {
+  const at = pwaSrc.indexOf('export function applyUpdate')
+  const body = pwaSrc.slice(at, at + 900)
+  // The unconditional reload used to sit right after postMessage, racing the
+  // activation. It must now be behind the `waiting` check.
+  return body.indexOf('reg.waiting') > -1 && body.indexOf('postMessage') > body.indexOf('reg.waiting')
+})())
+
 ok('sw: refuses non-GET outright', /request\.method !== 'GET'\) return/.test(sw))
 ok('sw: refuses any request carrying an Authorization header',
   /request\.headers\.has\('Authorization'\)\) return/.test(sw))

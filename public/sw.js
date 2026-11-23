@@ -21,7 +21,12 @@
 // Bump this whenever anything in SHELL or public/icons changes. The shell and
 // the icons are cache-first, so without a bump an installed PWA keeps serving
 // the old file forever. v2 = the die replaced the old logo tile.
-const VERSION = 'v2'
+// v3 = the worker now announces itself (see below). That announcement is the
+// only way an already-installed app learns a new build exists, and it was
+// missing: `pwa.ts` listened for an UPDATED message that nothing ever sent, so
+// the "Update available — Reload now" sheet could never appear and a device
+// with a cached shell stayed on its old build indefinitely.
+const VERSION = 'v3'
 const SHELL_CACHE = `floatbet-shell-${VERSION}`
 const ASSET_CACHE = `floatbet-assets-${VERSION}`
 
@@ -46,13 +51,26 @@ const NEVER_CACHE = [
 
 const isAsset = (url) => /\.(?:js|css|woff2?|ttf|png|jpe?g|webp|avif|svg|ico)$/i.test(url.pathname)
 
+/**
+ * A new worker is installed. If an older one is already controlling pages, this
+ * is an update and those pages need to be told — they are running old code and
+ * have no other way to find out.
+ */
 self.addEventListener('install', (event) => {
+  const firstInstall = !self.registration.active
+
   event.waitUntil(
     caches
       .open(SHELL_CACHE)
       // A missing entry must not abort the install; the shell is a nicety.
       .then((cache) => Promise.allSettled(SHELL.map((p) => cache.add(p))))
-      .then(() => self.skipWaiting()),
+      .then(() => self.skipWaiting())
+      .then(() => {
+        if (firstInstall) return
+        return self.clients
+          .matchAll({ type: 'window', includeUncontrolled: true })
+          .then((clients) => clients.forEach((c) => c.postMessage({ type: 'UPDATED' })))
+      }),
   )
 })
 
@@ -67,7 +85,14 @@ self.addEventListener('activate', (event) => {
             .map((k) => caches.delete(k)),
         ),
       )
-      .then(() => self.clients.claim()),
+      .then(() => self.clients.claim())
+      // The new worker owns the page now. Tell it, so a page that loaded old
+      // code offers a reload instead of running a mix of old and new files.
+      .then(() =>
+        self.clients
+          .matchAll({ type: 'window', includeUncontrolled: true })
+          .then((clients) => clients.forEach((c) => c.postMessage({ type: 'UPDATED' }))),
+      ),
   )
 })
 

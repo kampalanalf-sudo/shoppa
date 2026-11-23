@@ -32,6 +32,56 @@ export const SUPABASE_URL = pick(env.VITE_SUPABASE_URL, DEFAULT_URL)
 export const SUPABASE_ANON_KEY = pick(env.VITE_SUPABASE_ANON_KEY, DEFAULT_ANON)
 
 /**
+ * Where the server routes live.
+ *
+ * They used to be Vercel functions at a relative `/api/*`. GitHub Pages is
+ * static — it has no `/api`, and a relative path there returns the SPA's
+ * index.html with a 200, so every call would fail while looking like it
+ * succeeded. The routes now run as Supabase Edge Functions, so this is an
+ * absolute origin.
+ *
+ * `/api/collect` maps to `functions/v1/pay?op=collect`; the callers still speak
+ * in the old paths and `apiUrl()` translates, so the money code did not have to
+ * be rewritten to move hosts. One mapping table, in one place, is easier to
+ * keep honest than a dozen edited call sites.
+ */
+export const SUPABASE_FUNCTIONS_URL = `${SUPABASE_URL.replace(/\/$/, '')}/functions/v1`
+
+/** Vercel route -> Supabase Edge Function. Anything unlisted throws. */
+const ROUTES: Record<string, string> = {
+  '/api/collect': 'pay?op=collect',
+  '/api/disburse': 'pay?op=disburse',
+  '/api/status': 'pay?op=status',
+  '/api/topup/claim': 'pay?op=claim',
+  '/api/admin/health': 'admin-ops?op=health',
+  '/api/admin/cashouts': 'admin-ops?op=cashouts',
+  '/api/admin/audit': 'admin-ops?op=audit',
+  '/api/admin/lookup': 'admin-ops?op=lookup',
+  '/api/admin/players': 'admin-ops?op=players',
+  '/api/admin/parked': 'admin-ops?op=parked',
+  '/api/admin/actions': 'admin-ops?op=actions',
+  '/api/feed/sports': 'feed-sports',
+  '/api/feed/settle': 'feed-settle',
+  '/api/feed/sync': 'feed-sync',
+}
+
+/**
+ * Resolve an old `/api/...` path to its absolute Edge Function URL, carrying any
+ * query string across. Throws on an unknown path rather than silently
+ * requesting a page that will 200 with HTML.
+ */
+export function apiUrl(path: string, params?: Record<string, string>): string {
+  const [bare, search] = path.split('?')
+  const mapped = ROUTES[bare]
+  if (!mapped) throw new Error(`No backend route for ${path}`)
+
+  const qs = new URLSearchParams(search ?? '')
+  for (const [k, v] of Object.entries(params ?? {})) qs.set(k, v)
+  const tail = qs.toString()
+  return `${SUPABASE_FUNCTIONS_URL}/${mapped}${tail ? `&${tail}` : ''}`
+}
+
+/**
  * True when a real backend is available. It always is now, unless a build
  * deliberately blanks the values, which is the point: `configured === false`
  * used to be an invisible failure mode rather than a choice.

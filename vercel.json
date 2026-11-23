@@ -1,14 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "functions": {
-    "api/**/*.ts": { "maxDuration": 30 }
-  },
-  "crons": [
-    {
-      "path": "/api/feed/settle",
-      "schedule": "25 3 * * *"
+    "api/**/*.ts": {
+      "maxDuration": 30
     }
-  ],
+  },
   "rewrites": [
     {
       "comment": "The Hobby plan allows 12 Serverless Functions per deployment and this project needs 8. Each money endpoint is an operation on api/pay.ts and each admin endpoint is an operation on api/admin/ops.ts; these rewrites map the original paths onto them, so every existing URL and client call keeps working. Add an operation by extending the router and adding a line here -- not by adding a file, which is what broke the deploy.",
@@ -51,5 +47,6 @@
       "source": "/api/admin/actions",
       "destination": "/api/admin/ops?op=actions"
     }
-  ]
+  ],
+  "$comment": "Superseded by GitHub Pages + Supabase Edge Functions. The app now ships from .github/workflows/deploy-pages.yml and the server routes from .github/workflows/deploy-functions.yml; api/ is kept only so the existing smoke suites still test the original money logic. The crons entry was removed because no Vercel project can deploy this branch (the domain was moved off Vercel), and a cron that never fires is worse than no cron: it reads as monitoring. Settlement is driven by feed-settle on a scheduler instead."
 }

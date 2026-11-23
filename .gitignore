@@ -36,3 +36,6 @@ android/build/
 android/local.properties
 smoke/dist-reels
 smoke/dist-slotcheck
+
+# Generated edge-function bundles (scripts/build-edge-functions.mjs)
+supabase/.dist

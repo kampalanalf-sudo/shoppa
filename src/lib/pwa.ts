@@ -66,21 +66,56 @@ export function registerServiceWorker(): void {
   if (!import.meta.env.PROD) return
 
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, {
-      scope: import.meta.env.BASE_URL,
-    })
+    navigator.serviceWorker
+      .register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL })
+      .then((reg) => {
+        // Ask once now, and again whenever the app comes back to the
+        // foreground. A phone that keeps a tab open for days never reloads the
+        // document, so load-time checking alone leaves it on an old build.
+        reg.update().catch(() => undefined)
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') reg.update().catch(() => undefined)
+        })
+      })
+      .catch(() => undefined)
 
     navigator.serviceWorker.addEventListener('message', (e) => {
       if (e.data?.type === 'UPDATED') window.dispatchEvent(new CustomEvent('sw:updated'))
     })
+
+    // When the new worker takes control, the page is running old code while the
+    // caches hold new files. One reload makes them agree.
+    let reloading = false
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (reloading) return
+      reloading = true
+      window.location.reload()
+    })
   })
 }
 
-/** Ask a waiting worker to activate, then reload. */
+/**
+ * Ask a waiting worker to activate, then reload.
+ *
+ * The reload is driven by `controllerchange` above, not by a timer here: calling
+ * reload() immediately races the worker's activation and can land back on the
+ * old cache. If there is no waiting worker — the page is simply stale and
+ * nothing newer is installed — a plain reload is the best available answer.
+ */
 export function applyUpdate(): void {
-  navigator.serviceWorker?.getRegistration().then((reg) => {
-    reg?.waiting?.postMessage('SKIP_WAITING')
+  if (!navigator.serviceWorker) {
     window.location.reload()
+    return
+  }
+  navigator.serviceWorker.getRegistration().then((reg) => {
+    if (reg?.waiting) {
+      reg.waiting.postMessage('SKIP_WAITING')
+      // controllerchange fires next and reloads. The timeout is a last resort
+      // so the button can never do nothing at all.
+      window.setTimeout(() => window.location.reload(), 1500)
+    } else {
+      window.location.reload()
+    }
   })
 }
 

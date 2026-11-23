@@ -1,0 +1,37 @@
+# supabase/config.toml
+#
+# Local CLI configuration for this project. The deployed settings are applied by
+# .github/workflows/deploy-functions.yml; this file exists so `supabase functions
+# serve <name>` locally, and so the verify_jwt decision is written down next to
+# the code that depends on it rather than only in a workflow.
+project_id = "dtroufrfavmjldtlprpn"
+
+[functions.pay]
+# verify_jwt is false on purpose: the function calls auth.getUser() itself, so it
+# can answer 401 "not signed in" with a readable body and a CORS header. Behind
+# the platform gate, a missing token returns an opaque 401 before our code runs.
+verify_jwt = false
+
+[functions.admin-ops]
+# Same, plus the 401-vs-403 distinction: the platform gate cannot tell "no token"
+# from "not an admin", and the admin screens show different messages for each.
+verify_jwt = false
+
+[functions.webhooks-dgateway]
+# The caller is DGateway, which has no Supabase JWT. The HMAC signature over the
+# raw body is the only gate that can admit it, and it fails closed.
+verify_jwt = false
+
+[functions.webhooks-dgateway-store]
+verify_jwt = false
+
+[functions.feed-sports]
+# Cron presents CRON_SECRET as a bearer token; a human admin presents a Supabase
+# JWT. Both are checked inside the function.
+verify_jwt = false
+
+[functions.feed-settle]
+verify_jwt = false
+
+[functions.feed-sync]
+verify_jwt = false

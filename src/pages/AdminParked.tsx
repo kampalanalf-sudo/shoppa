@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 import { money } from '../lib/format'
+import { api, describeApiError } from '../lib/api'
 import { IconChevronLeft, IconShield, IconSearch, IconClose } from '../components/Icons'
 
 type ParkedRow = {
@@ -29,11 +30,6 @@ const REASON: Record<string, string> = {
   email_ambiguous: 'Several accounts share that email',
 }
 
-async function token(): Promise<string | null> {
-  const { data } = (await supabase?.auth.getSession()) ?? { data: { session: null } }
-  return data.session?.access_token ?? null
-}
-
 /**
  * Parked-payment queue.
  *
@@ -58,27 +54,13 @@ export function AdminParked({ onHome }: { onHome: () => void }) {
     setLoading(true)
     setError(null)
     try {
-      const t = await token()
-      if (!t) {
-        setError('Please sign in again.')
-        return
-      }
-      const res = await fetch(`/api/admin/parked?status=${status}&limit=100`, {
-        headers: { Authorization: `Bearer ${t}` },
+      const body = await api<{ rows?: ParkedRow[] }>('/api/admin/parked', {
+        params: { status, limit: '100' },
       })
-      const body = (await res.json().catch(() => ({}))) as { rows?: ParkedRow[]; error?: string }
-      if (!res.ok) {
-        setError(
-          res.status === 403
-            ? 'This account is not an admin.'
-            : body.error || 'Could not load the queue.',
-        )
-        setRows([])
-        return
-      }
       setRows(body.rows ?? [])
-    } catch {
-      setError('Could not reach the server.')
+    } catch (e) {
+      setRows([])
+      setError(describeApiError(e, 'Could not load the queue.'))
     } finally {
       setLoading(false)
     }
@@ -94,36 +76,25 @@ export function AdminParked({ onHome }: { onHome: () => void }) {
       setResults([])
       return
     }
-    const t = await token()
-    if (!t) return
-    const res = await fetch(`/api/admin/lookup?q=${encodeURIComponent(q.trim())}`, {
-      headers: { Authorization: `Bearer ${t}` },
-    })
-    const body = (await res.json().catch(() => ({}))) as { rows?: Account[] }
-    setResults(res.ok ? body.rows ?? [] : [])
+    try {
+      const body = await api<{ rows?: Account[] }>('/api/admin/lookup', { params: { q: q.trim() } })
+      setResults(body.rows ?? [])
+    } catch {
+      // A failed lookup is not worth an error banner: the admin is mid-typing,
+      // and the next keystroke retries.
+      setResults([])
+    }
   }, [])
 
   const act = useCallback(
     async (row: ParkedRow, action: 'release' | 'dismiss', userId?: string) => {
-      const t = await token()
-      if (!t) return
       setBusy(true)
       setNote(null)
       try {
-        const res = await fetch('/api/admin/parked', {
+        const body = await api<{ px?: number; balance?: number }>('/api/admin/parked', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t}` },
-          body: JSON.stringify({ reference: row.reference, action, userId }),
+          body: { reference: row.reference, action, userId },
         })
-        const body = (await res.json().catch(() => ({}))) as {
-          error?: string
-          px?: number
-          balance?: number
-        }
-        if (!res.ok) {
-          setNote(body.error || 'That action failed.')
-          return
-        }
         setNote(
           action === 'release'
             ? `Released ${money(body.px ?? 0)} PX — new balance ${money(body.balance ?? 0)} PX.`
@@ -133,8 +104,8 @@ export function AdminParked({ onHome }: { onHome: () => void }) {
         setQuery('')
         setResults([])
         await load()
-      } catch {
-        setNote('Could not reach the server.')
+      } catch (e) {
+        setNote(describeApiError(e, 'That action failed.'))
       } finally {
         setBusy(false)
       }
