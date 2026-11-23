@@ -1,12 +1,18 @@
 import { defineConfig } from 'vite'
 
-// The edge bundles import the Supabase client from a URL, because that is what
-// Deno resolves at runtime. Node cannot load an https: module, so map it to the
-// installed package: same client, same call shapes.
+// The edge bundles import the Supabase client with an `npm:` specifier, because
+// that is what the Supabase runtime resolves when it builds the function. Node
+// cannot resolve an `npm:` specifier, so map it to the installed package: same
+// client, same call shapes.
+//
+// (This used to be an https://esm.sh URL, which the runtime fetched on every
+// cold start -- that fetch is what turned a healthy deployment into BOOT_ERROR,
+// "Function failed to start".)
 export default defineConfig({
   resolve: {
     alias: [
-      { find: /^https:\/\/esm\.sh\/@supabase\/supabase-js@[\d.]+\/?$/, replacement: '@supabase/supabase-js' },
+      // A scoped specifier is `npm:@scope/name@version` -- no slash after `npm:`.
+      { find: /^npm:@supabase\/supabase-js(@[\d.]+)?$/, replacement: '@supabase/supabase-js' },
     ],
   },
   build: {

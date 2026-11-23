@@ -11,7 +11,7 @@
 // Admin or cron only: the list is not secret, but the endpoint is a tool, not a
 // public service, and leaving it open invites someone to use us as a proxy.
 import { CORS, json, readEnv } from '../_shared/http.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4'
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
 import { OddsFeedError, fetchSports, isFeedConfigured } from '../_shared/oddsfeed.ts'
 
 /** Env var, trimmed. Missing becomes '' and never the string "undefined". */

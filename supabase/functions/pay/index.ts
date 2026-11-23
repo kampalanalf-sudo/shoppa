@@ -20,7 +20,7 @@
 // The money rules are unchanged from api/pay.ts, deliberately, line for line.
 // Anything that differs from that file is a bug.
 import { CORS, json, readEnv } from '../_shared/http.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4'
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
 import {
   GatewayError, assertLiveSafety, collectPayment, disbursePayment, fetchTransactionStatus,
   isWholeAmount, normalizeCurrency, normalizePhone, normalizeStatus,

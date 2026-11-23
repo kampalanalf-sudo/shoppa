@@ -13,7 +13,7 @@
 // deliberate constant rather than "everything in season". At 500 credits a
 // month, fetching 30 sports once would spend 6% of the month in a single run.
 import { CORS, json, readEnv } from '../_shared/http.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4'
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
 import {
   OddsFeedError, applyMargin, fetchOdds, isFeedConfigured, toOddsX100, type FeedEvent,
 } from '../_shared/oddsfeed.ts'

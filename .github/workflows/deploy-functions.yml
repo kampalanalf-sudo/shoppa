@@ -65,7 +65,8 @@ jobs:
             name=$(basename "$f" .ts)
             ./node_modules/.bin/esbuild "$f" \
               --bundle --format=esm --platform=neutral --target=es2022 \
-              --external:'https://*' --minify-whitespace --legal-comments=none \
+              --external:'https://*' --external:'npm:*' \
+              --minify-whitespace --legal-comments=none \
               --outfile=".edge-bundles/$name.js"
             echo "bundled $name ($(wc -c < ".edge-bundles/$name.js") bytes)"
           done
