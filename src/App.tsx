@@ -18,6 +18,7 @@ import { TopUpPanel } from './components/TopUpPanel'
 import { TopUpSuccess } from './pages/TopUpSuccess'
 import { AdminParked } from './pages/AdminParked'
 import { AdminPlayers } from './pages/AdminPlayers'
+import { Support } from './pages/Support'
 import { AdminConsole } from './pages/AdminConsole'
 import { BonniClyve } from './games/BonniClyve'
 import { EngineSlot } from './games/EngineSlot'
@@ -42,6 +43,7 @@ type View =
   | { name: 'auth' }
   | { name: 'set-password' }
   | { name: 'sportsbook' }
+  | { name: 'support' }
   | { name: 'topup-success'; reference: string | null }
   | { name: 'admin-parked' }
   | { name: 'admin-players' }
@@ -87,6 +89,7 @@ function Shell() {
       if (h === 'cashout') { setView({ name: 'cashout' }); return }
       // Sports needs an account: a slip is attached to a wallet.
       if (h === 'sports' || h === 'sportsbook') { setView({ name: 'sportsbook' }); return }
+      if (h === 'support' || h === 'help' || h === 'care') { setView({ name: 'support' }); return }
       if (h === 'auth') { setView({ name: 'auth' }); return }
       // Recovery link landing. Supabase sends the browser back here with a
       // session already established; without this route the reset link was a
@@ -254,6 +257,7 @@ function Shell() {
         {view.name === 'auth' && <Auth onDone={home} />}
         {view.name === 'set-password' && <SetPassword onDone={home} />}
         {view.name === 'sportsbook' && <Sportsbook onBack={home} />}
+        {view.name === 'support' && <Support onHome={home} />}
         {/* Placeholder kept so the grid does not shift while loading. */}
         {view.name === 'admin-parked' && <AdminParked onHome={home} />}
         {view.name === 'admin-players' && <AdminPlayers onHome={home} />}
@@ -265,10 +269,15 @@ function Shell() {
             onTopUpAgain={() => { home(); setTopUpOpen(true) }}
           />
         )}
-        {!current && !isProxiCash && view.name !== 'sportsbook' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} onSports={openSportsbook} />}
+        {!current && !isProxiCash && view.name !== 'sportsbook' && view.name !== 'support' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} onSports={openSportsbook} />}
       </main>
 
-      <Footer />
+      <Footer
+        onSupport={() => {
+          setView({ name: 'support' })
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        }}
+      />
       <div className="h-16 md:hidden" />
       <BottomBar
         view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : view.name === 'sportsbook' ? 'sportsbook' : 'home'}

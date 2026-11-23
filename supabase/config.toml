@@ -35,3 +35,14 @@ verify_jwt = false
 
 [functions.feed-sync]
 verify_jwt = false
+
+[functions.support]
+# A signed-in player, checked in-function so a missing session is a readable 401
+# rather than the platform's opaque one.
+verify_jwt = false
+
+[functions.support-voice]
+# The caller is Twilio, which has no Supabase JWT. The request signature over the
+# raw form body is the only gate that can admit it, and it fails closed when
+# TWILIO_AUTH_TOKEN is unset.
+verify_jwt = false
