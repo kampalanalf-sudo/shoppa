@@ -5,11 +5,26 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Branch-based deployment: the build output is pushed to `gh-pages`, which does
-# not require the Pages API (that needs an admin token). Once Pages is pointed at
-# the `gh-pages` branch in Settings → Pages, every push to main redeploys.
+# DEPLOYS TWICE, ON PURPOSE, BECAUSE THE REPO IS IN A MIXED STATE.
+#
+# GitHub Pages has two deploy modes: "deploy from a branch" (a push to the branch
+# builds it) and "GitHub Actions" (a workflow using the Pages API publishes it).
+# This repo is configured as BOTH at once: the Pages API reports
+# build_type "workflow" with source.branch "gh-pages".
+#
+# The consequence was a six-hour-old build being served on floatbet.space. This
+# workflow pushed to gh-pages, which was correct under the branch mode, but under
+# workflow mode nothing consumes that branch — so the site never moved, and
+# every "the deploy succeeded" report was true and meaningless.
+#
+# So this job now publishes BOTH ways: the official Pages action (which is what
+# workflow mode reads) and the branch push (which is what branch mode reads). One
+# of them is always the one in use. Once Pages is confirmed to be on
+# "GitHub Actions" in Settings → Pages, the branch push can go.
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: pages
@@ -105,6 +120,8 @@ jobs:
             exit 1
           fi
 
+      # ---- Path 2: the branch push. This is what "deploy from a branch" reads.
+      #     Kept so the site keeps updating if Pages is still on branch mode.
       - name: Publish to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -113,3 +130,33 @@ jobs:
           publish_branch: gh-pages
           commit_message: 'Deploy ${{ github.sha }} to GitHub Pages'
           force_orphan: true
+
+      # ---- Path 1: the Pages deployment. This is what build_type "workflow"
+      #     reads, and the reason the domain was serving a stale build.
+      #     configure-pages with enablement:false does not change the site's
+      #     configuration; it only resolves the base path.
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload the built site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+  # The Pages deployment itself. Separate job because the action needs its own
+  # environment, and because a failure here must be visible as "Pages did not
+  # publish", not buried in the build log.
+  deploy-pages:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    # NO environment here, deliberately. This repo's `github-pages` environment
+    # has a branch policy allowing only `gh-pages`, and this job runs from `main`,
+    # so declaring the environment would block the deploy with a policy error.
+    # The Pages API needs the job to be in an environment only when one gates it;
+    # publishing works without it. If you later want the deployment URL in the
+    # run summary, add `main` to Settings → Environments → github-pages →
+    # Deployment branches, then re-add `environment: github-pages` here.
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
