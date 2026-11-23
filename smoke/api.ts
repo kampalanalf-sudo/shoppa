@@ -138,6 +138,35 @@ try {
 ok('api: a 200 that is not JSON is an error, not a null body', err instanceof ApiError)
 ok('api: it names the undeployed function', /not be deployed/i.test(describeApiError(err)))
 
+// ------------------------------------------------ the platform's own error --
+
+// When a function fails to start, the PLATFORM answers -- not our code -- with
+// {"code":"BOOT_ERROR","message":"Function failed to start"}. There is no
+// `error` field. Reading only `error` turned the one real explanation into
+// "Request failed (503)", which is how a boot failure spent hours being blamed
+// on the database. Every function was doing this at once.
+reset({
+  behaviours: [
+    () => jsonRes({ code: 'BOOT_ERROR', message: 'Function failed to start (please check logs)' }, 503),
+  ],
+})
+err = null
+try {
+  await api('/api/admin/players')
+} catch (e) {
+  err = e
+}
+ok('api: a BOOT_ERROR is an ApiError', err instanceof ApiError && (err as ApiError).status === 503)
+ok('api: it keeps the platform code', (err as ApiError).code === 'BOOT_ERROR')
+ok(
+  'api: it does not blame the database',
+  !/database|unreachable/i.test(describeApiError(err, 'Could not run the checks.')),
+)
+ok(
+  'api: it says the function did not start',
+  /failed to start/i.test(describeApiError(err, 'Could not run the checks.')),
+)
+
 // ------------------------------------------- a POST is never double-sent --
 
 // Retrying a POST is safe ONLY because a 401 means the request was rejected
