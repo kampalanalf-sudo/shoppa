@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 import { money } from '../lib/format'
-import { SUPABASE_ANON_KEY, apiUrl } from '../lib/backend'
+import { api, describeApiError } from '../lib/api'
 import { IconChevronLeft, IconShield, IconCheck, IconClock, IconLive } from '../components/Icons'
 
 /**
@@ -48,11 +48,6 @@ type AuditRow = {
 
 type Tab = 'health' | 'cashouts' | 'audit'
 
-async function token(): Promise<string | null> {
-  const { data } = (await supabase?.auth.getSession()) ?? { data: { session: null } }
-  return data.session?.access_token ?? null
-}
-
 const ago = (iso: string): string => {
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
   if (mins < 1) return 'just now'
@@ -90,13 +85,12 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
   const loadHealth = useCallback(async () => {
     setHealthBusy(true)
     try {
-      const t = await token()
-      if (!t) return
-      const res = await fetch(apiUrl('/api/admin/health'), {
-        headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY },
-      })
-      const body = (await res.json().catch(() => ({}))) as { checks?: Check[] }
-      setChecks(res.ok ? body.checks ?? [] : [])
+      const body = await api<{ checks?: Check[] }>('/api/admin/health')
+      setChecks(body.checks ?? [])
+      setNote(null)
+    } catch (e) {
+      setChecks([])
+      setNote({ kind: 'bad', text: describeApiError(e, 'Could not run the health checks.') })
     } finally {
       setHealthBusy(false)
     }
@@ -105,19 +99,20 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
   const loadCashouts = useCallback(async () => {
     setCashBusy(true)
     try {
-      const t = await token()
-      if (!t) return
-      const res = await fetch(apiUrl('/api/admin/cashouts', { status: cashStatus }), {
-        headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY },
-      })
-      const body = (await res.json().catch(() => ({}))) as {
+      const body = await api<{
         rows?: Cashout[]
         players?: Record<string, { username: string; phone_verified: boolean }>
         totals?: { count: number; ugx_due: number; oldest_hours: number }
-      }
-      setCashouts(res.ok ? body.rows ?? [] : [])
-      setPlayers(res.ok ? body.players ?? {} : {})
-      setTotals(res.ok ? body.totals ?? null : null)
+      }>('/api/admin/cashouts', { params: { status: cashStatus } })
+      setCashouts(body.rows ?? [])
+      setPlayers(body.players ?? {})
+      setTotals(body.totals ?? null)
+      setNote(null)
+    } catch (e) {
+      setCashouts([])
+      setPlayers({})
+      setTotals(null)
+      setNote({ kind: 'bad', text: describeApiError(e, 'Could not load the withdrawal queue.') })
     } finally {
       setCashBusy(false)
     }
@@ -126,13 +121,12 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
   const loadAudit = useCallback(async () => {
     setAuditBusy(true)
     try {
-      const t = await token()
-      if (!t) return
-      const res = await fetch(apiUrl('/api/admin/audit', { limit: '150' }), {
-        headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY },
-      })
-      const body = (await res.json().catch(() => ({}))) as { rows?: AuditRow[] }
-      setAudit(res.ok ? body.rows ?? [] : [])
+      const body = await api<{ rows?: AuditRow[] }>('/api/admin/audit', { params: { limit: '150' } })
+      setAudit(body.rows ?? [])
+      setNote(null)
+    } catch (e) {
+      setAudit([])
+      setNote({ kind: 'bad', text: describeApiError(e, 'Could not load the action log.') })
     } finally {
       setAuditBusy(false)
     }
@@ -147,27 +141,17 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
 
   const settle = useCallback(
     async (co: Cashout, action: 'paid' | 'failed' | 'cancelled') => {
-      const t = await token()
-      if (!t) return
       setNote(null)
-      const res = await fetch(apiUrl('/api/admin/actions'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${t}`,
-          apikey: SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify({
-          action: 'settle_cashout',
-          cashoutId: co.id,
-          status: action,
-          reason: reason.trim() || undefined,
-        }),
-      })
-      const body = (await res.json().catch(() => ({}))) as { error?: string }
-      if (!res.ok) {
-        setNote({ kind: 'bad', text: body.error || 'That did not go through.' })
-      } else {
+      try {
+        await api('/api/admin/actions', {
+          method: 'POST',
+          body: {
+            action: 'settle_cashout',
+            cashoutId: co.id,
+            status: action,
+            reason: reason.trim() || undefined,
+          },
+        })
         setNote({
           kind: 'ok',
           text:
@@ -175,6 +159,8 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
               ? `Paid ${money(co.ugx)} UGX to ${players[co.user_id]?.username ?? 'the player'}.`
               : `Cancelled — ${money(co.amount_px)} PX returned to the player's wallet.`,
         })
+      } catch (e) {
+        setNote({ kind: 'bad', text: describeApiError(e, 'That did not go through.') })
       }
       setConfirm(null)
       setReason('')

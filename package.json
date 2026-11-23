@@ -14,6 +14,7 @@
     "test:dg": "vite build --config smoke/vite.dg.config.ts && node smoke/dist-dg/dg.js",
     "test:routes": "vite build --config smoke/vite.routes.config.ts && node smoke/dist-routes/routes.js",
     "test:edge": "node scripts/build-edge-functions.mjs --check && vite build --config smoke/vite.edge.config.ts && node smoke/dist-edge/edge.js",
+    "test:api": "vite build --config smoke/vite.api.config.ts && node smoke/dist-api/api.js",
     "test:webhook": "vite build --config smoke/vite.wh.config.ts && node smoke/dist-wh/wh.js",
     "test:live": "vite build --config smoke/vite.live.config.ts && node smoke/dist-livemode/live.js",
     "test:success": "vite build --config smoke/vite.success.config.ts && node smoke/dist-success/success.js",

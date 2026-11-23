@@ -41,6 +41,12 @@ jobs:
       - name: Verify edge-function routes
         run: npm run test:edge
 
+      # Every page must go through api(), which refreshes an expired token once
+      # instead of sending a dead one. A page that reads the raw access token
+      # brings back an error that reads as a server failure.
+      - name: Verify the API client
+        run: npm run test:api
+
       # Auth is compiled in at BUILD time: if these two are missing the bundle
       # ships without a Supabase client at all and the live site silently runs
       # local-only — no sign-up, no wallet, no cashout — with nothing on screen

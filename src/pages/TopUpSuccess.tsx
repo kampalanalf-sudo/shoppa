@@ -3,7 +3,7 @@ import { useAuth } from '../lib/auth'
 import { fetchStatus, type StatusResponse } from '../lib/payments'
 import { supabase } from '../lib/supabase'
 import { money } from '../lib/format'
-import { SUPABASE_ANON_KEY, apiUrl } from '../lib/backend'
+import { api, ApiError, AuthExpiredError } from '../lib/api'
 import { sfx } from '../lib/sound'
 import { IconCheck, IconChevronLeft, IconShield } from '../components/Icons'
 
@@ -89,32 +89,20 @@ export function TopUpSuccess({ reference, onHome, onTopUpAgain }: Props) {
     setClaiming(true)
     setClaimMsg(null)
     try {
-      const { data } = (await supabase?.auth.getSession()) ?? { data: { session: null } }
-      const token = data.session?.access_token
-      if (!token) {
-        setClaimMsg('Sign in first, then paste the reference from your payment SMS.')
-        return
-      }
-      const res = await fetch(apiUrl('/api/topup/claim'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${token}`,
-          apikey: SUPABASE_ANON_KEY,
-        },
-        body: JSON.stringify({ reference: ref }),
-      })
-      const body = (await res.json().catch(() => ({}))) as { error?: string; px?: number }
-      if (!res.ok) {
-        setClaimMsg(body.error || 'Could not claim that reference.')
-        return
-      }
+      await api('/api/topup/claim', { method: 'POST', body: { reference: ref } })
       setClaimMsg('Top-up recovered — your balance is updated.')
       setClaim('')
       setState('paid')
       await refreshWallet()
-    } catch {
-      setClaimMsg('Could not reach the server. Try again in a moment.')
+    } catch (e) {
+      if (e instanceof AuthExpiredError) {
+        setClaimMsg('Sign in first, then paste the reference from your payment SMS.')
+      } else if (e instanceof ApiError) {
+        // The RPC's own words: already claimed, failed, still pending, unknown.
+        setClaimMsg(e.message)
+      } else {
+        setClaimMsg('Could not reach the server. Try again in a moment.')
+      }
     } finally {
       setClaiming(false)
     }

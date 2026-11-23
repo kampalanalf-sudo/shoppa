@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 import { money } from '../lib/format'
-import { SUPABASE_ANON_KEY, apiUrl } from '../lib/backend'
+import { api, describeApiError } from '../lib/api'
 import { IconChevronLeft, IconShield, IconSearch, IconClock } from '../components/Icons'
 
 /**
@@ -57,11 +57,6 @@ const SORTS = [
   { id: 'oldest', label: 'Oldest' },
 ] as const
 
-async function token(): Promise<string | null> {
-  const { data } = (await supabase?.auth.getSession()) ?? { data: { session: null } }
-  return data.session?.access_token ?? null
-}
-
 const ago = (iso: string): string => {
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
   if (mins < 1) return 'just now'
@@ -107,31 +102,15 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
     setLoading(true)
     setError(null)
     try {
-      const t = await token()
-      if (!t) {
-        setError('Please sign in again.')
-        return
-      }
-      const qs = new URLSearchParams({ sort, limit: '100' })
-      if (query.trim().length >= 3) qs.set('q', query.trim())
-      const res = await fetch(apiUrl('/api/admin/players', Object.fromEntries(qs)), {
-        headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY },
-      })
-      const body = (await res.json().catch(() => ({}))) as {
-        rows?: Row[]
-        totals?: Totals
-        error?: string
-      }
-      if (!res.ok) {
-        setError(res.status === 403 ? 'This account is not an admin.' : body.error || 'Could not load players.')
-        setRows([])
-        setTotals(null)
-        return
-      }
+      const params: Record<string, string> = { sort, limit: '100' }
+      if (query.trim().length >= 3) params.q = query.trim()
+      const body = await api<{ rows?: Row[]; totals?: Totals }>('/api/admin/players', { params })
       setRows(body.rows ?? [])
       setTotals(body.totals ?? null)
-    } catch {
-      setError('Could not reach the server.')
+    } catch (e) {
+      setRows([])
+      setTotals(null)
+      setError(describeApiError(e, 'Could not load players.'))
     } finally {
       setLoading(false)
     }
@@ -146,16 +125,9 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
     setDetail(null)
     setDetailBusy(true)
     try {
-      const t = await token()
-      if (!t) return
-      const res = await fetch(apiUrl('/api/admin/players', { id }), {
-        headers: { Authorization: `Bearer ${t}`, apikey: SUPABASE_ANON_KEY },
-      })
-      const body = (await res.json().catch(() => ({}))) as Detail & { error?: string }
-      if (res.ok) setDetail(body)
-      else setError(body.error || 'Could not load that player.')
-    } catch {
-      setError('Could not reach the server.')
+      setDetail(await api<Detail>('/api/admin/players', { params: { id } }))
+    } catch (e) {
+      setError(describeApiError(e, 'Could not load that player.'))
     } finally {
       setDetailBusy(false)
     }
@@ -166,29 +138,14 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
       setActBusy(true)
       setActNote(null)
       try {
-        const t = await token()
-        if (!t) return
-        const res = await fetch(apiUrl('/api/admin/actions'), {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${t}`,
-            apikey: SUPABASE_ANON_KEY,
-          },
-          body: JSON.stringify(payload),
-        })
-        const body = (await res.json().catch(() => ({}))) as { error?: string; balance?: number }
-        if (!res.ok) {
-          setActNote({ kind: 'bad', text: body.error || 'That action failed.' })
-          return
-        }
+        await api('/api/admin/actions', { method: 'POST', body: payload })
         setActNote({ kind: 'ok', text: 'Done.' })
         setAdjustOpen(false)
         setAdjustPx('')
         setAdjustReason('')
         if (openId) await openPlayer(openId)
-      } catch {
-        setActNote({ kind: 'bad', text: 'Could not reach the server.' })
+      } catch (e) {
+        setActNote({ kind: 'bad', text: describeApiError(e, 'That action failed.') })
       } finally {
         setActBusy(false)
       }
