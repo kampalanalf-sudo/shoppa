@@ -47,7 +47,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22, not 20: @supabase/supabase-js v2 needs a WebSocket
+          # implementation, which Node only grew in 22. On 20, `createClient()`
+          # throws before it ever reaches the network — so every smoke test that
+          # imports a bundle constructing a client failed in CI while passing
+          # locally on 22. android.yml already pins 22.
+          node-version: 22
           cache: npm
 
       - run: npm ci
