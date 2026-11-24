@@ -267,6 +267,8 @@ async function turn(db: ReturnType<typeof svc>, form: URLSearchParams, url: stri
     : { data: null }
 
   let reply
+  // Carried out of the catch so the usage row can say why the call failed.
+  let failure: string | null = null
   try {
     reply = await askModel({
       agent:
@@ -278,10 +280,11 @@ async function turn(db: ReturnType<typeof svc>, form: URLSearchParams, url: stri
       // every turn is paid for again on every turn.
       history: transcript.slice(-6),
       question: said,
-      maxTokens: 400,
+      maxTokens: 600,
     })
   } catch (err) {
-    console.error('support-voice: agent failed', (err as Error).message)
+    failure = (err as { code?: string }).code ?? 'SUPPORT_ERROR'
+    console.error('support-voice: agent failed', failure, (err as Error).message)
     reply = {
       body: 'I am having trouble looking that up. I have taken your details and a human will call you back.',
       handoff: true,
@@ -311,6 +314,7 @@ async function turn(db: ReturnType<typeof svc>, form: URLSearchParams, url: stri
     call_id: call.id,
     prompt_tokens: reply.prompt_tokens,
     output_tokens: reply.output_tokens,
+    error_code: reply.error_code ?? failure ?? null,
   })
 
   if (reply.handoff) {

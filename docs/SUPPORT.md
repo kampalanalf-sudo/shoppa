@@ -91,7 +91,7 @@ The voice side is a Twilio webhook. Until these are set, `support-voice` answers
 | Secret | What it is |
 | --- | --- |
 | `GROQ_API_KEY` | Required for **both** text and voice. Free at <https://console.groq.com/keys>; starts with `gsk_`. Without it, replies fall back to "a human has it". |
-| `GROQ_MODEL` | Optional. Default `llama-3.1-8b-instant`. See "Cost" below before changing it. |
+| `GROQ_MODEL` | Optional. Default `openai/gpt-oss-20b`. See "Cost" below before changing it. |
 | `TWILIO_ACCOUNT_SID` | Required for voice. |
 | `TWILIO_AUTH_TOKEN` | Required for voice. Also **the HMAC key** that signs every call, so without it no call is accepted. |
 | `SUPPORT_PUBLIC_URL` | Optional but recommended. Set to `https://<project-ref>.supabase.co/functions/v1/support-voice` if Twilio was configured with that exact base. The signature covers the URL Twilio called, so a mismatch rejects every call. |
@@ -166,16 +166,62 @@ changing provider again means editing one function, not a rewrite.
 
 Model choice here is about the **daily cap**, not raw quality:
 
-| Model | Requests/day | Tokens/day | Use |
-| --- | --- | --- | --- |
-| `llama-3.1-8b-instant` *(default)* | 14,400 | 500K | Short, factual answers from a small snapshot |
-| `llama-3.3-70b-versatile` | 1,000 | 100K | Better prose; runs out of tokens in one busy afternoon |
+| Model | Req/min | Requests/day | Tokens/min | Tokens/day |
+| --- | --- | --- | --- | --- |
+| `openai/gpt-oss-20b` *(default)* | 30 | 1,000 | 8,000 | 200,000 |
+| `openai/gpt-oss-120b` | 30 | 1,000 | 8,000 | 200,000 |
 
 A support agent answers "what is my balance" and "why did this bet settle this
-way" from a snapshot of a few hundred tokens. That is the 8B model's home turf,
-and it has 14x the daily allowance. Switch with `GROQ_MODEL` if the answers read
-too terse — but do the arithmetic first: 100K tokens/day across four agents is a
-few hundred conversations, not a few thousand.
+way" from a snapshot of a few hundred tokens, plus a reply of two to five
+sentences. At 800 tokens a turn, 200K tokens/day is roughly **250 turns a day** —
+enough for four agents during a normal day, and not enough for a busy one.
+
+Two things follow, and both are worth knowing before the players find out:
+
+- The limit is **per organisation, not per key or per player**, so four agents
+  share one 200K allowance.
+- `8,000 tokens/min` is the tighter ceiling in practice: three simultaneous
+  conversations with long histories can brush it, and a 429 then looks to the
+  player exactly like any other failure. Both models share the same limits, so
+  switching to the 120B buys better prose, not more headroom.
+
+### Why not Llama — and the trap that cost us four hours of downtime
+
+Every Groq tutorial, and the official quickstart, still tells you to use
+`llama-3.1-8b-instant` or `llama-3.3-70b-versatile`. **Groq shut both down on
+2026-08-16** for free and developer tiers. They remain visible in the catalogue,
+labelled *Enterprise*, and calling one returns `404 model_not_found`.
+
+Because they still appear in the catalogue, "the key is set and the model is
+listed" looks like a working configuration. It is not. On 2026-11-24 all four
+agents answered every message with the fallback apology for exactly this reason.
+
+Two rules that follow:
+
+1. **A model ID in the catalogue is not a model you can call.** Only a real
+   request proves it.
+2. **Both gpt-oss models are reasoning models.** They spend tokens thinking
+   before they answer, and the thinking counts against `max_tokens`. That is why
+   the code sends `reasoning_effort: 'low'` and allows 800 tokens (600 on a
+   voice call) instead of the 400–500 that suited Llama.
+
+### Finding out that an agent is broken
+
+A failed model call used to be invisible: the player saw a polite apology and
+the usage row was written with null tokens, which is also what a call that
+simply had no token accounting looks like. `support_agent_usage.error_code` now
+records the reason. The check is one query:
+
+```sql
+select created_at, agent_id, error_code
+from support_agent_usage
+where error_code is not null
+order by created_at desc limit 20;
+```
+
+`SUPPORT_NOT_CONFIGURED` means a missing or rejected key · `SUPPORT_QUOTA` means
+the free tier is spent · `SUPPORT_ERROR` means the provider answered with
+something else, usually a bad model ID.
 
 ### When the free tier runs out
 

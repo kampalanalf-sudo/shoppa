@@ -455,8 +455,29 @@ ok('support: calls the OpenAI-compatible chat endpoint',
 // how this test failed the first time it ran.
 ok('support: the system prompt is a message, not a top-level field',
   /role:\s*['"]system['"]/.test(supportBundle) && /role:\s*['"]user['"]/.test(supportBundle))
-ok('support: the default model is the high-headroom one',
-  /llama-3\.1-8b-instant/.test(supportBundle))
+// Groq shut down llama-3.1-8b-instant and llama-3.3-70b-versatile on 2026-08-16.
+// Calling one returns 404 model_not_found, so this is not a preference: naming a
+// retired model here is the exact bug that made all four agents answer every
+// message with the fallback apology.
+ok('support: the default model is one Groq still serves',
+  /openai\/gpt-oss-20b/.test(supportBundle))
+// Comments legitimately name the retired models to explain why they are gone,
+// so this has to look at code, not at the whole file. A call is a quoted string.
+const supportCode = supportBundle
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/^\s*\/\/.*$/gm, '')
+ok('support: no retired Llama model is still called',
+  !/['"`](llama-3\.1-8b-instant|llama-3\.3-70b-versatile)['"`]/.test(supportCode))
+// gpt-oss reasons before answering and bills the thinking against max_tokens,
+// so effort has to be pinned low and the cap has to leave room for an answer.
+ok('support: reasoning effort is pinned low for the reasoning models',
+  /reasoning_effort/.test(supportBundle) &&
+  /['"]low['"]/.test(supportBundle.slice(Math.max(0, supportBundle.indexOf('reasoning_effort') - 200), supportBundle.indexOf('reasoning_effort') + 200)))
+ok('support: the token cap leaves room for thinking plus the answer',
+  /max_tokens:\s*(800|args\.maxTokens)/.test(supportBundle) || /800/.test(supportBundle))
+// A failed call used to leave no trace but a console line and a null usage row.
+ok('support: a failed call records its reason on the usage row',
+  /error_code/.test(supportBundle))
 ok('support: the model is overridable without a redeploy',
   /GROQ_MODEL/.test(supportBundle))
 ok('support: a missing key names the thing to create',
