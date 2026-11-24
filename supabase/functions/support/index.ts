@@ -380,11 +380,13 @@ async function answerAndStore(args: {
       question: args.question,
     })
   } catch (err) {
-    // Deliberately not rethrown: see the note at the top of this file.
-    console.error('support: agent call failed', (err as Error).message)
-    reply = fallbackReply(
-      (agent ?? { display_name: 'support' }) as Agent,
-    )
+    // Deliberately not rethrown: see the note at the top of this file. But a
+    // fallback that leaves no trace is how four calls failed in production with
+    // nothing to diagnose but a friendly apology, so the error code is carried
+    // into the usage row below.
+    const code = (err as { code?: string }).code ?? 'SUPPORT_ERROR'
+    console.error('support: agent call failed', code, (err as Error).message)
+    reply = fallbackReply((agent ?? { display_name: 'support' }) as Agent, code)
   }
 
   const shownAgentId = agent?.id ?? agentId
@@ -437,6 +439,7 @@ async function answerAndStore(args: {
     conversation_id: args.conversationId,
     prompt_tokens: reply.prompt_tokens,
     output_tokens: reply.output_tokens,
+    error_code: reply.error_code ?? null,
   })
 
   if (args.savePlayerMessage === false) {

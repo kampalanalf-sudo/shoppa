@@ -4,7 +4,7 @@
 // enough and nothing has to be listening on a port. An earlier version pointed
 // at 127.0.0.1:8111/8112 and only passed when a server happened to be running,
 // which made the suite fail with SUPPORT_UNAVAILABLE for no real reason.
-import { askModel } from '../supabase/functions/_shared/support'
+import { askModel, fallbackReply } from '../supabase/functions/_shared/support'
 
 let key = 'gsk_test_key'
 ;(globalThis as any).Deno = {
@@ -78,9 +78,13 @@ const sent = first.seen[0]
 // The endpoint is the part that has to be right for the key to work at all.
 ok('the request goes to Groq, not Anthropic', sent?.url === 'https://api.groq.com/openai/v1/chat/completions', sent?.url)
 ok('the key is sent as a bearer token', /^Bearer gsk_test_key$/.test(sent?.init?.headers?.Authorization))
-ok('the default model is the cheapest one', sent?.body?.model === 'llama-3.1-8b-instant', sent?.body?.model)
+// Not a preference: the Llama models were retired on 2026-08-16 and 404 now.
+ok('the default model is one Groq still serves', sent?.body?.model === 'openai/gpt-oss-20b', sent?.body?.model)
+// gpt-oss is a reasoning model. Unpinned and under-capped, it burns the whole
+// budget thinking and returns an empty answer.
+ok('reasoning effort is low, so little of the cap is spent thinking', sent?.body?.reasoning_effort === 'low', sent?.body?.reasoning_effort)
+ok('the token cap leaves room for thinking plus the answer', sent?.body?.max_tokens === 800, sent?.body?.max_tokens)
 ok('temperature is low but not zero', sent?.body?.temperature === 0.3)
-ok('the reply cap is 500 tokens', sent?.body?.max_tokens === 500)
 ok(
   'house rules travel as a system message, not a top-level field',
   sent?.body?.messages?.[0]?.role === 'system' && /HANDOFF:/.test(sent?.body?.messages?.[0]?.content ?? ''),
@@ -111,6 +115,15 @@ const second = stubFetch(() => json(200, goodReply))
 await askModel({ agent, facts: [], grounding: {}, history: [], question: 'hi' })
 second.restore()
 ok('GROQ_MODEL overrides the default', second.seen[0]?.body?.model === 'openai/gpt-oss-120b', second.seen[0]?.body?.model)
+
+// A non-reasoning model would reject reasoning_effort, so the field appears
+// only for gpt-oss. This keeps the door open for GROQ_MODEL to name anything.
+;(globalThis as any).Deno.env.get = (k: string) =>
+  k === 'GROQ_API_KEY' ? key : k === 'GROQ_MODEL' ? 'qwen/qwen3.8-27b' : undefined
+const third = stubFetch(() => json(200, goodReply))
+await askModel({ agent, facts: [], grounding: {}, history: [], question: 'hi' })
+third.restore()
+ok('a non gpt-oss model gets no reasoning_effort field', third.seen[0]?.body && !('reasoning_effort' in third.seen[0].body))
 
 ;(globalThis as any).Deno.env.get = (k: string) => (k === 'GROQ_API_KEY' ? key : undefined)
 
@@ -157,6 +170,26 @@ try {
 }
 netStub.restore()
 ok('a network fault is not mistaken for a quota or a key fault', net?.code === 'SUPPORT_UNAVAILABLE', net?.code)
+
+// A model Groq no longer serves answers 404. This is the failure that took all
+// four agents down, and it must be distinguishable in the log.
+const goneStub = stubFetch(() =>
+  json(404, { error: { message: 'The model `openai/gpt-oss-20b` does not exist or you do not have access to it.' } }),
+)
+let gone: any = null
+try {
+  await askModel({ agent, facts: [], grounding: {}, history: [], question: 'hi' })
+} catch (e) {
+  gone = e
+}
+goneStub.restore()
+ok('a retired model is reported as a provider error', gone?.code === 'SUPPORT_ERROR', gone?.code)
+ok('and the provider text is kept, not replaced by a guess', /does not exist/.test(gone?.message ?? ''), gone?.message)
+
+// The fallback must carry the code, or the usage row cannot record the reason.
+const fb = fallbackReply({ ...agent, display_name: 'Naki' }, 'SUPPORT_ERROR')
+ok('the fallback carries the error code for the usage row', fb.error_code === 'SUPPORT_ERROR')
+ok('the fallback never leaks a code to the player', !/SUPPORT_/.test(fb.body), fb.body)
 
 // A key that was never set is the case the operator hits first on a fresh install.
 key = ''

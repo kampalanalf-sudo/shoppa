@@ -55,6 +55,13 @@ export type Reply = {
   /** Token counts, when the model reports them. */
   prompt_tokens: number | null
   output_tokens: number | null
+  /**
+   * Why the call failed, when it did. Without this the only trace of a broken
+   * agent was a console line nobody reads: four calls failed in production and
+   * the sole evidence was a friendly apology and two null token columns. Now
+   * the reason itself is written to the usage row.
+   */
+  error_code?: string
 }
 
 export class SupportError extends Error {
@@ -77,17 +84,36 @@ export class SupportError extends Error {
  * margin and fast enough that a phone caller is not left in silence, and its API
  * is OpenAI-compatible — so moving provider again is one function, not a rewrite.
  *
- * Model choice is about the DAILY cap, not raw quality. On the free tier
- * `llama-3.3-70b-versatile` allows 1,000 requests/day and 100K tokens/day;
- * `llama-3.1-8b-instant` allows 14,400/day and 500K tokens/day. A support agent
- * answers short factual questions from a small snapshot, which is exactly the
- * work the 8B model is good at — and the 70B would run out of tokens in a single
- * busy afternoon. So the default is the 8B, and the 70B is one env var away.
+ * Model choice is about the DAILY cap, not raw quality. The two Llama models
+ * that every Groq tutorial still names — `llama-3.1-8b-instant` and
+ * `llama-3.3-70b-versatile` — were SHUT DOWN on 2026-08-16 for free and
+ * developer tiers, and both now return 404 model_not_found. They are still
+ * visible in the catalogue, labelled Enterprise, which is why a "configured"
+ * agent can still fail every single call. Groq's documented replacements are
+ * `openai/gpt-oss-20b` and `openai/gpt-oss-120b`.
+ *
+ * Both models carry the same free-plan ceiling — 30 req/min, 1,000 req/day,
+ * 8,000 tokens/min, 200K tokens/day, counted per ORGANISATION so all four
+ * agents share it. That is about 250 turns a day at ~800 tokens a turn. The
+ * small model is the default because these are short factual answers built from
+ * a small account snapshot; the large one buys better prose, not more headroom.
+ *
+ * Both are REASONING models: they spend tokens thinking before they answer, and
+ * those tokens count against `max_tokens`. With a 500-token cap and medium
+ * effort the reasoning can consume the whole budget and the reply comes back
+ * empty, so effort is pinned to 'low' and the cap is raised to leave room.
  */
-export const modelName = () => readEnv('GROQ_MODEL') || 'llama-3.1-8b-instant'
+export const modelName = () => readEnv('GROQ_MODEL') || 'openai/gpt-oss-20b'
 
-/** The other Groq model worth knowing about: better answers, 5x less headroom. */
-export const BETTER_MODEL = 'llama-3.3-70b-versatile'
+/** The other Groq model worth knowing about: better answers, less headroom. */
+export const BETTER_MODEL = 'openai/gpt-oss-120b'
+
+/**
+ * Reasoning effort for gpt-oss models. 'low' keeps the thinking short, which is
+ * right for an answer that is two to five sentences built from given facts.
+ * Non-reasoning models reject the field, so it is only sent for gpt-oss.
+ */
+const reasoningEffort = (model: string) => (model.includes('gpt-oss') ? 'low' : undefined)
 
 export const isSupportConfigured = () => Boolean(readEnv('GROQ_API_KEY'))
 
@@ -230,6 +256,9 @@ export async function askModel(args: {
     )
   }
 
+  const model = modelName()
+  const effort = reasoningEffort(model)
+
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 25_000)
 
@@ -244,11 +273,16 @@ export async function askModel(args: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: modelName(),
+        model,
         // Low but not zero: a support answer that is phrased identically every
         // time reads like a robot, and players notice.
         temperature: 0.3,
-        max_tokens: args.maxTokens ?? 500,
+        // gpt-oss THINKS before it answers, and the thinking is billed against
+        // this cap. 500 was enough for Llama, which did not think; with the
+        // reasoning models it can leave nothing for the answer itself, which
+        // comes back as an empty reply. 800 with effort 'low' leaves room.
+        max_tokens: args.maxTokens ?? 800,
+        ...(effort ? { reasoning_effort: effort } : {}),
         messages: [
           { role: 'system', content: systemPrompt(args.agent, args.facts) },
           { role: 'user', content: userPrompt(args.grounding, args.history, args.question) },
@@ -321,7 +355,7 @@ export async function askModel(args: {
  * confident lie. This says what is true — nobody answered, a human has it — and
  * is written to look like a person wrote it, because it is displayed as one.
  */
-export function fallbackReply(agent: Agent): Reply {
+export function fallbackReply(agent: Agent, code = 'SUPPORT_ERROR'): Reply {
   return {
     body: `Sorry — ${agent.display_name} could not get to your message just now. I have passed it to a human, who will pick it up.`,
     handoff: true,
@@ -329,5 +363,6 @@ export function fallbackReply(agent: Agent): Reply {
     used_facts: [],
     prompt_tokens: null,
     output_tokens: null,
+    error_code: code,
   }
 }
