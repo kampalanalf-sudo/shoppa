@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { sfx } from '../lib/sound'
 import { IconShield } from '../components/Icons'
+import { Logo, Wordmark } from '../components/Chrome'
 
 type Mode = 'signin' | 'signup' | 'reset'
 
@@ -85,6 +86,14 @@ export function Auth({ onDone }: { onDone?: () => void }) {
   return (
     <div className="mx-auto w-full max-w-[420px] px-4 py-10">
       <div className="mb-6 text-center">
+        {/* The brand, large, on the screen every new player sees first. It was
+            absent here entirely -- the header sits above, but on a phone the
+            sign-in card is what fills the viewport, so this is the only place
+            the mark can make a first impression at a readable size. */}
+        <div className="mb-5 flex items-center justify-center gap-3.5">
+          <Logo size={64} />
+          <Wordmark size="lg" />
+        </div>
         <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1">
           <IconShield size={12} className="text-neon-lime" />
           <span className="text-[10px] font-bold uppercase tracking-[.18em] text-slate-400">Secure sign-in</span>

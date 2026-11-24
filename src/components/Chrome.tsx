@@ -52,14 +52,21 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
 
   return (
     <header className="fb-header sticky top-0 z-40 border-b border-white/[0.06] glass">
-      <div className="mx-auto flex h-[62px] max-w-[1500px] items-center gap-2 px-3 sm:gap-4 sm:px-5">
+      {/* 74px, not 62px: the mark got bigger and a bigger mark in a bar that did
+          not grow reads as cramped rather than prominent. Nine of those pixels
+          go to the logo, the rest to the air around it. */}
+      <div className="mx-auto flex h-[74px] max-w-[1500px] items-center gap-2 px-3 sm:gap-4 sm:px-5">
         <button
           type="button"
           onClick={() => onNavigate('home')}
-          className="group flex shrink-0 items-center gap-2.5"
+          className="group flex shrink-0 items-center gap-3 sm:gap-3.5"
           aria-label="FloatBet Gaming home"
         >
-          <Logo size={32} />
+          {/* The die is the brand, so it is sized where it actually reads. On a
+              phone it stays 46px -- big enough to be unmistakable, small enough
+              to leave the wordmark room on a 360px screen. */}
+          <Logo size={46} className="sm:!hidden" />
+          <Logo size={54} className="!hidden sm:!block" />
           <span className="block">
             <Wordmark size="sm" className="!gap-1.5 sm:!gap-2" />
           </span>
@@ -445,10 +452,13 @@ export function Wordmark({
   showGaming?: boolean
   className?: string
 }) {
+  // Each step up is deliberate. The wordmark is the thing a player reads before
+  // they read anything else, and it was previously the same size as the nav
+  // labels beside it -- which made the brand look like one more menu item.
   const scale = {
-    sm: { word: 'text-[15px] sm:text-[16px]', gaming: 'text-[7.5px] sm:text-[8.5px] tracking-[.24em] sm:tracking-[.26em]' },
-    md: { word: 'text-[17px]', gaming: 'text-[9.5px] tracking-[.28em]' },
-    lg: { word: 'text-[22px]', gaming: 'text-[11px] tracking-[.3em]' },
+    sm: { word: 'text-[19px] sm:text-[22px]', gaming: 'text-[8.5px] sm:text-[10px] tracking-[.24em] sm:tracking-[.26em]' },
+    md: { word: 'text-[22px] sm:text-[26px]', gaming: 'text-[10.5px] sm:text-[11.5px] tracking-[.28em]' },
+    lg: { word: 'text-[28px] sm:text-[34px]', gaming: 'text-[12px] sm:text-[13px] tracking-[.3em]' },
   }[size]
 
   return (
@@ -601,9 +611,9 @@ export function Footer({ onSupport }: { onSupport?: () => void } = {}) {
       <div className="mx-auto max-w-[1500px] px-5 py-12">
         <div className="grid gap-10 lg:grid-cols-[1.3fr_repeat(4,1fr)]">
           <div>
-            <div className="flex items-center gap-2.5">
-              <Logo size={32} />
-              <Wordmark size="sm" />
+            <div className="flex items-center gap-3">
+              <Logo size={46} />
+              <Wordmark size="md" />
             </div>
             <p className="mt-3 max-w-xs text-[12.5px] leading-relaxed text-slate-500">
               Provably fair crypto casino. 8 original games, instant settlement and the fastest withdrawals in the industry.
