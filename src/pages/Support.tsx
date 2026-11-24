@@ -50,7 +50,7 @@ const SUGGESTIONS = [
   'I want to take a break',
 ]
 
-export function Support({ onHome }: { onHome: () => void }) {
+export function Support({ onHome, onSignIn }: { onHome: () => void; onSignIn?: () => void }) {
   const { user } = useAuth()
   const [agents, setAgents] = useState<Agent[]>([])
   const [conv, setConv] = useState<Conversation | null>(null)
@@ -310,6 +310,28 @@ export function Support({ onHome }: { onHome: () => void }) {
         </p>
       )}
 
+      {/* A signed-out visitor can reach this screen from the floating Help
+          button. Sending used to do nothing at all here — no error, no prompt —
+          which reads as a broken app rather than a locked door. Say it, and give
+          them the one action that fixes it. */}
+      {!user && (
+        <div className="mt-2 flex items-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-2.5 py-2">
+          <p className="flex-1 text-[11px] leading-relaxed text-amber-100">
+            Sign in to chat with the agents — they read your account to answer, so
+            they need to know who you are.
+          </p>
+          {onSignIn && (
+            <button
+              type="button"
+              onClick={onSignIn}
+              className="shrink-0 rounded-lg bg-neon-lime px-2.5 py-1.5 text-[11px] font-bold text-black"
+            >
+              Sign in
+            </button>
+          )}
+        </div>
+      )}
+
       <form
         className="mt-2 flex items-end gap-1.5"
         onSubmit={(e) => {
@@ -333,7 +355,7 @@ export function Support({ onHome }: { onHome: () => void }) {
         />
         <button
           type="submit"
-          disabled={busy || !text.trim()}
+          disabled={busy || !text.trim() || !user}
           className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl bg-neon-lime text-black transition disabled:opacity-40"
           aria-label="Send"
         >

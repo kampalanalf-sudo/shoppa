@@ -213,6 +213,18 @@ function Shell() {
   const isProxiCash = view.name === 'proxicash'
   const shared = { onBack: home, onFair: () => setFairOpen(true) }
 
+  /**
+   * Take the player to support.
+   *
+   * One definition, because this is reached from the floating button, the footer
+   * link and anything else that wants it. Drifting copies of "go to support" is
+   * how the Sports link ended up dead.
+   */
+  const openSupport = useCallback(() => {
+    setView({ name: 'support' })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
+
   return (
     <div className="min-h-screen">
       <Header
@@ -258,7 +270,7 @@ function Shell() {
         {view.name === 'auth' && <Auth onDone={home} />}
         {view.name === 'set-password' && <SetPassword onDone={home} />}
         {view.name === 'sportsbook' && <Sportsbook onBack={home} />}
-        {view.name === 'support' && <Support onHome={home} />}
+        {view.name === 'support' && <Support onHome={home} onSignIn={() => setView({ name: 'auth' })} />}
         {/* Placeholder kept so the grid does not shift while loading. */}
         {view.name === 'admin-parked' && <AdminParked onHome={home} />}
         {view.name === 'admin-players' && <AdminPlayers onHome={home} />}
@@ -273,20 +285,16 @@ function Shell() {
         {!current && !isProxiCash && view.name !== 'sportsbook' && view.name !== 'support' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} onSports={openSportsbook} />}
       </main>
 
+      {/* On every page a player can reach, including sign-in: someone who
+          cannot get into their account is exactly the person who needs help,
+          and requiring a login to ask for one is a closed loop. Only the two
+          screens that ARE support, and the admin console, hide it. */}
       <SupportBubble
-        hidden={view.name === 'support' || view.name === 'admin-console' || view.name === 'admin-players' || view.name === 'admin-parked' || view.name === 'auth'}
-        onOpen={() => {
-          setView({ name: 'support' })
-          window.scrollTo({ top: 0, behavior: 'smooth' })
-        }}
+        hidden={view.name === 'support' || view.name === 'admin-console' || view.name === 'admin-players' || view.name === 'admin-parked'}
+        onOpen={() => openSupport()}
       />
 
-      <Footer
-        onSupport={() => {
-          setView({ name: 'support' })
-          window.scrollTo({ top: 0, behavior: 'smooth' })
-        }}
-      />
+      <Footer onSupport={() => openSupport()} />
       <div className="h-16 md:hidden" />
       <BottomBar
         view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : view.name === 'sportsbook' ? 'sportsbook' : 'home'}
