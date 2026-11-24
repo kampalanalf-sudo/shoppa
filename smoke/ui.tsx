@@ -38,13 +38,13 @@ const renders: [string, React.ReactNode][] = [
   // must still get a usable screen, not a crash or a blank panel. The empty
   // state, the disclosure that the agents are automated, and the "never share a
   // code" warning are all in that first paint.
-  ['Support', wrap(<Support onHome={() => {}} />)],
+  ['Support', wrap(<Support onHome={() => {}} onSignIn={() => {}} />)],
 ]
 // The screen must tell the player the agents are automated, and must warn about
 // one-time codes. Both are promises the app makes in its own words, so they are
 // checked in the rendered output rather than in the source.
 try {
-  const html = renderToString(wrap(<Support onHome={() => {}} />) as any)
+  const html = renderToString(wrap(<Support onHome={() => {}} onSignIn={() => {}} />) as any)
   ok('Support says the agents are automated', /automated agents/i.test(html))
   ok('Support warns never to share a one-time code', /one-time code/i.test(html))
   // The empty state is behind `!booting`, and SSR runs no effects, so the first
@@ -55,10 +55,20 @@ try {
   ok('Support offers a starting point', /What can we help with/.test(supportSrc) && /SUGGESTIONS/.test(supportSrc))
   ok('Support shows a loading state before it has a thread', /Starting…/.test(html))
 
-  // Signed out, the floating bubble must render NOTHING. A "Help" button over
-  // the sign-in screen would be a door to a room the visitor cannot enter.
+  // Signed out, the floating bubble DOES render. The previous rule — hide it,
+  // because a visitor cannot enter the room — was the wrong trade: someone who
+  // cannot log in is the person most in need of help, and the Support page now
+  // offers them a way in instead of a dead composer.
   const bubbleHtml = renderToString(wrap(<SupportBubble onOpen={() => {}} />) as any)
-  ok('SupportBubble renders nothing when signed out', bubbleHtml.length === 0)
+  ok('SupportBubble reaches a signed-out visitor', /Help/.test(bubbleHtml))
+
+  // A signed-out visitor must be told why the composer will not send, and given
+  // the one action that fixes it. Silence there reads as a broken app.
+  ok('Support explains signing in is required to chat',
+    /Sign in to chat with the agents/.test(html))
+  // The button's label sits on its own line in the JSX, so the rendered HTML has
+  // whitespace inside the tag. Assert the label, not the exact markup.
+  ok('and offers a Sign in button', /<button[^>]*>\s*Sign in\s*<\/button>/.test(html))
   ok('Support exposes the transcript to screen readers', /aria-live/.test(html) || /role="log"/.test(html))
 } catch (e) {
   ok('Support renders for inspection', false)

@@ -18,6 +18,23 @@ import { IconChat, IconClose } from './Icons'
  * The badge is driven by the same realtime stream the chat itself uses, so it
  * costs one subscription rather than a poll.
  *
+ * WHERE IT SITS, AND WHY THAT IS THE WHOLE PROBLEM
+ *
+ * The bottom-right corner is the most contested space in this app. On a phone
+ * the bottom bar is always there, and a game puts its own action bar below the
+ * reels. A button placed without accounting for that is not "floating", it is
+ * overlapping. The layout is budgeted from the bottom edge up:
+ *
+ *   0-56      BottomBar (md:hidden), or the game action bar at 57-105
+ *   128-176   Help        (this button, bottom-32 = 128px)
+ *   80-128    mobile PX wallet button (App.tsx, bottom-20)
+ *   16-64     ChatDock, xl and up only
+ *
+ * The Help button used to sit at bottom-[76px]. The PX button sits at bottom-20,
+ * which is 80px with a height of 48 — so the two overlapped by 44 of 48 pixels
+ * and Help won, being later in the DOM and on top. The wallet shortcut was
+ * unreachable on a phone. Raising Help above the wallet keeps both.
+ *
  * Deliberately hidden from the admin console: an admin has the handoff queue,
  * and a support bubble over a screen full of player data invites a mis-tap.
  */
@@ -58,9 +75,15 @@ export function SupportBubble({
     })
   }, [conversationId])
 
-  if (hidden || !user) return null
+  // Signed out, the button still renders: the person locked out of their account
+  // is exactly who needs to reach support, and the Support page explains what to
+  // do. Only the unread badge needs a signed-in player, and that is skipped.
+  if (hidden) return null
 
   return (
+    // bottom-32 on a phone clears both the game action bar (57-105px) and the
+    // PX wallet button (80-128px). From sm up there is no bottom bar, so the
+    // corner is free and the button drops to bottom-6.
     <button
       type="button"
       onClick={() => {
@@ -68,7 +91,7 @@ export function SupportBubble({
         onOpen()
       }}
       aria-label={unread ? `Open support, ${unread} new` : 'Open support'}
-      className="fixed bottom-[76px] right-4 z-30 flex h-12 items-center gap-2 rounded-full border border-white/10 bg-ink-850/95 px-4 text-[12.5px] font-bold text-white shadow-pop backdrop-blur-xl transition hover:border-neon-lime/40 sm:bottom-6"
+      className="fixed bottom-32 right-4 z-30 flex h-12 items-center gap-2 rounded-full border border-white/10 bg-ink-850/95 px-4 text-[12.5px] font-bold text-white shadow-pop backdrop-blur-xl transition hover:border-neon-lime/40 sm:bottom-6"
     >
       <IconChat size={17} className="text-neon-lime" />
       Help
