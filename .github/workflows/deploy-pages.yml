@@ -52,6 +52,14 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      # tsc cannot see a conditional hook: it is valid TypeScript that throws at
+      # runtime. One shipped on 2026-11-24 and blanked the site the moment a
+      # player signed in, because the signed-in path called one hook more than
+      # the signed-out path that had rendered before it. This catches that
+      # specific class of bug before it reaches the domain.
+      - name: Lint (React hook order)
+        run: npm run lint
+
       # The app's server routes are Supabase Edge Functions now, not files in
       # this deployment. A call to a function nobody deployed returns Supabase's
       # HTML 404, which `res.json().catch(...)` turns into null — so the failure

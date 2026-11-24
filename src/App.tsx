@@ -146,6 +146,24 @@ function Shell() {
     } catch { /* noop */ }
   }, [])
 
+  /**
+   * Take the player to support.
+   *
+   * One definition, because this is reached from the floating button, the footer
+   * link and anything else that wants it. Drifting copies of "go to support" is
+   * how the Sports link ended up dead.
+   *
+   * It MUST live here, with the other hooks. The first attempt at this sat just
+   * above the JSX, below four early returns for the loading, signed-out and
+   * onboarding paths — so the signed-in page called 17 hooks and the signed-out
+   * page 16. React throws "Rendered more hooks than during the previous render"
+   * the moment a player signs in, and the page goes blank.
+   */
+  const openSupport = useCallback(() => {
+    setView({ name: 'support' })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [])
+
   const openProxiCash = useCallback(() => {
     setView({ name: 'proxicash' })
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
@@ -212,18 +230,6 @@ function Shell() {
   const current = view.name === 'game' ? view.id : null
   const isProxiCash = view.name === 'proxicash'
   const shared = { onBack: home, onFair: () => setFairOpen(true) }
-
-  /**
-   * Take the player to support.
-   *
-   * One definition, because this is reached from the floating button, the footer
-   * link and anything else that wants it. Drifting copies of "go to support" is
-   * how the Sports link ended up dead.
-   */
-  const openSupport = useCallback(() => {
-    setView({ name: 'support' })
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }, [])
 
   return (
     <div className="min-h-screen">
