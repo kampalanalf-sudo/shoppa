@@ -39,3 +39,4 @@ smoke/dist-slotcheck
 
 # Generated edge-function bundles (scripts/build-edge-functions.mjs)
 supabase/.dist
+smoke/dist-groq

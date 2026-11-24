@@ -69,9 +69,27 @@ export class SupportError extends Error {
 }
 
 /** Which model. One place to change it, and one default that is cheap. */
-export const modelName = () => readEnv('SUPPORT_MODEL') || 'claude-3-5-haiku-latest'
+/**
+ * Why Groq.
+ *
+ * The support agents are a cost centre, not a feature anyone pays for, so they
+ * run on the cheapest thing that is good enough. Groq's free tier is free at the
+ * margin and fast enough that a phone caller is not left in silence, and its API
+ * is OpenAI-compatible — so moving provider again is one function, not a rewrite.
+ *
+ * Model choice is about the DAILY cap, not raw quality. On the free tier
+ * `llama-3.3-70b-versatile` allows 1,000 requests/day and 100K tokens/day;
+ * `llama-3.1-8b-instant` allows 14,400/day and 500K tokens/day. A support agent
+ * answers short factual questions from a small snapshot, which is exactly the
+ * work the 8B model is good at — and the 70B would run out of tokens in a single
+ * busy afternoon. So the default is the 8B, and the 70B is one env var away.
+ */
+export const modelName = () => readEnv('GROQ_MODEL') || 'llama-3.1-8b-instant'
 
-export const isSupportConfigured = () => Boolean(readEnv('ANTHROPIC_API_KEY'))
+/** The other Groq model worth knowing about: better answers, 5x less headroom. */
+export const BETTER_MODEL = 'llama-3.3-70b-versatile'
+
+export const isSupportConfigured = () => Boolean(readEnv('GROQ_API_KEY'))
 
 /**
  * The rules every agent follows, regardless of seat.
@@ -203,48 +221,45 @@ export async function askModel(args: {
   question: string
   maxTokens?: number
 }): Promise<Reply> {
-  const key = readEnv('ANTHROPIC_API_KEY')
+  const key = readEnv('GROQ_API_KEY')
   if (!key) {
     throw new SupportError(
-      'Support agents are not configured. No ANTHROPIC_API_KEY is set on the server.',
+      'Support agents are not configured. No GROQ_API_KEY is set on the server. Create a free key at console.groq.com/keys.',
       'SUPPORT_NOT_CONFIGURED',
       503,
     )
   }
 
-  const started = Date.now()
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 25_000)
 
   let res: Response
   try {
-    res = await fetch('https://api.anthropic.com/v1/messages', {
+    // OpenAI-compatible chat completions. The system prompt is a message rather
+    // than a top-level field, which is the one shape difference from Anthropic.
+    res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         model: modelName(),
+        // Low but not zero: a support answer that is phrased identically every
+        // time reads like a robot, and players notice.
+        temperature: 0.3,
         max_tokens: args.maxTokens ?? 500,
-        temperature: 0.2,
-        system: systemPrompt(args.agent, args.facts),
         messages: [
-          {
-            role: 'user',
-            content: userPrompt(args.grounding, args.history, args.question),
-          },
+          { role: 'system', content: systemPrompt(args.agent, args.facts) },
+          { role: 'user', content: userPrompt(args.grounding, args.history, args.question) },
         ],
       }),
       signal: controller.signal,
     })
-  } catch (err) {
+  } catch {
     const aborted = controller.signal.aborted
     throw new SupportError(
-      aborted
-        ? 'The support agent took too long to answer.'
-        : 'The support agent could not be reached.',
+      aborted ? 'The support agent took too long to answer.' : 'The support agent could not be reached.',
       aborted ? 'SUPPORT_TIMEOUT' : 'SUPPORT_UNAVAILABLE',
       aborted ? 504 : 502,
     )
@@ -254,31 +269,35 @@ export async function askModel(args: {
 
   const json = (await res.json().catch(() => null)) as
     | {
-        content?: { type: string; text?: string }[]
-        usage?: { input_tokens?: number; output_tokens?: number }
-        error?: { message?: string; type?: string }
+        choices?: { message?: { content?: string } }[]
+        usage?: { prompt_tokens?: number; completion_tokens?: number }
+        error?: { message?: string; type?: string; code?: string }
       }
     | null
 
   if (!res.ok || json?.error) {
-    // 401/403 is a configuration problem, not a player-facing one, so it is
-    // reported as 503 with a message an operator can act on.
+    // 429 is the free tier doing its job, and it is not a configuration fault:
+    // the agents are simply out of allowance right now. The player is told a
+    // human has it (one level up), and the operator can raise the ceiling by
+    // pointing GROQ_MODEL at a model with more headroom.
+    if (res.status === 429) {
+      throw new SupportError(
+        'The support agents have hit their daily free-tier limit.',
+        'SUPPORT_QUOTA',
+        429,
+      )
+    }
     const authy = res.status === 401 || res.status === 403
     throw new SupportError(
       authy
-        ? 'The support agent API rejected our key. Check ANTHROPIC_API_KEY.'
+        ? 'Groq rejected our API key. Check GROQ_API_KEY.'
         : json?.error?.message || `The support agent failed (HTTP ${res.status}).`,
       authy ? 'SUPPORT_NOT_CONFIGURED' : 'SUPPORT_ERROR',
       authy ? 503 : 502,
     )
   }
 
-  const raw = (json?.content ?? [])
-    .filter((c) => c.type === 'text')
-    .map((c) => c.text ?? '')
-    .join('\n')
-    .trim()
-
+  const raw = (json?.choices?.[0]?.message?.content ?? '').trim()
   if (!raw) {
     throw new SupportError('The support agent returned an empty answer.', 'SUPPORT_EMPTY', 502)
   }
@@ -290,8 +309,8 @@ export async function askModel(args: {
     handoff: Boolean(reason),
     handoff_reason: reason,
     used_facts: citedFacts(raw, args.facts),
-    prompt_tokens: json?.usage?.input_tokens ?? null,
-    output_tokens: json?.usage?.output_tokens ?? null,
+    prompt_tokens: json?.usage?.prompt_tokens ?? null,
+    output_tokens: json?.usage?.completion_tokens ?? null,
   }
 }
 

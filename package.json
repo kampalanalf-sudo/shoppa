@@ -38,7 +38,8 @@
     "test:auth": "vite build --config smoke/vite.auth.config.ts && node smoke/dist-auth/auth.js",
     "test:brand": "vite build --config smoke/vite.brand.config.ts && node smoke/dist-brand/brand.js",
     "edge:build": "node scripts/build-edge-functions.mjs",
-    "edge:check": "node scripts/build-edge-functions.mjs --check"
+    "edge:check": "node scripts/build-edge-functions.mjs --check",
+    "test:groq": "vite build --config smoke/vite.groq.config.ts && node smoke/dist-groq/groqcheck.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",

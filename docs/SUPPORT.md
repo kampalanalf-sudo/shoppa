@@ -90,8 +90,8 @@ The voice side is a Twilio webhook. Until these are set, `support-voice` answers
 
 | Secret | What it is |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Required for **both** text and voice. Without it, text replies fall back to "a human has it". |
-| `SUPPORT_MODEL` | Optional. Default `claude-3-5-haiku-latest`. |
+| `GROQ_API_KEY` | Required for **both** text and voice. Free at <https://console.groq.com/keys>; starts with `gsk_`. Without it, replies fall back to "a human has it". |
+| `GROQ_MODEL` | Optional. Default `llama-3.1-8b-instant`. See "Cost" below before changing it. |
 | `TWILIO_ACCOUNT_SID` | Required for voice. |
 | `TWILIO_AUTH_TOKEN` | Required for voice. Also **the HMAC key** that signs every call, so without it no call is accepted. |
 | `SUPPORT_PUBLIC_URL` | Optional but recommended. Set to `https://<project-ref>.supabase.co/functions/v1/support-voice` if Twilio was configured with that exact base. The signature covers the URL Twilio called, so a mismatch rejects every call. |
@@ -157,6 +157,37 @@ building it before a human has used the queue for a week would guess at what the
 need. `support_handoffs` is the data that screen will read.
 
 ---
+
+## Cost: why Groq, and which model
+
+The agents run on **Groq's free tier**. It is free at the margin, fast enough that
+a phone caller is not left in silence, and the API is OpenAI-compatible — so
+changing provider again means editing one function, not a rewrite.
+
+Model choice here is about the **daily cap**, not raw quality:
+
+| Model | Requests/day | Tokens/day | Use |
+| --- | --- | --- | --- |
+| `llama-3.1-8b-instant` *(default)* | 14,400 | 500K | Short, factual answers from a small snapshot |
+| `llama-3.3-70b-versatile` | 1,000 | 100K | Better prose; runs out of tokens in one busy afternoon |
+
+A support agent answers "what is my balance" and "why did this bet settle this
+way" from a snapshot of a few hundred tokens. That is the 8B model's home turf,
+and it has 14x the daily allowance. Switch with `GROQ_MODEL` if the answers read
+too terse — but do the arithmetic first: 100K tokens/day across four agents is a
+few hundred conversations, not a few thousand.
+
+### When the free tier runs out
+
+Groq returns `429` when the allowance is spent. That is treated as a **quota**
+condition, not an outage: the player is told a human has it, the handoff row is
+written, and the failure is logged as `SUPPORT_QUOTA` so it is distinguishable
+from a broken key or a network fault. Nothing is silently dropped.
+
+If support volume outgrows the free tier, the options in order of cheapness are:
+raise `GROQ_MODEL` to a model with a bigger daily token budget, add a second key
+and rotate on 429, or move to a paid tier. The throttle below keeps the ceiling
+predictable either way.
 
 ## Cost and blast radius
 
