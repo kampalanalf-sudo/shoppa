@@ -436,6 +436,41 @@ ok('support: a player can only insert messages authored by themselves',
 ok('support: the message stream is enabled for realtime',
   /supabase_realtime add table support_messages/.test(rateSrc))
 
+// ------------------------------------------------------------ the provider --
+
+// The agents run on Groq's free tier. Three things must hold, and none of them
+// is visible from a successful call in a sandbox with no egress:
+//
+//   1. The request is OpenAI-shaped (/chat/completions), because that is Groq's
+//      API. A half-finished provider swap fails here rather than in production.
+//   2. The default model has real daily headroom. The 70B is the better writer
+//      and the worse choice: 100K tokens/day is one busy afternoon.
+//   3. A key that is missing or wrong is a CONFIGURATION error, distinct from a
+//      quota error and from a network fault, because the operator response to
+//      each is different.
+ok('support: calls the OpenAI-compatible chat endpoint',
+  supportBundle.includes('api.groq.com/openai/v1/chat/completions'))
+// Quote-agnostic on purpose: the bundle is source, so it uses single quotes,
+// while anything that pretty-prints it may use double. Asserting one style is
+// how this test failed the first time it ran.
+ok('support: the system prompt is a message, not a top-level field',
+  /role:\s*['"]system['"]/.test(supportBundle) && /role:\s*['"]user['"]/.test(supportBundle))
+ok('support: the default model is the high-headroom one',
+  /llama-3\.1-8b-instant/.test(supportBundle))
+ok('support: the model is overridable without a redeploy',
+  /GROQ_MODEL/.test(supportBundle))
+ok('support: a missing key names the thing to create',
+  /console\.groq\.com/.test(supportBundle))
+ok('support: a spent free tier is its own code, not a generic failure',
+  /SUPPORT_QUOTA/.test(supportBundle))
+ok('support: a rejected key is a configuration error',
+  /SUPPORT_NOT_CONFIGURED/.test(supportBundle))
+
+// Tokens are read from Groq's usage field names, not Anthropic's. Getting this
+// wrong does not break a reply — it silently logs null usage and hides the bill.
+ok('support: usage is read as prompt_tokens/completion_tokens',
+  /prompt_tokens/.test(supportBundle) && /completion_tokens/.test(supportBundle))
+
 // A failed model call must still answer the player. A 502 in their support chat
 // is the one place an error is least forgivable.
 ok('support: a model failure falls back to a human handoff, not an error',
