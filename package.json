@@ -40,7 +40,8 @@
     "edge:build": "node scripts/build-edge-functions.mjs",
     "edge:check": "node scripts/build-edge-functions.mjs --check",
     "test:groq": "vite build --config smoke/vite.groq.config.ts && node smoke/dist-groq/groqcheck.js",
-    "lint": "eslint src/ --max-warnings=99"
+    "lint": "eslint src/ --max-warnings=99",
+    "test:signedin": "vite build --config smoke/vite.signedin.config.ts && node smoke/dist-signedin/signedin.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",

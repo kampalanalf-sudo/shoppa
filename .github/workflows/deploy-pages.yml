@@ -60,6 +60,13 @@ jobs:
       - name: Lint (React hook order)
         run: npm run lint
 
+      # Renders the real app SIGNED IN on every route, in a live DOM, and fails
+      # if any of them paints nothing. The blank-screen bug of 2026-11-24 was
+      # invisible to every other check here: tsc and lint see no problem once
+      # the hook is hoisted, and the other smoke tests only render signed out.
+      - name: Render the app signed in
+        run: npm run test:signedin
+
       # The app's server routes are Supabase Edge Functions now, not files in
       # this deployment. A call to a function nobody deployed returns Supabase's
       # HTML 404, which `res.json().catch(...)` turns into null — so the failure
