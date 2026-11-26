@@ -305,7 +305,21 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
       {/* feature strips */}
       <div className="mx-auto mt-3 grid max-w-[760px] grid-cols-2 gap-2">
         <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.07] bg-gradient-to-r from-neon-lime/[0.10] to-transparent p-2.5">
-          <span className="text-[18px]">{config.symbols.find((s) => s.id === config.wild)?.glyph ?? '📦'}</span>
+          {/* The Wild is the face of the game — show the face. */}
+          {(() => {
+            const wild = config.symbols.find((s) => s.id === config.wild)
+            return wild?.art ? (
+              <img
+                src={wild.art}
+                alt=""
+                width={30}
+                height={30}
+                className="h-[30px] w-[30px] shrink-0 rounded-md object-cover ring-1 ring-neon-lime/30"
+              />
+            ) : (
+              <span className="text-[18px]">{wild?.glyph ?? '📦'}</span>
+            )
+          })()}
           <div className="min-w-0">
             <p className="truncate text-[11.5px] font-bold text-white">
               {config.symbols.find((s) => s.id === config.wild)?.name ?? 'Wild'}
@@ -346,7 +360,22 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
           {payRows.map((s) => (
             <div key={s.id} className="flex items-center justify-between gap-2 text-[10.5px]">
               <span className="flex min-w-0 items-center gap-1.5">
-                <span className="text-[13px]">{s.glyph}</span>
+                {/* The portrait, not the emoji. This paytable is the one place a
+                    player can see what each character looks like; showing a
+                    glyph here meant the art was only ever visible mid-spin. */}
+                {s.art ? (
+                  <img
+                    src={s.art}
+                    alt=""
+                    width={22}
+                    height={22}
+                    loading="lazy"
+                    decoding="async"
+                    className="h-[22px] w-[22px] shrink-0 rounded-[5px] object-cover ring-1 ring-white/10"
+                  />
+                ) : (
+                  <span className="w-[22px] shrink-0 text-center text-[13px]">{s.glyph}</span>
+                )}
                 <span className="truncate text-slate-400">{s.name.replace(/ \(.*\)/, '')}</span>
               </span>
               <span className="num shrink-0 text-slate-300">
