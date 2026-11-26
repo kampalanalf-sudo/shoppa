@@ -26,7 +26,9 @@
 // missing: `pwa.ts` listened for an UPDATED message that nothing ever sent, so
 // the "Update available — Reload now" sheet could never appear and a device
 // with a cached shell stayed on its old build indefinitely.
-const VERSION = 'v3'
+// v4 = art stops being cache-first. See the note on isImmutable below: it is
+// the reason a repainted character kept showing the old portrait.
+const VERSION = 'v4'
 const SHELL_CACHE = `floatbet-shell-${VERSION}`
 const ASSET_CACHE = `floatbet-assets-${VERSION}`
 
@@ -49,7 +51,27 @@ const NEVER_CACHE = [
   /\/storage\/v1\//,
 ]
 
-const isAsset = (url) => /\.(?:js|css|woff2?|ttf|png|jpe?g|webp|avif|svg|ico)$/i.test(url.pathname)
+/**
+ * Is this URL content-addressed?
+ *
+ * Only Vite's build output is. `/assets/index-COYT_uqb.js` cannot change without
+ * its name changing, so a cached copy can never be stale.
+ *
+ * Art is NOT content-addressed. `/art/bluemountain/jkaz.webp` keeps its name
+ * when the portrait is redrawn, and the previous rule — "any .webp is an
+ * asset, therefore cache-first" — pinned every returning player to the old
+ * portrait forever, with no version bump able to reach them. That is why a
+ * repainted character showed no change at all.
+ *
+ * So the test is the directory, not the extension.
+ */
+const isImmutable = (url) =>
+  url.pathname.startsWith('/assets/') || url.pathname.startsWith('/icons/')
+
+// Art, fonts and anything else unhashed: network-first, cache as an offline
+// fallback. One conditional request per file on launch is cheap next to showing
+// players stale artwork.
+const isMedia = (url) => /\.(?:js|css|woff2?|ttf|png|jpe?g|webp|avif|svg|ico)$/i.test(url.pathname)
 
 /**
  * A new worker is installed. If an older one is already controlling pages, this
@@ -118,8 +140,8 @@ self.addEventListener('fetch', (event) => {
   // Cross-origin (fonts, CDN): let the browser deal with it.
   if (url.origin !== self.location.origin) return
 
-  // Hashed assets: cache-first.
-  if (isAsset(url)) {
+  // Content-addressed build output: cache-first, never revalidated.
+  if (isImmutable(url)) {
     event.respondWith(
       caches.match(request).then(
         (hit) =>
@@ -132,6 +154,26 @@ self.addEventListener('fetch', (event) => {
             return res
           }),
       ),
+    )
+    return
+  }
+
+  // Unhashed media (art, fonts): network-first, so a redrawn portrait appears
+  // on the next launch, with the cached copy for offline.
+  if (isMedia(url)) {
+    event.respondWith(
+      fetch(request)
+        .then((res) => {
+          if (res.ok) {
+            const copy = res.clone()
+            caches.open(ASSET_CACHE).then((c) => c.put(request, copy))
+          }
+          return res
+        })
+        .catch(async () => {
+          const cached = await caches.match(request)
+          return cached || Response.error()
+        }),
     )
     return
   }

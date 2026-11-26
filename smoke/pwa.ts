@@ -91,7 +91,24 @@ ok('sw: still caches the manifest', !isNever('https://shoppa-sigma.vercel.app/ma
 
 ok('sw: deletes caches from older versions on activate', /k !== SHELL_CACHE && k !== ASSET_CACHE/.test(sw))
 ok('sw: offline fallback says it cannot take payments', /Payments are never made offline/.test(sw))
-ok('sw: hashed assets are cache-first', /isAsset\(url\)/.test(sw) && /caches\.match\(request\)/.test(sw))
+ok('sw: content-addressed build assets are cache-first',
+  /isImmutable\(url\)/.test(sw) && /caches\.match\(request\)/.test(sw))
+
+// Art is NOT content-addressed: /art/bluemountain/jkaz.webp keeps its name when
+// the portrait is redrawn. Caching it cache-first pinned every returning player
+// to the old picture forever, which is why a repainted character showed no
+// change at all. The rule is now about the directory, not the extension.
+// The old rule judged immutability by extension ("anything .webp is a build
+// asset"), which is what pinned players to old art. It must judge by directory.
+ok('sw: immutability is decided by directory, not file extension', !/const isAsset/.test(sw))
+ok('sw: immutability means /assets/ or /icons/ only',
+  /pathname\.startsWith\('\/assets\/'\)/.test(sw) && /pathname\.startsWith\('\/icons\/'\)/.test(sw))
+ok('sw: unhashed media is network-first so a redraw appears',
+  /isMedia\(url\)/.test(sw) && /fetch\(request\)[\s\S]{0,200}caches\.open\(ASSET_CACHE\)/.test(sw))
+ok('sw: unhashed media still has an offline fallback',
+  /caches\.match\(request\)[\s\S]{0,80}Response\.error\(\)/.test(sw))
+// A version bump is the only way to evict what older workers cached.
+ok('sw: version was bumped past v3 to evict stale art', /const VERSION = 'v4'/.test(sw))
 ok('sw: HTML is network-first so deploys land', /request\.mode === 'navigate'/.test(sw))
 
 // --------------------------------------------------------------- the shell --
