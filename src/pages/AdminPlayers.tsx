@@ -205,9 +205,9 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
 
             <div className="mb-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
               {[
-                { k: 'Balance', v: `${money(detail.wallet?.balance_px ?? 0)} PX` },
-                { k: 'Wagered', v: `${money(detail.wallet?.wagered_px ?? 0)} PX` },
-                { k: 'Cashed out', v: `${money(detail.wallet?.cashed_out_px ?? 0)} PX` },
+                { k: 'Balance', v: `UGX ${money(detail.wallet?.balance_px ?? 0)}` },
+                { k: 'Wagered', v: `UGX ${money(detail.wallet?.wagered_px ?? 0)}` },
+                { k: 'Cashed out', v: `UGX ${money(detail.wallet?.cashed_out_px ?? 0)}` },
                 { k: 'Daily claims', v: String(detail.daily_claims) },
               ].map((s) => (
                 <div key={s.k} className="panel px-2.5 py-2">
@@ -300,14 +300,14 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
               {adjustOpen && (
                 <div className="mt-2 rounded-lg border border-white/10 bg-black/20 p-2">
                   <p className="text-[10.5px] text-slate-300">
-                    Credit or debit this wallet. A negative number takes PX away.
+                    Credit or debit this wallet. A negative number takes UGX away.
                   </p>
                   <div className="mt-1.5 flex gap-1.5">
                     <input
                       value={adjustPx}
                       onChange={(e) => setAdjustPx(e.target.value)}
                       inputMode="numeric"
-                      placeholder="PX, e.g. 5000 or -5000"
+                      placeholder="UGX, e.g. 5000 or -5000"
                       className="field !py-1.5 !text-[11px]"
                     />
                   </div>
@@ -375,7 +375,7 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
                   <div key={c.id} className="flex items-center gap-2 px-3 py-1.5">
                     <span className="text-[10px] uppercase text-slate-400">{c.kind}</span>
                     <span className="num text-[11px] font-bold text-white">{money(c.ugx)} UGX</span>
-                    <span className="num text-[10px] text-slate-500">({money(c.amount_px)} PX)</span>
+                    <span className="num text-[10px] text-slate-500">(UGX {money(c.amount_px)})</span>
                     <span className={`ml-auto text-[10px] font-bold ${c.status === 'paid' ? 'text-emerald-300' : c.status === 'failed' ? 'text-rose-300' : 'text-amber-300'}`}>
                       {c.status}
                     </span>
@@ -420,8 +420,8 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
         <div className="mb-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
           {[
             { k: 'Players', v: String(totals.players) },
-            { k: 'PX in wallets', v: money(totals.px_in_circulation) },
-            { k: 'PX wagered', v: money(totals.px_wagered) },
+            { k: 'UGX in wallets', v: money(totals.px_in_circulation) },
+            { k: 'UGX wagered', v: money(totals.px_wagered) },
             { k: 'Claimed today', v: String(totals.claims_today) },
           ].map((s) => (
             <div key={s.k} className="panel px-2.5 py-2">
@@ -434,7 +434,7 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
 
       {flagged > 0 && (
         <p className="mb-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-2.5 py-2 text-[11px] text-amber-200">
-          {flagged} account{flagged > 1 ? 's' : ''} received PX without much wagering behind
+          {flagged} account{flagged > 1 ? 's' : ''} received credit without much wagering behind
           {flagged > 1 ? ' them' : ' it'} — sorted under “Worth a look”. A signal, not a verdict.
         </p>
       )}
@@ -511,7 +511,7 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
               </p>
             </div>
             <div className="shrink-0 text-right">
-              <p className="num text-[11.5px] font-bold text-white">{money(r.balance_px)} PX</p>
+              <p className="num text-[11.5px] font-bold text-white">UGX {money(r.balance_px)}</p>
               <p className="num text-[9.5px] text-slate-500">wagered {money(r.wagered_px)}</p>
             </div>
           </button>

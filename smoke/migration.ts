@@ -1,8 +1,43 @@
 import { readFileSync } from 'node:fs'
 
 const sql = readFileSync('supabase/migrations/0003_store_topups.sql', 'utf8')
+const sql14 = readFileSync('supabase/migrations/0014_ugx_only_and_free_play.sql', 'utf8')
+
 const fails: string[] = []
 const ok = (n: string, c: boolean) => { if (!c) fails.push(n); console.log(`${c ? 'ok  ' : 'FAIL'} ${n}`) }
+/*
+ * THE PEG INVARIANT.
+ *
+ * 0014 removed PX. The bug it fixes was silent and expensive: 0002, 0003 and
+ * 0004 all still multiplied a UGX top-up by 10 after 0009 moved the displayed
+ * peg to 100, so every top-up credited a tenth of what was paid, and
+ * request_cashout paid out a hundredth of what was requested.
+ *
+ * The rule now: the amount paid IS the amount credited. There is no multiplier
+ * anywhere in a money path -- including in the older migrations, which must not
+ * be edited but must be overridden, so the override is what these assert on.
+ */
+const MONEY_MULTIPLIER = /amount[^;\n]*\*\s*10\b|\/\s*10\.0|\/\s*100\.0|\*\s*PX_PER_UGX/
+for (const [label, body] of [
+  ['apply_store_topup', sql14.slice(sql14.indexOf('function apply_store_topup'), sql14.indexOf('function claim_store_topup'))],
+  ['admin_release_store_topup', sql14.slice(sql14.indexOf('function admin_release_store_topup'), sql14.indexOf('function dismiss_store_topup'))],
+  ['apply_gateway_result', sql14.slice(sql14.indexOf('function apply_gateway_result'), sql14.indexOf('function request_cashout'))],
+  ['request_cashout', sql14.slice(sql14.indexOf('function request_cashout'), sql14.indexOf('function apply_store_topup'))],
+] as const) {
+  // Comments explain the removed peg, so strip them before scanning the code.
+  const code = body.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
+  ok(`${label}: no 10x / divide-by-100 peg left in the code`, !MONEY_MULTIPLIER.test(code))
+}
+
+ok('a top-up credits its own amount', /v_credit := v_order\.amount;/.test(sql14))
+ok('a cashout pays out its own amount', /v_ugx := p_amount_px;/.test(sql14))
+ok('the store credit is the price times quantity only',
+  /v_px := p_amount \* greatest\(coalesce\(p_quantity, 1\), 1\);/.test(sql14))
+// The 7-day rule and the phone/age gates are independent of the currency and
+// must survive: they are what stops a fresh script from cashing out.
+ok('old-account gate survives (7 days)', /v_age_days < 7/.test(sql14))
+ok('the daily bonus is granted to authenticated', /grant execute on function claim_daily_px\(bigint\) to authenticated/.test(sql14))
+ok('the wallet column is documented as UGX', /comment on column wallets\.balance_px/.test(sql14))
 
 // The claim path is the only RPC a player can call, and it must never let the
 // caller name a wallet: that would let anyone credit any account.
@@ -30,7 +65,10 @@ ok('repeated reference is a replay, not a second credit', /status in \('complete
 ok('a parked completed payment is stored as pending', /when p_status = 'completed' and v_uid is null then 'pending'/.test(applyFn))
 ok('credit requires exactly one matching account', /v_matches = 1/.test(applyFn))
 ok('ambiguous email is parked, never guessed', /email_ambiguous/.test(applyFn))
-ok('credits at the 10 PX per UGX peg', /amount \* 10 \* greatest/.test(applyFn) || /then p_amount \* 10 \* greatest/.test(applyFn))
+// 0003 is history and still contains the old peg; 0014 overrides it. What must
+// hold is that the override (checked above) has none, and that 0003 is not the
+// migration that wins.
+ok('the live store credit comes from 0014, not 0003', /create or replace function apply_store_topup/.test(sql14))
 ok('quantity multiplies the credit', /greatest\(coalesce\(p_quantity, 1\), 1\)/.test(applyFn))
 
 // RLS: players read only their own rows.
@@ -60,7 +98,7 @@ ok('0004: release refuses a failed row', /failed payments cannot be released/.te
 ok('0004: release records the approver on the row', /released_by = p_admin_id/.test(rel))
 ok('0004: release writes an attributed ledger entry', /'channel', 'admin_release'/.test(rel) && /'admin_id', p_admin_id/.test(rel))
 ok('0004: release writes to the audit table', /insert into store_topup_actions/.test(rel))
-ok('0004: release credits at the same 10 PX / UGX peg', /amount \* 10 \* v_row.quantity/.test(rel))
+ok('0004: release is overridden by 0014', /create or replace function admin_release_store_topup/.test(sql14))
 
 const dis = sql4.slice(sql4.indexOf('function dismiss_store_topup'))
 ok('0004: dismiss cannot touch a credited row', /already been credited/.test(dis))

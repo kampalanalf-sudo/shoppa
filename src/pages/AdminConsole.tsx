@@ -157,7 +157,7 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
           text:
             action === 'paid'
               ? `Paid ${money(co.ugx)} UGX to ${players[co.user_id]?.username ?? 'the player'}.`
-              : `Cancelled — ${money(co.amount_px)} PX returned to the player's wallet.`,
+              : `Cancelled — UGX ${money(co.amount_px)} returned to the player's wallet.`,
         })
       } catch (e) {
         setNote({ kind: 'bad', text: describeApiError(e, 'That did not go through.') })
@@ -334,7 +334,7 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
                       <p className="flex items-center gap-1.5">
                         <span className="num text-[13px] font-bold text-white">{money(co.ugx)} UGX</span>
                         <span className="num text-[10px] text-slate-500">
-                          {money(co.amount_px)} PX
+                          UGX {money(co.amount_px)}
                         </span>
                         <span className="rounded bg-white/10 px-1 text-[8.5px] font-bold uppercase text-slate-300">
                           {co.kind}
@@ -383,7 +383,7 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
                       <p className="text-[10.5px] leading-relaxed text-slate-300">
                         {confirm.action === 'paid'
                           ? `Send ${money(co.ugx)} UGX to ${co.phone} on ${co.rail} now? This calls the payment provider and cannot be undone from here.`
-                          : `Refuse this withdrawal and return ${money(co.amount_px)} PX to ${p?.username ?? 'the player'}?`}
+                          : `Refuse this withdrawal and return $UGX {money(co.amount_px)} to ${p?.username ?? 'the player'}?`}
                       </p>
                       <input
                         value={reason}
@@ -443,7 +443,7 @@ export function AdminConsole({ onHome }: { onHome: () => void }) {
                       <span className={delta >= 0 ? ' text-emerald-400' : ' text-rose-400'}>
                         {' '}
                         {delta >= 0 ? '+' : ''}
-                        {money(delta)} PX
+                        UGX {money(delta)}
                       </span>
                     )}
                   </span>

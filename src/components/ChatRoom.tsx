@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { onChatMessage, supabase, type ChatRow, type GiftRow } from '../lib/supabase'
 import { money } from '../lib/format'
-import { pxToUgx } from '../lib/proxicash'
 import { sfx } from '../lib/sound'
 import { IconClose, IconChat, IconBolt } from './Icons'
 
@@ -11,7 +10,7 @@ type Msg = ChatRow & { sending?: boolean }
 const GST = [1000, 5000, 10000]
 
 /**
- * Live chat room with peer-to-peer PX gifting.
+ * Live chat room with peer-to-peer UGX gifting.
  *
  * Money moves only through the send_gift / claim_gift / refund_gift RPCs, so
  * the sender's balance is debited at send time and the recipient's is credited
@@ -112,7 +111,7 @@ export function ChatRoom({ onClose }: { onClose: () => void }) {
       // announce it in the room so the gift is visible to everyone
       await supabase.from('chat_messages').insert({
         user_id: user!.id,
-        body: `🎁 sent ${money(giftAmount)} PX to ${giftTo.name}${giftNote.trim() ? ` — ${giftNote.trim()}` : ''}`,
+        body: `🎁 sent UGX ${money(giftAmount)} to ${giftTo.name}${giftNote.trim() ? ` — ${giftNote.trim()}` : ''}`,
       })
       setGiftTo(null)
       setGiftNote('')
@@ -153,7 +152,6 @@ export function ChatRoom({ onClose }: { onClose: () => void }) {
   }, [])
 
   const canAfford = giftAmount > 0 && giftAmount <= balance
-  const giftValue = useMemo(() => pxToUgx(giftAmount), [giftAmount])
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
@@ -170,7 +168,7 @@ export function ChatRoom({ onClose }: { onClose: () => void }) {
           </div>
           <div className="flex items-center gap-2">
             <span className="num rounded-md bg-neon-lime/10 px-2 py-0.5 text-[11px] font-bold text-neon-lime">
-              {money(balance)} PX
+              UGX {money(balance)}
             </span>
             <button type="button" onClick={onClose} aria-label="Close chat" className="text-slate-500 hover:text-white">
               <IconClose size={16} />
@@ -186,8 +184,7 @@ export function ChatRoom({ onClose }: { onClose: () => void }) {
                 <span className="text-[14px]">🎁</span>
                 <div className="min-w-0 flex-1">
                   <p className="text-[11.5px] font-bold text-gold">
-                    {money(g.amount_px)} PX gift
-                    <span className="ml-1 font-normal text-slate-400">≈ {money(pxToUgx(g.amount_px))} UGX</span>
+                    UGX {money(g.amount_px)} gift
                   </p>
                   {g.note && <p className="truncate text-[10px] text-slate-400">{g.note}</p>}
                 </div>
@@ -266,7 +263,7 @@ export function ChatRoom({ onClose }: { onClose: () => void }) {
         {giftTo && (
           <div className="border-t border-gold/25 bg-gold/[0.07] px-3 py-2.5">
             <div className="mb-1.5 flex items-center justify-between">
-              <p className="text-[11px] font-bold text-gold">Gift PX to {giftTo.name}</p>
+              <p className="text-[11px] font-bold text-gold">Gift UGX to {giftTo.name}</p>
               <button type="button" onClick={() => setGiftTo(null)} className="text-slate-500 hover:text-white">
                 <IconClose size={13} />
               </button>
@@ -305,10 +302,10 @@ export function ChatRoom({ onClose }: { onClose: () => void }) {
               disabled={busy || !canAfford}
               className="w-full rounded-lg bg-gold py-2 text-[12px] font-black text-ink-950 disabled:opacity-40"
             >
-              {canAfford ? `Send ${money(giftAmount)} PX · ≈ ${money(giftValue)} UGX` : 'Not enough PX'}
+                                  {canAfford ? `Send UGX ${money(giftAmount)}` : 'Not enough balance'}
             </button>
             <p className="mt-1 text-center text-[9.5px] text-slate-600">
-              Gifts are real PX and can be cashed out by the recipient via ProxiCash.
+              Gifts are real money and are credited to the recipient's balance.
             </p>
           </div>
         )}

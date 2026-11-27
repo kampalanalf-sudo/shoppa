@@ -2,14 +2,13 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { collect, startHostedCheckout, usePaymentPoll } from '../lib/payments'
 import { money } from '../lib/format'
-import { ugxToPx } from '../lib/proxicash'
 import { sfx } from '../lib/sound'
 import { IconCheck, IconClose, IconShield } from './Icons'
 
 const PRESETS = [5000, 10000, 25000, 50000]
 
 /**
- * Buy PX with mobile money. PX is credited by the DGateway webhook once the
+ * Buy UGX with mobile money. The balance is credited by the payment webhook once the
  * provider confirms, so this panel only ever *starts* a payment and then polls.
  */
 export function TopUpPanel({
@@ -86,7 +85,7 @@ export function TopUpPanel({
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4">
       <div className="w-full max-w-[400px] animate-popIn overflow-hidden rounded-t-2xl border border-white/10 bg-ink-850/98 shadow-pop sm:rounded-2xl">
         <div className="flex items-center justify-between border-b border-white/[0.07] px-3.5 py-2.5">
-          <span className="text-[13px] font-bold text-white">Buy PX</span>
+          <span className="text-[13px] font-bold text-white">Top up UGX</span>
           <button type="button" onClick={onClose} aria-label="Close" className="text-slate-500 hover:text-white">
             <IconClose size={16} />
           </button>
@@ -120,7 +119,7 @@ export function TopUpPanel({
                   className="field num !text-[16px] font-bold"
                 />
                 <p className="mt-1 text-[10.5px] text-slate-500">
-                  You get <b className="text-neon-lime">{money(ugxToPx(ugx))} PX</b> at 10 PX / UGX
+                  You pay <b className="text-neon-lime">UGX {money(ugx)}</b> and it is credited to your balance in full.
                 </p>
               </div>
 
@@ -182,7 +181,7 @@ export function TopUpPanel({
                       <IconCheck size={14} /> Payment confirmed
                     </p>
                     <p className="text-[11px] text-slate-500">
-                      {money(ugxToPx(ugx))} PX added to your balance.
+                      UGX {money(ugx)} added to your balance.
                     </p>
                   </>
                 ) : poll.state === 'failed' ? (

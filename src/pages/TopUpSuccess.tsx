@@ -123,7 +123,7 @@ export function TopUpSuccess({ reference, onHome, onTopUpAgain }: Props) {
 
   const subtitle =
     state === 'paid'
-      ? 'Your PX is in your balance and ready to play.'
+      ? 'Your money is in your balance and ready to play.'
       : state === 'failed'
         ? 'Nothing was charged. You can try the top-up again.'
         : 'Check your phone and approve the prompt. This page updates on its own.'
@@ -167,7 +167,7 @@ export function TopUpSuccess({ reference, onHome, onTopUpAgain }: Props) {
       <div className="panel mt-3 p-3.5">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-bold uppercase tracking-[.14em] text-slate-500">New balance</span>
-          <span className="num text-[18px] font-black text-white">{money(balance)} PX</span>
+          <span className="num text-[18px] font-black text-white">UGX {money(balance)}</span>
         </div>
         <p className="mt-1 text-right text-[11px] text-neon-lime">≈ {money(Math.round(balance / 10))} UGX</p>
       </div>

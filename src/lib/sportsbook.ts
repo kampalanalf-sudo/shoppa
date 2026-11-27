@@ -17,7 +17,6 @@
 // Odds travel as integers ×100 (250 = 2.50). They are formatted only at the
 // edge, in `fmtOdds`, so no float ever touches a payout calculation.
 import { supabase } from './supabase'
-import { PX_PER_UGX } from './proxicash'
 
 export type Sport = 'football' | 'basketball' | 'athletics' | 'motorsport' | 'cricket' | 'rugby' | 'tennis'
 
@@ -100,9 +99,9 @@ export function fmtOdds(oddsX100: number): string {
   return (oddsX100 / 100).toFixed(2)
 }
 
-/** Whole PX, never a fraction: the wallet is BIGINT and 100 PX = 1 UGX. */
-export function potentialPayout(stakePx: number, oddsX100: number): number {
-  return Math.floor((stakePx * oddsX100) / 100)
+/** Whole shillings, never a fraction: the wallet is BIGINT. */
+export function potentialPayout(stakeUgxAmount: number, oddsX100: number): number {
+  return Math.floor((stakeUgxAmount * oddsX100) / 100)
 }
 
 /**
@@ -204,7 +203,7 @@ export async function loadSlips(userId: string): Promise<Slip[]> {
 export async function placeBet(selectionId: string, stakePx: number): Promise<void> {
   if (!supabase) throw new Error('Backend is not configured.')
   if (!Number.isInteger(stakePx) || stakePx <= 0) {
-    throw new Error('Stake must be a whole, positive number of PX.')
+    throw new Error('Stake must be a whole, positive number of UGX.')
   }
   const { error } = await supabase.rpc('place_sports_bet', {
     p_selection: selectionId,
@@ -213,9 +212,15 @@ export async function placeBet(selectionId: string, stakePx: number): Promise<vo
   if (error) throw new Error(error.message)
 }
 
-/** PX -> UGX, for showing a stake in the money people actually think in. */
-export function stakeUgx(px: number): number {
-  return Math.floor(px / PX_PER_UGX)
+/**
+ * Stakes are whole shillings, so there is nothing to convert.
+ *
+ * This used to divide by the PX peg. Kept as an identity function (rather than
+ * deleted from its call sites) so the naming still tells the reader that the
+ * value crossing this boundary is money, not a token.
+ */
+export function stakeUgx(ugxAmount: number): number {
+  return Math.floor(ugxAmount)
 }
 
 /** Human countdown. Empty string once the event has started. */

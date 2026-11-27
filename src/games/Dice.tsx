@@ -117,7 +117,7 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
             </div>
           </div>
 
-          <BetButton onClick={() => void play()} loading={rolling} sub={`Pays ${mult(multVal)} · ${money(potential)} PX`}>
+          <BetButton onClick={() => void play()} loading={rolling} sub={`Pays ${mult(multVal)} · $UGX {money(potential)}`}>
             {rolling ? 'Rolling…' : 'Roll dice'}
           </BetButton>
 
@@ -149,7 +149,7 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">UGX</span>
           </div>
           <button type="button" onClick={() => void play()} disabled={rolling} className="btn-primary h-10 flex-1 !text-[13px]">
             {rolling ? 'Rolling…' : `Roll ${mode} ${mult(multVal)}`}
@@ -179,7 +179,7 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
             {bar.toFixed(2)}
           </p>
           <p className="mt-1 text-[10.5px] font-bold uppercase tracking-[.2em] text-slate-500">
-            {rolling ? 'Rolling…' : last ? (last.won ? `Won ${money(last.payout)} PX` : 'No win this time') : `Roll ${mode} ${target.toFixed(2)}`}
+            {rolling ? 'Rolling…' : last ? (last.won ? `Won $UGX {money(last.payout)}` : 'No win this time') : `Roll ${mode} ${target.toFixed(2)}`}
           </p>
         </div>
 

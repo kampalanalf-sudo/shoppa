@@ -6,6 +6,7 @@ import {
   IconBolt, IconCheck, IconClose, IconCopy, IconExternal, IconGift, IconInfo, IconShield, IconTrophy, IconWallet,
 } from './Icons'
 import { CopyField, BetFeed } from './Chrome'
+import { ModeSwitch, RefillButton } from './ModeBadge'
 import { sfx } from '../lib/sound'
 import { crashPoint, diceRoll, floats, limboPoint } from '../lib/fair'
 
@@ -64,7 +65,7 @@ const COINS = [
 ]
 
 export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
-  const { walletOpen, setWalletOpen, balance, deposit, withdraw, totalDeposited, stats, toast, resetAccount, username, setUsername } = useStore()
+  const { walletOpen, setWalletOpen, balance, deposit, withdraw, totalDeposited, stats, toast, resetAccount, username, setUsername, mode, playBalance } = useStore()
   const [tab, setTab] = useState<'deposit' | 'withdraw' | 'account'>('deposit')
   const [coin, setCoin] = useState('USDT')
   const [amount, setAmount] = useState('100')
@@ -75,11 +76,27 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
   const amt = parseFloat(amount) || 0
 
   const submit = () => {
+    /*
+     * Free play is not a wallet.
+     *
+     * Depositing would credit real money into a mode whose balance resets, and
+     * withdrawing would take money out of a balance that never held any. Both are
+     * refused here as well as being hidden, because "the button is not rendered"
+     * is not the same guarantee as "the action cannot run".
+     */
+    if (mode === 'free') {
+      toast({
+        kind: 'error',
+        title: 'Not available in free play',
+        body: 'Switch to real money to deposit or withdraw.',
+      })
+      return
+    }
     if (!(amt > 0)) {
       toast({ kind: 'error', title: 'Enter an amount', body: 'Amount must be greater than zero.' })
       return
     }
-    if (tab === 'withdraw' && amt > balance) {
+    if (tab === 'withdraw' && amt > playBalance) {
       toast({ kind: 'error', title: 'Insufficient balance', body: 'Reduce the amount and try again.' })
       return
     }
@@ -116,14 +133,25 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
       open={forceOpen ?? walletOpen}
       onClose={() => { setWalletOpen(false); setDone(null) }}
       title="Wallet"
-      subtitle={`Balance ${money(balance)} PX · ${username}`}
+      subtitle={mode === 'free' ? `Free play · ${username}` : `Balance UGX ${money(balance)} · ${username}`}
       icon={<IconWallet size={18} />}
     >
+      {/* The mode switch belongs next to the balance: it is the one place a
+          player reads a number as money, so it is where they must be able to
+          change — and see — which money it is. */}
+      <div className="mb-3">
+        <ModeSwitch />
+      </div>
+
       <div className="mb-4 overflow-hidden rounded-2xl border border-neon-lime/20 bg-gradient-to-br from-neon-lime/[0.12] via-ink-800 to-ink-850 p-4">
-        <p className="text-[10.5px] font-bold uppercase tracking-[.18em] text-neon-lime/70">Available balance</p>
+        <p className="text-[10.5px] font-bold uppercase tracking-[.18em] text-neon-lime/70">
+          {mode === 'free' ? 'Free play credits — not real money' : 'Available balance'}
+        </p>
         <div className="mt-1 flex items-end gap-2">
-          <span className="num text-3xl font-black text-white">{money(balance)}</span>
-          <span className="mb-1 text-[12px] font-bold text-slate-400">PX</span>
+          <span className={`num text-3xl font-black ${mode === 'free' ? 'text-amber-200' : 'text-white'}`}>
+            {money(playBalance)}
+          </span>
+          <span className="mb-1 text-[12px] font-bold text-slate-400">UGX</span>
         </div>
         <div className="mt-3 grid grid-cols-3 gap-2 text-center">
           {[
@@ -153,7 +181,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
           <p className="mt-3 text-[15px] font-bold text-white">
             {done.kind === 'deposit' ? 'Deposit confirmed' : 'Withdrawal sent'}
           </p>
-          <p className="num mt-1 text-[13px] text-slate-400">{money(done.amt)} PX {done.kind === 'deposit' ? 'credited' : 'on the way'}</p>
+          <p className="num mt-1 text-[13px] text-slate-400">UGX {money(done.amt)} {done.kind === 'deposit' ? 'credited' : 'on the way'}</p>
           <p className="mt-1 text-[11px] text-slate-500">Payouts settle to mobile money via ProxiCash.</p>
           <div className="mt-4 flex gap-2">
             <button type="button" onClick={() => setDone(null)} className="btn-ghost flex-1">New transaction</button>
@@ -221,7 +249,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
 
           <div>
             <label className="label" htmlFor="amt">
-              <span>Amount (PX)</span>
+              <span>Amount (UGX)</span>
               <span className="normal-case tracking-normal text-slate-500">
                 ≈ {money(amt * coinMeta.rate)} {coinMeta.s}
               </span>
@@ -234,7 +262,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
                 value={amount}
                 onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
               />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-neon-lime/70">PX</span>
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-neon-lime/70">UGX</span>
             </div>
             <div className="mt-1.5 flex gap-1.5">
               {[50, 100, 500, 1000].map((v) => (
@@ -250,7 +278,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
               {tab === 'withdraw' && (
                 <button
                   type="button"
-                  onClick={() => setAmount(String(Math.floor(balance)))}
+                  onClick={() => setAmount(String(Math.floor(playBalance)))}
                   className="flex-1 rounded-lg border border-neon-lime/30 bg-neon-lime/10 py-1 text-[11px] font-bold text-neon-lime"
                 >
                   Max
@@ -264,7 +292,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
               <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Send {coinMeta.s} to</p>
               <CopyField label={`${coinMeta.s} · ${coinMeta.net}`} value="TQ8vN5kRfLz9m2yB7xJcWq4pAhD1sEuG3K" />
               <p className="mt-2 flex items-center gap-1.5 text-[10.5px] text-slate-500">
-                <IconInfo size={12} /> Top up with mobile money or crypto. PX can be cashed out via ProxiCash.
+                <IconInfo size={12} /> Top up with mobile money. Your UGX balance can be paid out to MoMo.
               </p>
             </div>
           ) : (
@@ -283,9 +311,9 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
                 <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink-950/30 border-t-ink-950" /> Processing…
               </span>
             ) : tab === 'deposit' ? (
-              <>Deposit {money(amt)} PX <IconBolt size={15} /></>
+              <>Deposit UGX {money(amt)} <IconBolt size={15} /></>
             ) : (
-              <>Withdraw {money(amt)} PX <IconExternal size={14} /></>
+              <>Withdraw UGX {money(amt)} <IconExternal size={14} /></>
             )}
           </button>
           <p className="text-center text-[10px] text-slate-600">
@@ -419,7 +447,7 @@ export function FairModal({ forceOpen }: { forceOpen?: boolean } = {}) {
 const REWARDS = [
   { id: 'daily', title: 'Daily login', desc: 'Streak day 3 of 7', amount: 250, icon: '📅', ready: true },
   { id: 'rakeback', title: 'Rakeback', desc: '2.4% of your last 24h volume', amount: 640, icon: '♻️', ready: true },
-  { id: 'race', title: 'Weekly race', desc: 'Rank #48 · pool 5,000,000 PX', amount: 1200, icon: '🏁', ready: true },
+  { id: 'race', title: 'Weekly race', desc: 'Rank #48 · pool UGX 50,000', amount: 1200, icon: '🏁', ready: true },
   { id: 'vip', title: 'VIP airdrop', desc: 'Platinum tier · unlocks Friday', amount: 5000, icon: '💎', ready: false },
 ]
 
@@ -434,13 +462,13 @@ export function RewardsModal({ forceOpen }: { forceOpen?: boolean } = {}) {
       open={forceOpen ?? rewardsOpen}
       onClose={() => setRewardsOpen(false)}
       title="Rewards hub"
-      subtitle={`${money(totalReady)} PX ready to collect`}
+      subtitle={`UGX ${money(totalReady)} ready to collect`}
       icon={<IconGift size={18} />}
     >
       <div className="relative mb-4 overflow-hidden rounded-2xl border border-gold/25 bg-gradient-to-br from-gold/15 via-ink-800 to-ink-850 p-4">
         <div className="pointer-events-none absolute -right-6 -top-8 h-28 w-28 rounded-full bg-gold/20 blur-2xl" />
         <p className="text-[10px] font-bold uppercase tracking-[.2em] text-gold/80">Available now</p>
-        <p className="num mt-1 text-3xl font-black text-white">{money(totalReady)} <span className="text-[13px] font-bold text-slate-400">PX</span></p>
+        <p className="num mt-1 text-3xl font-black text-white">{money(totalReady)} <span className="text-[13px] font-bold text-slate-400">UGX</span></p>
         <button
           type="button"
           disabled={totalReady === 0}
@@ -448,7 +476,7 @@ export function RewardsModal({ forceOpen }: { forceOpen?: boolean } = {}) {
             deposit(totalReady)
             setClaimed(REWARDS.filter((r) => r.ready).map((r) => r.id))
             sfx.deposit()
-            toast({ kind: 'success', title: 'Rewards collected', body: `${money(totalReady)} PX credited.` })
+            toast({ kind: 'success', title: 'Rewards collected', body: `UGX ${money(totalReady)} credited.` })
           }}
           className="btn-primary mt-3 h-10 w-full !text-[12.5px]"
         >
@@ -473,7 +501,7 @@ export function RewardsModal({ forceOpen }: { forceOpen?: boolean } = {}) {
                   deposit(r.amount)
                   setClaimed((c) => [...c, r.id])
                   sfx.deposit()
-                  toast({ kind: 'success', title: `${r.title} claimed`, body: `+${money(r.amount)} PX` })
+                  toast({ kind: 'success', title: `${r.title} claimed`, body: `+UGX ${money(r.amount)}` })
                 }}
                 className={`num shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${
                   done ? 'bg-white/[0.04] text-slate-500' : 'bg-neon-lime/15 text-neon-lime hover:bg-neon-lime/25'
@@ -489,13 +517,13 @@ export function RewardsModal({ forceOpen }: { forceOpen?: boolean } = {}) {
       <div className="mt-4 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
         <div className="flex items-center justify-between text-[11px]">
           <span className="text-slate-500">30-day volume</span>
-          <span className="num font-bold text-white">{money(stats.wagered)} PX</span>
+          <span className="num font-bold text-white">UGX {money(stats.wagered)}</span>
         </div>
         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
           <div className="h-full rounded-full bg-gradient-to-r from-neon-lime to-gold" style={{ width: `${Math.min(100, (stats.wagered / 50000) * 100)}%` }} />
         </div>
         <p className="mt-1.5 text-[10px] text-slate-600">
-          {stats.wagered >= 50000 ? 'Gold tier unlocked — 15% rakeback' : `Wager ${money(50000 - stats.wagered)} PX more to unlock Gold tier`}
+          {stats.wagered >= 50000 ? 'Gold tier unlocked — 15% rakeback' : `Wager UGX ${money(50000 - stats.wagered)} more to unlock Gold tier`}
         </p>
       </div>
     </Sheet>
@@ -628,7 +656,7 @@ export function SearchModal({ open, onClose, onPick }: { open: boolean; onClose:
 /* ------------------------------------------------------------------ Bonus / promo */
 
 export function PromoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { deposit, toast } = useStore()
+  const { deposit, toast, mode } = useStore()
   const [claimed, setClaimed] = useState(false)
   return (
     <Sheet open={open} onClose={onClose} title="Welcome bonus" subtitle="Available to new FloatBet players" icon={<IconGift size={18} />}>
@@ -636,7 +664,7 @@ export function PromoModal({ open, onClose }: { open: boolean; onClose: () => vo
         <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-neon-lime/20 blur-2xl" />
         <p className="text-[10.5px] font-bold uppercase tracking-[.24em] text-neon-lime/80">Deposit bonus</p>
         <p className="mt-1 text-4xl font-black text-white">+200%</p>
-        <p className="mt-1 text-[12px] text-slate-400">on your first deposit, up to 5,000 PX</p>
+        <p className="mt-1 text-[12px] text-slate-400">on your first deposit, up to UGX 5,000</p>
         <div className="mt-3 flex items-center justify-center gap-1.5">
           {['Instant', 'Provably fair', '18+ only'].map((t) => (
             <span key={t} className="rounded-full bg-black/30 px-2 py-0.5 text-[10px] font-semibold text-slate-300">{t}</span>
@@ -647,13 +675,19 @@ export function PromoModal({ open, onClose }: { open: boolean; onClose: () => vo
         type="button"
         disabled={claimed}
         onClick={() => {
+          // A welcome bonus is real money. It must not land in the free-play
+          // wallet, where it would look like a real reward and then evaporate.
+          if (mode === 'free') {
+            toast({ kind: 'error', title: 'Not available in free play', body: 'Switch to real money to claim this bonus.' })
+            return
+          }
           deposit(5000)
           setClaimed(true)
-          toast({ kind: 'success', title: 'Bonus claimed', body: '5,000 PX welcome bonus credited.' })
+          toast({ kind: 'success', title: 'Bonus claimed', body: 'UGX 5,000 welcome bonus credited.' })
         }}
         className="btn-primary mt-4 h-12 w-full text-[14px]"
       >
-        {claimed ? <><IconCheck size={16} /> Bonus credited</> : <><IconGift size={16} /> Claim 5,000 PX bonus</>}
+        {claimed ? <><IconCheck size={16} /> Bonus credited</> : <><IconGift size={16} /> Claim UGX 5,000 bonus</>}
       </button>
       <p className="mt-2 text-center text-[10.5px] text-slate-600">Bonus funds carry wagering requirements · 18+</p>
     </Sheet>

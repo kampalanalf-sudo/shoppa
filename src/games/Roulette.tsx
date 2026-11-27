@@ -103,7 +103,7 @@ export function Roulette({ onBack, onFair }: { onBack: () => void; onFair: () =>
         if (payout > 0) sfx.win()
         else sfx.lose()
       }
-      if (payout > totalStake * 3) toast({ kind: 'win', title: `Straight up ${n}!`, body: `+${money(paid)} PX from ${bets.length} bets.` })
+      if (payout > totalStake * 3) toast({ kind: 'win', title: `Straight up ${n}!`, body: `+$UGX {money(paid)} from ${bets.length} bets.` })
       setBets([])
     }, 4800)
   }, [spinning, bets, totalStake, balance, placeBet, nextFloats, angle, settleBet, sound, toast])
@@ -136,9 +136,9 @@ export function Roulette({ onBack, onFair }: { onBack: () => void; onFair: () =>
           <BetAmount value={bet} onChange={setBet} disabled={spinning} label="Chip value" />
           <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2">
             <span className="text-[11px] text-slate-500">Total stake</span>
-            <span className="num text-[14px] font-bold text-white">{money(totalStake)} PX</span>
+            <span className="num text-[14px] font-bold text-white">UGX {money(totalStake)}</span>
           </div>
-          <BetButton onClick={() => void spin()} loading={spinning} disabled={!bets.length} sub={bets.length ? `${bets.length} bets · up to ${money(totalPotential)} PX` : 'Place bets on the felt'}>
+          <BetButton onClick={() => void spin()} loading={spinning} disabled={!bets.length} sub={bets.length ? `${bets.length} bets · up to $UGX {money(totalPotential)}` : 'Place bets on the felt'}>
             {spinning ? 'Spinning…' : 'Spin'}
           </BetButton>
           <button type="button" onClick={clear} disabled={!bets.length || spinning} className="btn-ghost w-full !py-2 !text-[12px]">

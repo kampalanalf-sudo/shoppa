@@ -3,24 +3,28 @@ export const clamp = (v: number, min: number, max: number) => Math.min(max, Math
 /**
  * Money is displayed in Ugandan Shillings. Amounts are UGX integers -- the
  * shilling has no meaningful sub-unit in practice, so we never show decimals
- * for a fiat amount.
+ * for an amount.
  */
 export const money = (v: number) => Math.round(v).toLocaleString('en-UG')
 
 /** Fiat amount with the UGX prefix, e.g. "UGX 25,000". */
 export const ugx = (v: number) => `UGX ${money(v)}`
 
-/** ProxiCoin -- the in-game coin. Balances are whole coins. */
-export const PROXICOIN = 'PX'
+/**
+ * A stake or a balance, always labelled with its currency.
+ *
+ * `stake()` and `ugx()` are the same function on purpose: the label must never
+ * depend on context, because the one place it silently does is the place a
+ * player sees a number they think is shillings and it is not.
+ */
+export const stake = (v: number) => `UGX ${money(v)}`
 
-/** ProxiCoin amount with ticker, e.g. "1,250 PX". */
-export const coin = (v: number) => `${money(v)} ${PROXICOIN}`
-
-/** Compact ProxiCoin amount for tight spaces, e.g. "1.2K PX". */
-export const coinCompact = (v: number) => `${compact(v)} ${PROXICOIN}`
-
+/** Compact amount for tight spaces, e.g. "1.2M". */
 export const compact = (v: number) =>
   Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(v)
+
+/** Compact amount with currency, e.g. "1.2M UGX". */
+export const compactUgx = (v: number) => `${compact(v)} UGX`
 
 export const mult = (v: number) => `${v.toFixed(2)}×`
 

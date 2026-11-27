@@ -393,7 +393,7 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
       <p className="mt-1 text-center text-[9.5px] text-slate-700">
         Characters are fictional · 18+ · Play responsibly
       </p>
-      <span className="sr-only">Max win {money(potential)} PX</span>
+      <span className="sr-only">Max win UGX {money(potential)}</span>
     </GameShell>
   )
 }

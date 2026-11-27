@@ -64,7 +64,7 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
             else sfx.win()
           } else sfx.lose()
         }
-        if (won) toast({ kind: 'win', title: `Hit ${mult(point)}`, body: `+${money(payout)} PX won.` })
+        if (won) toast({ kind: 'win', title: `Hit ${mult(point)}`, body: `+$UGX {money(payout)} won.` })
       }
     }
     raf.current = requestAnimationFrame(anim)
@@ -141,7 +141,7 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">UGX</span>
           </div>
           <button type="button" onClick={() => void play()} disabled={running} className="btn-primary h-10 flex-1 !text-[13px]">
             {running ? 'Rolling…' : `Roll ${mult(target)}`}

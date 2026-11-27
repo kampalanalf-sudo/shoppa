@@ -14,7 +14,7 @@ type Props = { onPlay: (id: GameId) => void; onSearch: () => void; onFair: () =>
 const TABS = ['All', 'Slots', 'Originals', 'Instant', 'Table'] as const
 
 export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props) {
-  const { balance, stats, username } = useStore()
+  const { mode, playBalance, playStats, username } = useStore()
   const [tab, setTab] = useState<(typeof TABS)[number]>('All')
   const [promo, setPromo] = useState(false)
   const [slide, setSlide] = useState(0)
@@ -44,7 +44,7 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props)
     },
     {
       kicker: 'Weekly leaderboard',
-      title: '5,000,000 PX prize pool',
+      title: 'UGX 50,000 prize pool',
       body: 'Race the top 100 players across all originals. New leaderboard every Monday, 00:00 UTC.',
       cta: 'View leaderboard',
       badge: 'ENDS IN 2D 14H',
@@ -124,7 +124,7 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props)
               <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-neon-lime/20 blur-2xl" />
               <p className="text-[10px] font-bold uppercase tracking-[.2em] text-neon-lime/80">Active bonus</p>
               <p className="mt-1 text-[22px] font-black leading-none text-white">+200% <span className="text-[13px] font-bold text-slate-400">deposit match</span></p>
-              <p className="mt-1.5 text-[11px] text-slate-400">Up to 5,000 PX on your first top-up.</p>
+              <p className="mt-1.5 text-[11px] text-slate-400">Up to UGX 5,000 on your first top-up.</p>
               <button type="button" onClick={() => setPromo(true)} className="btn-primary mt-3 h-9 w-full !text-[12px]">
                 <IconGift size={14} /> Claim now
               </button>
@@ -137,9 +137,9 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props)
               </div>
               <div className="mt-3 space-y-2">
                 {[
-                  { l: 'Balance', v: `${money(balance)} PX`, c: 'text-white' },
-                  { l: 'Rounds played', v: String(stats.rounds), c: 'text-slate-200' },
-                  { l: 'Net profit', v: `${stats.profit >= 0 ? '+' : ''}${money(stats.profit)} PX`, c: stats.profit >= 0 ? 'text-neon-lime' : 'text-rose-400' },
+                  { l: mode === 'free' ? 'Free credits' : 'Balance', v: `UGX ${money(playBalance)}`, c: mode === 'free' ? 'text-amber-200' : 'text-white' },
+                  { l: 'Rounds played', v: String(playStats.rounds), c: 'text-slate-200' },
+                  { l: 'Net profit', v: `${playStats.profit >= 0 ? '+' : ''}UGX ${money(playStats.profit)}`, c: playStats.profit >= 0 ? 'text-neon-lime' : 'text-rose-400' },
                 ].map((r) => (
                   <div key={r.l} className="flex items-center justify-between text-[11.5px]">
                     <span className="text-slate-500">{r.l}</span>
@@ -300,7 +300,7 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props)
                 Premier League, priced to the minute
               </p>
               <p className="mt-1 max-w-[280px] text-[11.5px] leading-relaxed text-slate-400">
-                Real bookmaker prices, settled automatically. Bet in PX, no deposit needed.
+                Real bookmaker prices, settled automatically. Bet in UGX, no deposit needed.
               </p>
               <span className="mt-3 inline-flex w-fit items-center gap-1 rounded-lg bg-neon-lime px-3 py-1.5 text-[11.5px] font-black text-ink-950 transition group-hover:brightness-110">
                 Open the board <IconArrowUpRight size={13} />
@@ -313,7 +313,7 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props)
         <div className="mt-8 grid gap-3 md:grid-cols-3">
           {[
             { icon: <IconGift size={18} />, t: 'Daily Rakeback', d: 'Up to 12% back on every wager, paid hourly.', cta: 'Claim rakeback', c: 'from-neon-lime/15', onClick: () => setPromo(true) },
-            { icon: <IconTrophy size={18} />, t: 'Weekly Race', d: '5,000,000 PX across 100 winners. Ends Sunday.', cta: 'Join the race', c: 'from-neon-violet/20', onClick: () => setPromo(true) },
+            { icon: <IconTrophy size={18} />, t: 'Weekly Race', d: 'UGX 50,000 across 100 winners. Ends Sunday.', cta: 'Join the race', c: 'from-neon-violet/20', onClick: () => setPromo(true) },
             { icon: <IconSpade size={18} />, t: 'VIP Club', d: 'Personal host, custom limits and faster payouts.', cta: 'Apply for VIP', c: 'from-neon-cyan/20', onClick: () => setPromo(true) },
             { icon: <IconBolt size={18} />, t: 'ProxiCash', d: 'Convert crypto or ProxiCoin to UGX on MTN MoMo & Airtel Money.', cta: 'Open ProxiCash', c: 'from-[#26a17b]/25', onClick: () => onProxiCash?.() },
           ].map((p) => (
@@ -342,7 +342,7 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props)
                   </span>
                   <span className="min-w-0 flex-1 truncate text-[11.5px] text-slate-300">{w.user}</span>
                   <span className="hidden truncate text-[11px] text-slate-500 sm:block">{w.game}</span>
-                  <span className="num text-[11.5px] font-bold text-white">{money(w.amount)} PX</span>
+                  <span className="num text-[11.5px] font-bold text-white">UGX {money(w.amount)}</span>
                   <span className="num w-14 shrink-0 rounded bg-neon-lime/15 py-0.5 text-center text-[10px] font-bold text-neon-lime">{mult(w.mult)}</span>
                 </div>
               ))}

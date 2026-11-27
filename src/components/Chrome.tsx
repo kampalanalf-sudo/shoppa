@@ -3,6 +3,8 @@ import { GAMES, LIVE_WINS } from '../lib/games'
 import { compact, money, mult, shortHash, timeAgo } from '../lib/format'
 import type { GameId } from '../lib/types'
 import { useStore } from '../lib/store'
+import { ModeSwitch } from './ModeBadge'
+import { DAILY_BONUS_UGX } from '../lib/currency'
 import {
   IconBolt, IconChat, IconCheck, IconChevronDown, IconClose, IconCopy, IconEye, IconEyeOff, IconGift,
   IconHistory, IconHome, IconLive, IconMenu, IconMuted, IconSearch, IconShield, IconSpade, IconTrophy,
@@ -30,7 +32,7 @@ type HeaderProps = {
 }
 
 export function Header({ view, onNavigate, onSearch }: HeaderProps) {
-  const { balance, balanceHidden, toggleBalanceHidden, setWalletOpen, setHistoryOpen, setFairOpen, setRewardsOpen, sound, toggleSound, username, bets, toast } = useStore()
+  const { balanceHidden, toggleBalanceHidden, setWalletOpen, setHistoryOpen, setFairOpen, setRewardsOpen, sound, toggleSound, username, bets, toast, mode, playBalance } = useStore()
   // The account menu needs the real identity, not the local store's handle: the
   // store starts empty on a fresh device even when the player is signed in.
   const { user, profile, configured, signOut, dailyPxAwarded } = useAuth()
@@ -130,8 +132,16 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
               onClick={() => setWalletOpen(true)}
               className="flex items-center gap-1.5 pl-3 pr-2.5 text-[13px] font-bold text-white transition hover:bg-white/[0.06]"
             >
-              <span className="grid h-5 w-5 place-items-center rounded-full bg-gradient-to-br from-neon-lime to-neon-green text-[9px] font-black text-ink-950">PX</span>
-              <span className="num">{balanceHidden ? '••••••' : money(balance)}</span>
+              <span
+                className={`grid h-5 w-5 place-items-center rounded-full text-[8px] font-black text-ink-950 ${
+                  mode === 'free' ? 'bg-amber-400' : 'bg-gradient-to-br from-neon-lime to-neon-green'
+                }`}
+              >
+                {mode === 'free' ? 'F' : 'U'}
+              </span>
+              <span className={`num ${mode === 'free' ? 'text-amber-200' : ''}`}>
+                {balanceHidden ? '••••••' : `UGX ${money(playBalance)}`}
+              </span>
             </button>
             <button
               type="button"
@@ -157,7 +167,7 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
               aria-label="Account menu"
               className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-neon-violet/80 to-neon-cyan/70 text-[12px] font-black text-ink-950 ring-2 ring-white/10 transition hover:ring-neon-lime/60"
             >
-              {(handle || email || 'PX').slice(0, 2).toUpperCase()}
+              {(handle || email || 'FB').slice(0, 2).toUpperCase()}
             </button>
             {accountOpen && (
               <div className="absolute right-0 top-11 w-64 animate-popIn overflow-hidden rounded-2xl border border-white/10 bg-ink-850 p-1.5 shadow-pop">
@@ -169,15 +179,27 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
                   <p className="truncate text-sm font-semibold text-white">{handle || 'Player'}</p>
                   {email && <p className="truncate text-[11px] text-slate-400">{email}</p>}
                   <p className="num mt-0.5 text-[11px] text-slate-500">
-                    {money(balance)} PX <span className="text-slate-600">· 100 PX = 1 UGX</span>
+                    {mode === 'free' ? (
+                      <>
+                        <span className="text-amber-200">UGX {money(playBalance)}</span>{' '}
+                        <span className="text-amber-200/60">· free play, not real money</span>
+                      </>
+                    ) : (
+                      <>UGX {money(playBalance)} <span className="text-slate-600">· real balance</span></>
+                    )}
                   </p>
+                  <div className="mt-1.5">
+                    <ModeSwitch compact />
+                  </div>
                   {/* The daily bonus is the reason to come back, so it belongs
                       where the balance is, not buried in a notification. */}
-                  <p className="mt-0.5 text-[10.5px] text-emerald-400/80">
-                    {dailyPxAwarded > 0
-                      ? `+${money(dailyPxAwarded)} PX daily bonus credited`
-                      : '15,000 PX daily bonus · already claimed today'}
-                  </p>
+                  {mode === 'real' && (
+                    <p className="mt-0.5 text-[10.5px] text-emerald-400/80">
+                      {dailyPxAwarded > 0
+                        ? `+UGX ${money(dailyPxAwarded)} daily bonus credited`
+                        : `UGX ${money(DAILY_BONUS_UGX)} daily bonus · already claimed today`}
+                    </p>
+                  )}
                 </div>
                 <MenuItem icon={<IconHistory size={15} />} onClick={() => { setHistoryOpen(true); setAccountOpen(false) }}>Bet history</MenuItem>
                 {configured && (
@@ -495,7 +517,7 @@ export function WinTicker() {
             </span>
             <span className="text-[11px] text-slate-400">{w.user}</span>
             <span className="text-[11px] text-slate-600">won</span>
-            <span className="num text-[11px] font-bold text-white">{money(w.amount)} PX</span>
+            <span className="num text-[11px] font-bold text-white">UGX {money(w.amount)}</span>
             <span className="num rounded bg-neon-lime/15 px-1.5 py-0.5 text-[10px] font-bold text-neon-lime">{mult(w.mult)}</span>
             <span className="hidden text-[11px] text-slate-600 sm:inline">on {w.game}</span>
           </div>
@@ -562,7 +584,7 @@ export function ChatDock({ onOpenRoom }: { onOpenRoom?: () => void } = {}) {
                 <span className="ml-1 text-slate-400">{m.msg}</span>
                 {m.attached && (
                   <div className="mt-1 flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2 py-1.5 text-[10.5px] text-slate-400">
-                    <IconCheck size={12} className="text-emerald-400" /> Withdrawal completed · 4,210 PX
+                    <IconCheck size={12} className="text-emerald-400" /> Withdrawal completed · UGX 4,210
                   </div>
                 )}
               </div>
@@ -648,7 +670,7 @@ export function Footer({ onSupport }: { onSupport?: () => void } = {}) {
         </div>
         <div className="divider my-8" />
         <div className="flex flex-col items-start justify-between gap-3 text-[11.5px] text-slate-600 sm:flex-row sm:items-center">
-          <p>© 2026 FloatBet Gaming. 18+ · Play responsibly. PX is cashed out only via ProxiCash.</p>
+          <p>© 2026 FloatBet Gaming. 18+ · Play responsibly. Balances are in UGX and cash out to mobile money.</p>
           <p className="flex items-center gap-2">
             <span className="num">{shortHash('a91f3c7d2e')}</span> · v1.4.2
           </p>
@@ -722,7 +744,7 @@ export function WinFlash() {
           {big ? 'Huge win' : 'Big win'}
         </p>
         <p className="num mt-1 text-4xl font-black text-white glow-text">
-          +<CountUp value={winFlash} duration={1100} /> PX
+          +<CountUp value={winFlash} duration={1100} /> UGX
         </p>
       </div>
     </div>

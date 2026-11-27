@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './lib/auth'
 import { setSoundEnabled } from './lib/sound'
 import { Header, Footer, BottomBar, ChatDock, Toasts, WinFlash } from './components/Chrome'
 import { InstallPrompt } from './components/InstallPrompt'
+import { FreePlayBadge, ModeSwitch } from './components/ModeBadge'
 import { StudioIdent } from './components/StudioIdent'
 import { SearchModal, WalletModal, FairModal, HistoryModal, RewardsModal } from './components/Modals'
 import { Home } from './pages/Home'
@@ -51,7 +52,7 @@ type View =
   | { name: 'admin-console' }
 
 function Shell() {
-  const { sound, setFairOpen, setWalletOpen, hydrated } = useStore()
+  const { sound, setFairOpen, setWalletOpen, hydrated, mode: playMode } = useStore()
   const { configured, ready, user, needsOnboarding } = useAuth()
   const [onboarded, setOnboarded] = useState(false)
   const [view, setView] = useState<View>({ name: 'home' })
@@ -254,6 +255,11 @@ function Shell() {
         onSearch={() => setSearch(true)}
       />
 
+      {/* Free play is announced as a full-width strip above the page, not just
+          a chip on the balance: a player who opens a game directly has to be
+          told the money is fake before they stake anything. */}
+      {playMode === 'free' && <FreePlayBadge variant="bar" />}
+
       <main>
         {current === 'bonni' && <BonniClyve {...shared} />}
         {current === 'chape' && <EngineSlot config={CHAPE} id="chape" {...shared} />}
@@ -348,7 +354,7 @@ function Shell() {
           className="fixed bottom-20 right-4 z-30 grid h-12 w-12 place-items-center rounded-full bg-gradient-to-br from-neon-lime to-neon-green text-ink-950 shadow-glow md:hidden"
           aria-label="Open wallet"
         >
-          <span className="text-[10px] font-black leading-none">PX</span>
+          <span className="text-[9px] font-black leading-none">UGX</span>
         </button>
       )}
     </div>
