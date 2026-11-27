@@ -71,11 +71,15 @@ ok('sw: found the never-cache list', patterns.length >= 4, `found ${patterns.len
 
 const isNever = (u: string) => patterns.some((re) => re.test(u))
 
+// These are the URLs the app actually requests now: every /api path resolves to
+// a Supabase Edge Function (src/lib/backend.ts), so a payment call is a
+// cross-origin request to supabase.co and must never be served from cache.
 const mustNever = [
-  ['the collect route', 'https://shoppa-sigma.vercel.app/api/collect'],
-  ['the store webhook', 'https://shoppa-sigma.vercel.app/api/webhooks/dgateway-store'],
-  ['the admin queue', 'https://shoppa-sigma.vercel.app/api/admin/parked'],
-  ['the claim route', 'https://shoppa-sigma.vercel.app/api/topup/claim'],
+  ['the collect function', 'https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/pay?op=collect'],
+  ['the checkout function', 'https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/pay?op=checkout'],
+  ['the status function', 'https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/pay?op=status&reference=x'],
+  ['the webhook', 'https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/webhooks-zengapay'],
+  ['the admin queue', 'https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/admin-ops?op=parked'],
   ['supabase REST', 'https://dtroufrfavmjldtlprpn.supabase.co/rest/v1/wallets'],
   ['supabase auth', 'https://dtroufrfavmjldtlprpn.supabase.co/auth/v1/token'],
   ['supabase realtime', 'wss://dtroufrfavmjldtlprpn.supabase.co/realtime/v1/websocket'],

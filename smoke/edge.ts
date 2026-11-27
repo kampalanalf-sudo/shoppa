@@ -28,8 +28,9 @@ const ENV: Record<string, string> = {
   SUPABASE_URL: 'https://fake.supabase.co',
   SUPABASE_ANON_KEY: 'anon-key',
   SUPABASE_SERVICE_ROLE_KEY: 'service-key',
-  DGATEWAY_API_KEY: 'dgw_test_abc',
-  DGATEWAY_WEBHOOK_SECRET: 'whsec_test',
+  ZENGAPAY_API_URL: 'https://api.zengapay.com/v1',
+  ZENGAPAY_API_TOKEN: 'ZPYPUBK-test-abc',
+  ZENGAPAY_WEBHOOK_SECRET: 'whsec_test',
   CRON_SECRET: 'cron-secret',
   ODDS_API_KEY: 'odds-key',
   APP_URL: 'https://floatbet.space',
@@ -71,7 +72,7 @@ const jsonRes = (body: unknown, status = 200) =>
 // --------------------------------------------------------------- bundles ----
 
 // Importing a bundle runs its Deno.serve, which registers the handler above.
-const bundleFiles = ['pay', 'admin-ops', 'webhooks-dgateway', 'webhooks-dgateway-store', 'feed-sports', 'support', 'support-voice']
+const bundleFiles = ['pay', 'admin-ops', 'webhooks-zengapay', 'webhooks-zengapay-store', 'feed-sports', 'support', 'support-voice']
 for (let i = 0; i < bundleFiles.length; i++) {
   // @ts-expect-error generated module, no types
   await import(`../supabase/.dist/${bundleFiles[i]}.ts`)
@@ -128,10 +129,10 @@ for (const [path, target] of [
   ok(`${path} -> ${target} (deployed)`, url.includes(`/functions/v1/${target}`) && deployed.has(target))
 }
 
-// The two webhooks are called by DGateway, never by the app, so they have no
+// The two webhooks are called by ZENGAPAY, never by the app, so they have no
 // entry in the mapping table. They must still exist.
-ok('webhooks-dgateway is deployed', deployed.has('webhooks-dgateway'))
-ok('webhooks-dgateway-store is deployed', deployed.has('webhooks-dgateway-store'))
+ok('webhooks-zengapay is deployed', deployed.has('webhooks-zengapay'))
+ok('webhooks-zengapay-store is deployed', deployed.has('webhooks-zengapay-store'))
 
 // ------------------------------------------------------------- pay: auth ----
 
@@ -146,7 +147,9 @@ ok(`pay: unauthenticated status is 401 (${res.status})`, res.status === 401)
 
 upstream((u) => {
   if (u.includes('/auth/v1/user')) return jsonRes({ id: 'user-1' })
-  if (u.includes('/v1/payments/collect')) return jsonRes({ data: { reference: 'DG-1', status: 'pending', provider: 'iotec' } })
+  if (u.includes('/v1/collections')) {
+    return jsonRes({ code: 202, status: 'accepted', message: 'Transaction Initiated', transactionReference: 'ZP-1' })
+  }
   if (u.includes('/rest/v1/rpc/record_collect')) return jsonRes(null, 204)
   return null
 })
@@ -158,13 +161,21 @@ res = await pay(new Request('https://x/functions/v1/pay?op=collect', {
 }))
 let body: any = await res.json()
 ok('collect: succeeds', res.status === 200, JSON.stringify(body))
-ok('collect: returns the reference', body.reference === 'DG-1')
-const collectCall = calls.find((c) => c.url.includes('/v1/payments/collect'))!
+ok('collect: returns the reference', body.reference === 'ZP-1')
+const collectCall = calls.find((c) => c.url.includes('/v1/collections'))!
 const sent = JSON.parse(collectCall.init.body)
-ok('collect: sends X-API-Key', collectCall.init.headers['X-API-Key'] === 'dgw_test_abc')
-ok('collect: keeps the leading 0 in the phone', sent.phone_number === '0771234567')
+ok('collect: posts to /v1/collections', !collectCall.url.includes('/payments/collect'))
+ok('collect: sends a Bearer token', collectCall.init.headers.Authorization === 'Bearer ZPYPUBK-test-abc')
+ok('collect: sends no API-key header', collectCall.init.headers['X-API-Key'] === undefined)
+// ZENGAPAY's rule, and the OPPOSITE of the old provider's: digits only, no +,
+// no leading 0. Getting this wrong charges the wrong wallet or 400s.
+ok('collect: msisdn strips the leading 0', sent.msisdn === '256771234567')
+ok('collect: msisdn has no plus', !String(sent.msisdn).includes('+'))
 ok('collect: whole-unit amount', sent.amount === 5000)
-ok('collect: callback is the deployed webhook', String(sent.callback_url) === 'https://floatbet.space/functions/v1/webhooks-dgateway')
+ok('collect: external_reference is our order id', typeof sent.external_reference === 'string' && sent.external_reference.length > 0)
+// ZENGAPAY takes the webhook URL from the dashboard; sending one is meaningless.
+ok('collect: sends no callback_url', sent.callback_url === undefined)
+ok('collect: does not charge the customer', sent.charge_customer === false)
 
 // limits, checked before any upstream call: the auth lookup still answers, but
 // anything that would move money throws.
@@ -185,39 +196,44 @@ for (const [label, amount, want] of [
 
 // -------------------------------------------------------- pay: live mode ----
 
-const savedKey = ENV.DGATEWAY_API_KEY
-const savedSecret = ENV.DGATEWAY_WEBHOOK_SECRET
-ENV.DGATEWAY_API_KEY = 'dgw_live_abc'
-delete ENV.DGATEWAY_WEBHOOK_SECRET
+const savedKey = ENV.ZENGAPAY_API_TOKEN
+const savedSecret = ENV.ZENGAPAY_WEBHOOK_SECRET
+// A production URL + a production token. isLiveMode() must not be keyed on the
+// old provider's prefix, so this deliberately uses the real ZENGAPAY shape.
+ENV.ZENGAPAY_API_TOKEN = 'ZPYPUBK-live-abc'
+delete ENV.ZENGAPAY_WEBHOOK_SECRET
 upstream((u) => (u.includes('/auth/v1/user') ? jsonRes({ id: 'user-1' }) : null))
 res = await pay(new Request('https://x/functions/v1/pay?op=collect', {
   method: 'POST', headers: auth, body: JSON.stringify({ amount: 5000, phone: '0771234567' }),
 }))
 body = await res.json()
 ok('live key with no webhook secret refuses to charge', res.status === 503 && body.code === 'WEBHOOK_SECRET_MISSING')
-ok('refusal reached no upstream payments call', !calls.some((c) => c.url.includes('/v1/payments')))
-ENV.DGATEWAY_API_KEY = savedKey
-ENV.DGATEWAY_WEBHOOK_SECRET = savedSecret
+ok('refusal reached no upstream payments call', !calls.some((c) => c.url.includes('/v1/collections')))
+ENV.ZENGAPAY_API_TOKEN = savedKey
+ENV.ZENGAPAY_WEBHOOK_SECRET = savedSecret
 
 // ------------------------------------------------------- pay: status cache --
 
 let statusHits = 0
 upstream((u) => {
   if (u.includes('/auth/v1/user')) return jsonRes({ id: 'user-1' })
-  if (u.includes('/v1/transactions/')) {
+  // The status route now asks the order row which endpoint to use, so both
+  // look-ups are stubbed.
+  if (u.includes('/rest/v1/payment_orders')) return jsonRes([{ direction: 'collect' }])
+  if (u.includes('/v1/collections/')) {
     statusHits++
-    return jsonRes({ data: { reference: 'DG-CACHE', status: 'pending', amount: 5000, currency: 'UGX' } })
+    return jsonRes({ code: 200, status: 'success', data: { transactionReference: 'ZP-CACHE', transactionStatus: 'PENDING', amount: 5000 } })
   }
   return null
 })
-const poll = () => pay(new Request('https://x/functions/v1/pay?op=status&reference=DG-CACHE', { headers: auth }))
+const poll = () => pay(new Request('https://x/functions/v1/pay?op=status&reference=ZP-CACHE', { headers: auth }))
 const first = await (await poll()).json() as any
 const second = await (await poll()).json() as any
 ok('status: first read is uncached', first.cached === false)
 ok('status: second read inside 10s is cached', second.cached === true)
 ok('status: memoised window makes one upstream call', statusHits === 1, `(${statusHits})`)
 ok('status: pollAfterMs is 10s', first.pollAfterMs === 10_000)
-const fresh = await (await pay(new Request('https://x/functions/v1/pay?op=status&reference=DG-CACHE&fresh=1', { headers: auth }))).json() as any
+const fresh = await (await pay(new Request('https://x/functions/v1/pay?op=status&reference=ZP-CACHE&fresh=1', { headers: auth }))).json() as any
 ok('status: fresh=1 bypasses the cache', fresh.cached === false && statusHits === 2)
 
 // --------------------------------------------------------- admin gate ------
@@ -283,39 +299,92 @@ ok(`admin: adjustment over the cap is refused (${res.status})`, res.status === 4
 
 // ------------------------------------------------------------ webhooks -----
 
-const sign = async (raw: string) => {
+/**
+ * Sign a ZENGAPAY webhook the way ZENGAPAY does.
+ *
+ * The signed string is `transactionReference + msisdn + amount` with NO
+ * separator — not the raw JSON body. If this helper ever drifts towards
+ * JSON.stringify, the test would still pass while production rejected every
+ * webhook, so the shape is spelled out here on purpose.
+ */
+const signFields = async (reference: string, msisdn: string, amount: string) => {
   const enc = new TextEncoder()
   const key = await crypto.subtle.importKey('raw', enc.encode('whsec_test'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
-  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(raw)))
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(`${reference}${msisdn}${amount}`)))
   return [...sig].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
+const hook = (event: string, reference: string, amount = '5000', msisdn = '256771234567') =>
+  JSON.stringify({
+    event,
+    data: {
+      transactionReference: reference,
+      transactionStatus: event.endsWith('.success') ? 'SUCCEEDED' : 'FAILED',
+      amount,
+      msisdn,
+    },
+  })
+
 upstream(() => { throw new Error('must not reach upstream') })
-res = await wh(new Request('https://x/functions/v1/webhooks-dgateway', { method: 'POST', body: '{}' }))
+res = await wh(new Request('https://x/functions/v1/webhooks-zengapay', { method: 'POST', body: '{}' }))
 ok(`webhook: unsigned request is 401 (${res.status})`, res.status === 401)
 
-const payload = JSON.stringify({ reference: 'DG-UNKNOWN', status: 'completed' })
-res = await wh(new Request('https://x/functions/v1/webhooks-dgateway', {
-  method: 'POST', headers: { 'X-DGateway-Signature': 'sha256=deadbeef' }, body: payload,
+let payload = hook('collection.success', 'ZP-UNKNOWN')
+res = await wh(new Request('https://x/functions/v1/webhooks-zengapay', {
+  method: 'POST', headers: { 'X-ZENGAPAY-SIGNATURE': 'sha256=deadbeef' }, body: payload,
 }))
 ok(`webhook: malformed signature is 401 (${res.status})`, res.status === 401)
 
+// The signature must be over the three fields. Signing the JSON body is the
+// natural mistake and must NOT be accepted.
+const bodySig = await (async () => {
+  const enc = new TextEncoder()
+  const key = await crypto.subtle.importKey('raw', enc.encode('whsec_test'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign'])
+  const sig = new Uint8Array(await crypto.subtle.sign('HMAC', key, enc.encode(payload)))
+  return [...sig].map((b) => b.toString(16).padStart(2, '0')).join('')
+})()
+res = await wh(new Request('https://x/functions/v1/webhooks-zengapay', {
+  method: 'POST', headers: { 'X-ZENGAPAY-SIGNATURE': bodySig }, body: payload,
+}))
+ok(`webhook: a body-signature is rejected, not the raw body (${res.status})`, res.status === 401)
+
+// Unknown reference, correctly signed: 404 so ZENGAPAY stops retrying, and no
+// credit. This is the "we have never heard of this money" path.
 upstream((u) => {
   if (u.includes('/rest/v1/payment_orders')) return jsonRes([])
   return null
 })
-res = await wh(new Request('https://x/functions/v1/webhooks-dgateway', {
-  method: 'POST', headers: { 'X-DGateway-Signature': await sign(payload) }, body: payload,
+res = await wh(new Request('https://x/functions/v1/webhooks-zengapay', {
+  method: 'POST', headers: { 'X-ZENGAPAY-SIGNATURE': await signFields('ZP-UNKNOWN', '256771234567', '5000') }, body: payload,
 }))
 ok(`webhook: good HMAC on an unknown reference is 404 (${res.status})`, res.status === 404)
 
-// the store webhook must block an ambiguous cart before spending a look-up
-const mixed = JSON.stringify({ line_items: [{ product_id: 'a', quantity: 1 }, { product_id: 'b', quantity: 1 }] })
-upstream(() => { throw new Error('mixed cart must not be looked up') })
-res = await whStore(new Request('https://x/functions/v1/webhooks-dgateway-store', {
-  method: 'POST', headers: { 'X-DGateway-Signature': await sign(mixed) }, body: mixed,
+// A transfer event must be verified against /transfers, not /collections.
+upstream((u) => {
+  if (u.includes('/rest/v1/payment_orders')) {
+    return jsonRes([{ order_id: 'PAY-1', user_id: 'user-1', direction: 'disburse', amount: 5000, currency: 'UGX', reference: 'ZP-TRF', status: 'pending', cashout_id: null }])
+  }
+  if (u.includes('/v1/transfers/')) {
+    return jsonRes({ code: 200, status: 'success', data: { transactionReference: 'ZP-TRF', transactionStatus: 'SUCCEEDED', amount: 5000 } })
+  }
+  if (u.includes('/rest/v1/rpc/apply_gateway_result')) return jsonRes({ ok: true }, 200)
+  return null
+})
+const trf = hook('transfer.success', 'ZP-TRF')
+res = await wh(new Request('https://x/functions/v1/webhooks-zengapay', {
+  method: 'POST', headers: { 'X-ZENGAPAY-SIGNATURE': await signFields('ZP-TRF', '256771234567', '5000') }, body: trf,
 }))
-ok(`store webhook: mixed cart is 409 (${res.status})`, res.status === 409)
+const trfBody = await res.clone().text()
+ok(`webhook: transfer event re-fetches from /transfers (${res.status}) ${trfBody}`, res.status === 200)
+ok('webhook: a transfer event never reads /collections', !calls.some((c) => c.url.includes('/v1/collections/')))
+
+// The store route no longer parses a cart: ZENGAPAY sends the same object.
+upstream(() => { throw new Error('must not reach upstream') })
+const coll = hook('collection.success', 'ZP-STORE')
+res = await whStore(new Request('https://x/functions/v1/webhooks-zengapay-store', {
+  method: 'POST', headers: { 'X-ZENGAPAY-SIGNATURE': 'sha256=deadbeef' }, body: coll,
+}))
+ok(`store webhook: malformed signature is 401 (${res.status})`, res.status === 401)
 
 // --------------------------------------------------------------- feed ------
 

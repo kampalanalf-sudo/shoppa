@@ -104,9 +104,10 @@ ok('every sport has a label',
 
 // --------------------------------------------------- admin operations =====
 const adminSql = read('supabase/migrations/0010_admin_operations.sql')
-// The admin money operations moved into the api/admin/ops.ts router when the
-// Hobby plan's 12-function cap broke the deploy. Same source, new home.
-const adminApi = read('api/admin/ops.ts')
+// The admin money operations live in the admin-ops Edge Function. The legacy
+// api/admin/ops.ts copy was deleted with the ZENGAPAY migration — it duplicated
+// the same logic and could drift from the code that actually runs.
+const adminApi = read('supabase/functions/admin-ops/index.ts')
 const adminConsole = read('src/pages/AdminConsole.tsx')
 
 // The mistake this suite exists to prevent, made once already: revoking from
@@ -212,7 +213,9 @@ const pxCode = px.replace(/^\s*--.*$/gm, '')
 // withdrawal the server will refuse.
 ok('the database converts at 100 PX per UGX', pxCode.includes('p_amount_px / 100.0'))
 ok('the client peg is 100', read('src/lib/proxicash.ts').includes('PX_PER_UGX = 100'))
-ok('the API peg is 100', read('api/_lib/dgateway.ts').includes('PX_PER_UGX = 100'))
+// The API-side copy of the peg died with the legacy api/ tree; the conversion
+// itself is enforced in SQL. What must not drift is the client constant.
+ok('the peg is defined once, in the client', read('src/lib/proxicash.ts').includes('PX_PER_UGX = 100'))
 ok('no surface still advertises the old 10:1 peg',
   !/(^|[^0-9])10 PX = 1 UGX/.test(read('src/components/Chrome.tsx') + read('src/pages/Sportsbook.tsx')))
 

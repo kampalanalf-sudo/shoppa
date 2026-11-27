@@ -12,7 +12,12 @@
 //      asleep, and a result that must never be inferred from a live score.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { applyMargin, isFeedConfigured, toOddsX100 } from '../api/_lib/oddsfeed'
+
+// The odds-feed client is a Deno module and reads Deno.env at import time. Under
+// Node that is a ReferenceError before any assertion runs, so the shim has to be
+// installed before the import — hence the dynamic import below.
+;(globalThis as any).Deno ??= { env: { get: (k: string) => process.env[k] } }
+const { applyMargin, isFeedConfigured, toOddsX100 } = await import('../supabase/functions/_shared/oddsfeed.ts')
 
 const fails: string[] = []
 const ok = (n: string, c: boolean, e = '') => { if (!c) fails.push(n); console.log(`${c ? 'ok  ' : 'FAIL'} ${n} ${e}`) }
@@ -20,9 +25,9 @@ const ok = (n: string, c: boolean, e = '') => { if (!c) fails.push(n); console.l
 const root = resolve(process.cwd())
 const read = (p: string) => readFileSync(resolve(root, p), 'utf8')
 
-const feed = read('api/_lib/oddsfeed.ts')
-const sync = read('api/feed/sync.ts')
-const settle = read('api/feed/settle.ts')
+const feed = read('supabase/functions/_shared/oddsfeed.ts')
+const sync = read('supabase/functions/feed-sync/index.ts')
+const settle = read('supabase/functions/feed-settle/index.ts')
 const sql = read('supabase/migrations/0007_odds_feed.sql')
 // 0008 moved the feed into the database and re-tuned the staleness guard to the
 // 4-hourly cadence, so the "client matches the database" check must read both.
@@ -51,9 +56,9 @@ ok('margin is clamped so a typo cannot destroy the price', applyMargin(250, 90) 
 ok('zero margin is allowed (but see the docs: it is a losing book)', applyMargin(250, 0) === 250)
 
 // ------------------------------------------------------- the key stays put ====
-// The single most important rule in this file, same as DGateway's.
+// The single most important rule in this file, same as ZENGAPAY's.
 ok('the feed client reads the key from the server environment only',
-  feed.includes('process.env.ODDS_API_KEY'))
+  /Deno\.env\.get\(\s*'ODDS_API_KEY'\s*\)/.test(feed) && !/import\.meta\.env/.test(feed))
 ok('the feed client is never imported by the browser bundle',
   !lib.includes('oddsfeed') && !page.includes('oddsfeed') && !page.includes('ODDS_API_KEY'))
 ok('nothing under src/ mentions the odds key', !read('src/lib/backend.ts').includes('ODDS_API_KEY'))
@@ -76,23 +81,24 @@ ok('the response headers are read so the remaining budget is visible',
   feed.includes('x-requests-remaining') && sync.includes('credits_remaining') === false && sync.includes('remaining'))
 ok('a 429 is reported as a quota problem, not a generic failure', feed.includes('ODDS_QUOTA'))
 // 4 sports x every 2 hours = 48/day is too much; the schedule must be modest.
-const cron = JSON.parse(vercel).crons as { path: string; schedule: string }[]
+// The schedule lives in pg_cron, not on Vercel.
+//
+// It used to be a `crons` entry. Every deployment of this project was refused
+// before it built with "Hobby accounts are limited to daily cron jobs" — Vercel
+// rejects the whole deployment, not just the cron — so a schedule more frequent
+// than daily did not degrade the feed, it took the entire site down. The feed now
+// runs inside Postgres where there is no plan limit and no redeploy needed, and
+// Vercel schedules nothing at all.
+const cron = (JSON.parse(vercel).crons ?? []) as { path: string; schedule: string }[]
+ok('Vercel schedules no cron at all', cron.length === 0, cron.map((c) => c.path).join(' | '))
 
-// Every deployment of this project was refused before it built, with
-// "Hobby accounts are limited to daily cron jobs". Vercel rejects the whole
-// deployment, not just the cron, so a `crons` entry more frequent than daily
-// does not degrade the feed -- it takes the entire site down. This test used to
-// require a 4-hourly sync cron and so locked that outage in.
-ok('no Vercel cron runs more often than daily (Hobby plan)',
-  cron.every((c) => {
-    const [min, hour] = c.schedule.split(' ')
-    return !min.includes('*') && !hour.includes('*')
-  }),
-  cron.map((c) => c.schedule).join(' | '))
-// The odds sync runs on pg_cron inside Supabase, where there is no plan limit
-// and no redeploy needed. Vercel must not schedule it a second time.
+const feedSql = read('supabase/migrations/0008_feed_in_database.sql')
+ok('pg_cron holds the feed schedule', /cron\.schedule\('feed_fire_sync'/.test(feedSql))
 ok('the odds sync is not scheduled on Vercel', !cron.some((c) => c.path === '/api/feed/sync'))
-ok('a daily settle run is still scheduled', cron.some((c) => c.path === '/api/feed/settle'))
+// Settlement fires from the ingest job once a result is final — there is no
+// separate settle entry, so assert the job that actually closes markets.
+ok('market closure is scheduled in the database, not on Vercel',
+  /cron\.schedule\('feed_close_started'/.test(feedSql))
 
 // ----------------------------------------------------------------- auth ====
 ok('the sync requires a secret or an admin', sync.includes('CRON_SECRET') && sync.includes('is_admin'))
@@ -100,8 +106,10 @@ ok('the sync rejects an unauthenticated caller', sync.includes("error: 'not auth
 ok('the settle route is equally gated', settle.includes('CRON_SECRET') && settle.includes("error: 'not authorised' }"))
 
 // ------------------------------------------------------- idempotent ingest ====
+// The edge function uses the Supabase client's object API, not a REST query
+// string, so the conflict target reads `onConflict: 'source,source_ref'`.
 ok('fixtures upsert on (source, source_ref), so a replay cannot duplicate',
-  sync.includes('on_conflict=source,source_ref') && sql.includes('sports_fixtures_source_ref'))
+  sync.includes("onConflict: 'source,source_ref'") && sql.includes('sports_fixtures_source_ref'))
 ok('every price write stamps its own timestamp', sync.includes('price_at: now'))
 ok('the price is agreed by median, not by best price',
   sync.includes('median') && !sync.includes('Math.max(...prices'))
@@ -110,10 +118,10 @@ ok('the price is agreed by median, not by best price',
 ok('only a completed event is settled', settle.includes('if (!score.completed) continue'))
 ok('a live score is never treated as a result', !/settle_sports_market[^)]*score/.test(settle))
 ok('fixtures are matched by provider id, not by team name',
-  settle.includes('external_id=eq.'))
+  settle.includes("eq('source_ref'") || settle.includes('external_id'))
 ok('the final score is stored even if settlement fails', settle.includes('home_score:'))
 ok('settlement goes through the service_role function',
-  settle.includes("restRpc<number>('settle_sports_market'"))
+  settle.includes("rpc('settle_sports_market'"))
 
 // ------------------------------------------------------- database limits ====
 ok('a bet is refused on a stale price', sql.includes('odds for this market are out of date'))

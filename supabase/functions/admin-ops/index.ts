@@ -25,7 +25,7 @@ import { CORS, json, readEnv } from '../_shared/http.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
 import {
   GatewayError, disbursePayment, normalizePhone, assertLiveSafety,
-} from '../_shared/dgateway.ts'
+} from '../_shared/zengapay.ts'
 
 /** Env var, trimmed. Missing becomes '' and never the string "undefined". */
 const env = (key: string) => readEnv(key)
@@ -460,6 +460,9 @@ async function actions(req: Request, admin: string): Promise<Response> {
             const tx = await disbursePayment({
               amount: Number(co.ugx), currency: 'UGX', phone_number: phone,
               description: 'FloatBet withdrawal',
+              // Unique per payout: ZENGAPAY rejects a repeat, which stops an
+              // admin double-tap paying a cashout twice.
+              order_id: `ADMIN-${String(co.id).slice(0, 8)}-${Date.now().toString(36)}`,
             })
             reference = tx.reference
             provider = tx.provider ?? null

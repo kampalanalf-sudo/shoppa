@@ -82,6 +82,24 @@ jobs:
       - name: Verify the API client
         run: npm run test:api
 
+      # Phone normalisation, amount validation, status mapping and the webhook
+      # signed-string, against the real shared module. ZENGAPAY's rule is the
+      # opposite of the old provider's (no leading 0, no plus), and signing the
+      # wrong string means no top-up is ever credited.
+      - name: Verify the ZENGAPAY client
+        run: npm run test:zp
+
+      - name: Verify the deploy topology
+        run: npm run test:deploy
+
+      # Starts a real HTTP server that answers as ZENGAPAY, sends the real
+      # bundled function at it, and prints the request that goes over the wire.
+      # It is the only check that proves the endpoint, the auth header, the
+      # msisdn format and the webhook signature together — and it asserts that a
+      # webhook signed over the raw body (the natural mistake) is rejected.
+      - name: Verify the ZENGAPAY wire format
+        run: npm run test:wire
+
       # Auth is compiled in at BUILD time: if these two are missing the bundle
       # ships without a Supabase client at all and the live site silently runs
       # local-only — no sign-up, no wallet, no cashout — with nothing on screen
@@ -103,7 +121,7 @@ jobs:
           BASE_PATH: '/'
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://dtroufrfavmjldtlprpn.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
-          VITE_DGATEWAY_STORE_URL: 'off'
+          # Hosted checkout is created server-side now; no browser-side URL.
           # No VITE_API_BASE: the function origin is derived from
           # VITE_SUPABASE_URL in src/lib/backend.ts, so there is one fewer value
           # that can be wrong at build time.

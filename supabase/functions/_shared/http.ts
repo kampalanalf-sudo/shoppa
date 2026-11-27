@@ -14,7 +14,7 @@
 /**
  * One CORS block for every function.
  *
- * `x-dgateway-signature` is allowed everywhere even though only the webhooks
+ * `x-zengapay-signature` is allowed everywhere even though only the webhooks
  * read it: a preflight that omits a header the browser sends makes the webhook
  * call fail with an opaque CORS error instead of a 401, and the header is not a
  * secret — the signature must still verify.
@@ -22,7 +22,7 @@
 export const CORS: Record<string, string> = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type, x-dgateway-signature',
+    'authorization, x-client-info, apikey, content-type, x-zengapay-signature',
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 }
 

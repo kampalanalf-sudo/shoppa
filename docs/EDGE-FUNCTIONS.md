@@ -20,8 +20,9 @@ wins.
 | `POST /api/topup/claim` | `pay?op=claim` | caller's JWT, via `auth.uid()` |
 | `GET /api/admin/{health,cashouts,audit,lookup,players,parked}` | `admin-ops?op=…` | JWT + `profiles.is_admin` |
 | `POST /api/admin/{actions,parked}` | `admin-ops?op=…` | JWT + `profiles.is_admin` |
-| `POST /api/webhooks/dgateway` | `webhooks-dgateway` | HMAC over the raw body |
-| `POST /api/webhooks/dgateway-store` | `webhooks-dgateway-store` | HMAC over the raw body |
+| `POST ?op=checkout` on `pay` | `pay?op=checkout` | caller's JWT |
+| `webhooks-zengapay` | `webhooks-zengapay` | `X-ZENGAPAY-SIGNATURE`, HMAC over reference+msisdn+amount |
+| `webhooks-zengapay-store` | `webhooks-zengapay-store` | same |
 | `GET /api/feed/sports` | `feed-sports` | `CRON_SECRET` bearer, or admin JWT |
 | `GET/POST /api/feed/settle` | `feed-settle` | same |
 | `GET/POST /api/feed/sync` | `feed-sync` | same |
@@ -66,7 +67,7 @@ Not an oversight. Each is rejected for a specific reason:
   importantly, `admin-ops` cannot answer the difference between *401 not signed
   in* and *403 signed in but not an admin*, which the admin screens display
   differently.
-- **`webhooks-*`** are called by DGateway, which has no Supabase JWT. The HMAC
+- **`webhooks-*`** are called by ZENGAPAY, which has no Supabase JWT. The signature
   signature over the raw body is the only gate that can admit them. It fails
   closed: no secret configured means every webhook is rejected.
 - **`feed-*`** accept either `Authorization: Bearer <CRON_SECRET>` or an admin's
@@ -100,7 +101,7 @@ The shared modules are single-source on purpose:
 | Module | Contents |
 |---|---|
 | `_shared/http.ts` | `CORS`, `json`, `preflight`, `readEnv` |
-| `_shared/dgateway.ts` | the DGateway client, HMAC verification, money guards |
+| `_shared/zengapay.ts` | the ZENGAPAY client, HMAC verification, money guards, checkout sessions |
 | `_shared/oddsfeed.ts` | The Odds API client, margin, x100 conversion |
 
 Two copies of `const CORS` in one bundle is a duplicate declaration at best and a
@@ -117,7 +118,7 @@ Set in **Supabase → Project Settings → Edge Functions → Secrets**:
 |---|---|---|
 | `DGATEWAY_API_KEY` | collect, disburse | `PAYMENT_NOT_CONFIGURED` (503), nothing is charged |
 | `DGATEWAY_WEBHOOK_SECRET` | both webhooks | every webhook is rejected; **and** live mode refuses to charge at all |
-| `APP_URL` | the `callback_url` sent to DGateway | falls back to the function's own origin, which DGateway cannot call back unless it is the public one |
+| `APP_URL` | builds the checkout return URLs | falls back to the function's own origin, which the provider cannot redirect to unless it is the public one |
 | `CRON_SECRET` | `feed-*` from a scheduler | only a signed-in admin can trigger a sync |
 | `ODDS_API_KEY` | `feed-*` | `ODDS_KEY_MISSING` (503) |
 | `DGATEWAY_STORE_SLUG` | store webhook | optional: when set, payments for another store are refused |
@@ -131,15 +132,16 @@ taken with no way to verify the webhook is money taken and never credited.
 
 ---
 
-## 6. Webhook URLs to give DGateway
+## 6. Webhook URL to give ZENGAPAY
 
 ```
-https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/webhooks-dgateway
-https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/webhooks-dgateway-store
+https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/webhooks-zengapay
 ```
 
-These replace the old `/api/webhooks/...` paths. If the DGateway dashboard still
-points at the old host, payments will be taken and nothing will credit — so this
+Set this once in ZENGAPAY's dashboard (Developer Settings → Webhook URL). It is
+**not** sent per request any more, so nothing in the code can set it for you. If
+the dashboard still points at the old host, payments will be taken and nothing
+will credit — so this
 is a step to do *before* switching the domain, not after.
 
 ---
@@ -166,7 +168,7 @@ build instead of reaching a player.
   at GitHub Pages (four A records, see `docs/GO-LIVE.md`), none of this is
   visible on the domain. Doing the port first means the DNS switch cannot break
   payments.
-- **DGateway secrets** are not set in the Supabase project. Payments will deploy
+- **ZENGAPAY secrets** are not set in the Supabase project. Payments will deploy
   and return `PAYMENT_NOT_CONFIGURED` until they are.
 - **The scheduler.** `feed-sync` and `feed-settle` need something to call them.
   The Vercel cron is gone (`vercel.json` no longer declares one — a cron on a

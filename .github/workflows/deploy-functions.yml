@@ -4,7 +4,7 @@ name: Deploy edge functions
 #
 # WHY A WORKFLOW AND NOT `supabase functions deploy`
 #
-# Each function here imports from ../_shared/ (one DGateway client, one odds-feed
+# Each function here imports from ../_shared/ (one ZENGAPAY client, one odds-feed
 # client, one set of CORS/JSON helpers). A deployed Edge Function is a single
 # module, so those imports cannot resolve in the uploaded bundle. The CLI's
 # `deploy` does not follow them. `scripts/build-edge-functions.mjs` inlines the
@@ -127,7 +127,7 @@ jobs:
             #   pay / admin-ops        -> each calls auth.getUser() itself and
             #                             distinguishes 401 from 403, which the
             #                             platform gate cannot do
-            #   webhooks-*             -> the caller is DGateway, and the HMAC
+            #   webhooks-*             -> the caller is ZENGAPAY, and the signature
             #                             signature over the raw body is the only
             #                             gate that can admit it
             #   feed-*                 -> CRON_SECRET bearer, or an admin JWT
@@ -236,7 +236,7 @@ jobs:
             fail=1
           fi
           # These two verify the HMAC before parsing, so the payload is irrelevant.
-          expect 'dgateway webhook rejects an unsigned call'   POST "$BASE/webhooks-dgateway"             401 'invalid signature' '{}'
-          expect 'store webhook rejects an unsigned call'      POST "$BASE/webhooks-dgateway-store"       401 'invalid signature' '{}'
+          expect 'zengapay webhook rejects an unsigned call'   POST "$BASE/webhooks-zengapay"             401 'invalid signature' '{}'
+          expect 'store webhook rejects an unsigned call'      POST "$BASE/webhooks-zengapay-store"       401 'invalid signature' '{}'
 
           exit $fail

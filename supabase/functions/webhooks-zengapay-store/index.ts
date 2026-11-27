@@ -1,37 +1,43 @@
-// POST /api/webhooks/dgateway-store
+// supabase/functions/webhooks-zengapay-store/index.ts
 //
-// Hosted-store variant of the payment webhook. Use this one when the product is
-// configured as a hosted DGateway store product instead of an in-app
-// /api/collect. Payloads differ from the API form: instead of a flat
-// {reference, status} there is a cart (items / line_items with product_id,
-// product_slug, quantity) and a buyer (customer_email).
+// Hosted-store variant of the payment webhook. This existed for a DGateway store
+// product. ZENGAPAY has no cart payload — it sends the same
+// { event, data: { transactionReference, ... } } object as its sibling — so this
+// route now shares that handling and exists mainly to keep the old URL working
+// for any integration still pointed at it.
 //
 // Rules, in order — the same discipline as the API webhook:
 //   1. verify the HMAC signature over the raw body (fails closed)
-//   2. pull the DGateway reference out of the cart
-//   3. RE-FETCH the transaction from DGateway and trust only that response
+//   2. pull the transaction reference out of the payload
+//   3. RE-FETCH the transaction from ZENGAPAY and trust only that response
 //   4. fulfil ONLY on "completed"; "failed" is final
-//   5. credit only when the checkout email matches exactly one account
+//   5. credit only when the account is identifiable
 //   6. be idempotent — a repeated reference must never credit twice
-import { fetchTransactionStatus, normalizeStatus, verifyWebhookSignature } from '../_lib/dgateway'
-import { json, methodNotAllowed, restRpc } from '../_lib/http'
+//
+// Public route, like its sibling: verify_jwt is false and the HMAC is the gate.
+import { CORS, json, readEnv } from '../_shared/http.ts'
+import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
+import {
+  fetchTransactionStatus, normalizeStatus, verifyWebhookSignature, webhookDirection, webhookReference,
+} from '../_shared/zengapay.ts'
+
+/** Env var, trimmed. Missing becomes '' and never the string "undefined". */
+const env = (key: string) => readEnv(key)
 
 type Json = Record<string, unknown>
 
 const str = (v: unknown, max = 300): string =>
   typeof v === 'string' ? v.trim().slice(0, max) : ''
 
-const isObj = (v: unknown): v is Json =>
-  typeof v === 'object' && v !== null && !Array.isArray(v)
-
+const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v)
 const meta = (v: unknown): Json => (isObj(v) ? v : {})
 
 /**
  * Read a key from the first object that has it. Order = trust order.
  *
- * An empty string counts as absent: `pick` returns "" for a missing key, and
- * treating that as a match would shadow every later source. That bug silently
- * blanks the buyer email, which parks every payment.
+ * An empty string counts as absent: treating "" as a match would shadow every
+ * later source. That exact bug silently blanked the buyer email on the Vercel
+ * version, which parks every payment.
  */
 function first<T>(sources: Json[], keys: string[], pick: (v: unknown) => T | null): T | null {
   for (const s of sources) {
@@ -65,8 +71,7 @@ function items(data: Json): Item | null {
     if (!combined) {
       combined = { id, slug, quantity }
     } else {
-      // A mixed cart would make the expected total ambiguous. Block it rather
-      // than credit a guess.
+      // A mixed cart makes the expected total ambiguous. Block, never guess.
       if ((id && combined.id && id !== combined.id) || (slug && combined.slug && slug !== combined.slug)) {
         return null
       }
@@ -81,9 +86,8 @@ function items(data: Json): Item | null {
 }
 
 /**
- * True when the cart holds more than one distinct product. A mixed cart makes
- * the expected total ambiguous, so it must be blocked rather than guessed at:
- * crediting a single quantity against an unknown product is a money bug.
+ * True when the cart holds more than one distinct product: the expected total
+ * would be ambiguous, so it must be blocked rather than guessed at.
  */
 function isMixedCart(data: Json): boolean {
   const raw = Array.isArray(data.items)
@@ -104,12 +108,13 @@ function isMixedCart(data: Json): boolean {
   return seen.size > 1
 }
 
-export default async function handler(req: Request): Promise<Response> {
-  if (req.method !== 'POST') return methodNotAllowed()
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return preflight()
+  if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
 
   const raw = await req.text()
   const signature =
-    req.headers.get('X-DGateway-Signature') || req.headers.get('x-dgateway-signature')
+    req.headers.get('X-ZENGAPAY-SIGNATURE') || req.headers.get('x-zengapay-signature')
 
   if (!(await verifyWebhookSignature(raw, signature))) {
     return json({ error: 'invalid signature' }, 401)
@@ -130,37 +135,28 @@ export default async function handler(req: Request): Promise<Response> {
     return json({ error: 'mixed carts must be split into one product per payment' }, 409)
   }
 
-  // DGateway has sent both shapes: the transaction at the top level, or nested
-  // under `data`. Accept either; never trust either for money.
+  // ZENGAPAY nests the transaction under `data`; older payloads put it at the
+  // top level. Accept either; never trust either for money.
   const body = isObj(data.data) ? data.data : data
 
-  const reference =
-    str(body.reference, 200) ||
-    str(data.reference, 200) ||
-    str(body.transaction_reference, 200) ||
-    str(data.transaction_reference, 200)
-
+  const reference = webhookReference(data)
   if (!reference) return json({ error: 'reference is required' }, 400)
+  const direction = webhookDirection(data)
 
-  // ---- RE-FETCH from DGateway. The webhook body is a notification, not proof.
+  // ---- RE-FETCH from ZENGAPAY. The webhook body is a notification, not proof.
   let verified
   try {
-    verified = await fetchTransactionStatus(reference)
+    verified = await fetchTransactionStatus(reference, direction)
   } catch (e) {
     const err = e as { message?: string; code?: string }
     // The look-up succeeded but described a different transaction. Retrying
-    // cannot fix that, so return 409 (as the API webhook does) instead of 502.
-    if (err.code === 'INVALID_RESPONSE') {
-      return json({ error: 'reference mismatch' }, 409)
-    }
-    // Otherwise 502 so DGateway retries; we never credit on a failed look-up.
-    console.error('dgateway-store: verify failed', err.message)
+    // cannot fix that, so 409 rather than 502.
+    if (err.code === 'INVALID_RESPONSE') return json({ error: 'reference mismatch' }, 409)
+    console.error('zengapay-store: verify failed', err.message)
     return json({ error: 'could not verify transaction' }, 502)
   }
 
-  if (verified.reference !== reference) {
-    return json({ error: 'reference mismatch' }, 409)
-  }
+  if (verified.reference !== reference) return json({ error: 'reference mismatch' }, 409)
 
   const status = normalizeStatus(verified.status)
 
@@ -190,7 +186,6 @@ export default async function handler(req: Request): Promise<Response> {
     str(vProduct.slug, 120) || bodyItem?.slug || ''
   ).toLowerCase()
 
-  // A cart whose identity disagrees with what DGateway reports cannot be trusted.
   if (verifiedItem && bodyItem && verifiedItem.id && bodyItem.id && verifiedItem.id !== bodyItem.id) {
     return json({ error: 'product mismatch' }, 409)
   }
@@ -206,11 +201,9 @@ export default async function handler(req: Request): Promise<Response> {
 
   const amount = Number(verified.amount)
   const currency = (verified.currency || 'UGX').toUpperCase()
-  if (!Number.isInteger(amount) || amount <= 0) {
-    return json({ error: 'invalid amount' }, 400)
-  }
+  if (!Number.isInteger(amount) || amount <= 0) return json({ error: 'invalid amount' }, 400)
 
-  const storeSlug = str(process.env.DGATEWAY_STORE_SLUG, 100).toLowerCase()
+  const storeSlug = env('DGATEWAY_STORE_SLUG').toLowerCase()
   if (storeSlug) {
     const found = (
       first([verifiedRaw, vMeta, body, nMeta], ['store_slug', 'app_slug', 'shop_slug'], (v) => str(v, 100)) || ''
@@ -222,40 +215,42 @@ export default async function handler(req: Request): Promise<Response> {
 
   const providerRef =
     first([verifiedRaw, body], ['provider_ref', 'provider_reference'], (v) => str(v, 200)) || ''
-  const reason =
-    first([verifiedRaw, body], ['failure_reason'], (v) => str(v, 500)) || ''
+  const reason = first([verifiedRaw, body], ['failure_reason'], (v) => str(v, 500)) || ''
 
-  try {
-    const result = await restRpc<Record<string, unknown>>('apply_store_topup', {
-      p_reference: reference,
-      p_status: status,
-      p_amount: amount,
-      p_currency: currency,
-      p_quantity: quantity,
-      p_product_id: productId || null,
-      p_product_slug: productSlug || null,
-      p_store_slug: storeSlug || null,
-      p_buyer_name: name || null,
-      p_buyer_email: email || null,
-      p_buyer_phone: phone || null,
-      p_provider: verified.provider || null,
-      p_provider_ref: providerRef || null,
-      p_failure: status === 'failed' ? reason || 'provider reported failure' : null,
-    })
+  const admin = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {
+    auth: { persistSession: false },
+  })
 
-    // Never echo the buyer email back; the caller only needs the outcome.
-    return json({
-      received: true,
-      status,
-      credited: Boolean(result?.credited),
-      parked_reason: result?.parked_reason ?? null,
-      replay: Boolean(result?.replay),
-    })
-  } catch (e) {
-    console.error('dgateway-store: database rejected verified payment', (e as Error).message)
+  const { data: result, error } = await admin.rpc('apply_store_topup', {
+    p_reference: reference,
+    p_status: status,
+    p_amount: amount,
+    p_currency: currency,
+    p_quantity: quantity,
+    p_product_id: productId || null,
+    p_product_slug: productSlug || null,
+    p_store_slug: storeSlug || null,
+    p_buyer_name: name || null,
+    p_buyer_email: email || null,
+    p_buyer_phone: phone || null,
+    p_provider: verified.provider || null,
+    p_provider_ref: providerRef || null,
+    p_failure: status === 'failed' ? reason || 'provider reported failure' : null,
+  })
+
+  if (error) {
+    console.error('zengapay-store: database rejected verified payment', error.message)
     // 503 so DGateway retries rather than dropping a real payment.
     return json({ error: 'could not record payment' }, 503)
   }
-}
 
-export const config = { runtime: 'nodejs' }
+  // Never echo the buyer email back; the caller only needs the outcome.
+  const r = (result ?? {}) as Json
+  return json({
+    received: true,
+    status,
+    credited: Boolean(r.credited),
+    parked_reason: r.parked_reason ?? null,
+    replay: Boolean(r.replay),
+  })
+})
