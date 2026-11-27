@@ -1,7 +1,10 @@
 import { readFileSync, readdirSync } from 'node:fs'
 
 const sql = readFileSync('supabase/migrations/0003_store_topups.sql', 'utf8')
-const sql14 = readFileSync('supabase/migrations/0014_ugx_only_and_free_play.sql', 'utf8')
+// 0014 and 0015 were deleted: they were written for a schema that does not
+// exist and would have dropped live KYC gates. 0016 is the applied truth, so it
+// is read twice under both names to keep the assertions below meaningful.
+const sql14 = readFileSync('supabase/migrations/0016_production_money_paths.sql', 'utf8')
 
 const fails: string[] = []
 const ok = (n: string, c: boolean) => { if (!c) fails.push(n); console.log(`${c ? 'ok  ' : 'FAIL'} ${n}`) }
@@ -18,21 +21,33 @@ const ok = (n: string, c: boolean) => { if (!c) fails.push(n); console.log(`${c 
  * be edited but must be overridden, so the override is what these assert on.
  */
 const MONEY_MULTIPLIER = /amount[^;\n]*\*\s*10\b|\/\s*10\.0|\/\s*100\.0|\*\s*PX_PER_UGX/
-for (const [label, body] of [
-  ['apply_store_topup', sql14.slice(sql14.indexOf('function apply_store_topup'), sql14.indexOf('function claim_store_topup'))],
-  ['admin_release_store_topup', sql14.slice(sql14.indexOf('function admin_release_store_topup'), sql14.indexOf('function dismiss_store_topup'))],
-  ['apply_gateway_result', sql14.slice(sql14.indexOf('function apply_gateway_result'), sql14.indexOf('function request_cashout'))],
-  ['request_cashout', sql14.slice(sql14.indexOf('function request_cashout'), sql14.indexOf('function apply_store_topup'))],
+// Extract each function by name, from its `create or replace` to the closing
+// `$$;`. Slicing by position between two other function names was fragile: it
+// silently produced an empty string when a neighbour did not exist, and an empty
+// body passes a "no multiplier" test.
+const fnBody = (name: string) => {
+  const at = sql14.indexOf(`function ${name}(`)
+  if (at < 0) return ''
+  const end = sql14.indexOf('$$;', at)
+  return end < 0 ? '' : sql14.slice(at, end)
+}
+
+for (const label of [
+  'apply_store_topup', 'admin_release_store_topup', 'apply_gateway_result',
+  'request_cashout', 'claim_daily_px',
 ] as const) {
+  const body = fnBody(label)
+  // An empty body would pass every assertion below, so say so instead.
+  ok(`${label}: the function exists in the migration`, body.length > 200, `${body.length} chars`)
   // Comments explain the removed peg, so strip them before scanning the code.
   const code = body.replace(/--[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
   ok(`${label}: no 10x / divide-by-100 peg left in the code`, !MONEY_MULTIPLIER.test(code))
 }
 
-ok('a top-up credits its own amount', /v_credit := v_order\.amount;/.test(sql14))
-ok('a cashout pays out its own amount', /v_ugx := p_amount_px;/.test(sql14))
+ok('a top-up credits its own amount', /v_px := v_order\.amount;/.test(fnBody('apply_gateway_result')))
+ok('a cashout pays out its own amount', /v_ugx := p_amount_px;/.test(fnBody('request_cashout')))
 ok('the store credit is the price times quantity only',
-  /v_px := p_amount \* greatest\(coalesce\(p_quantity, 1\), 1\);/.test(sql14))
+  /v_px := p_amount \* greatest\(coalesce\(p_quantity, 1\), 1\);/.test(fnBody('apply_store_topup')))
 // The 7-day rule and the phone/age gates are independent of the currency and
 // must survive: they are what stops a fresh script from cashing out.
 ok('old-account gate survives (7 days)', /v_age_days < 7/.test(sql14))
@@ -138,7 +153,7 @@ ok('0005: the retired release is dead for every role',
 // the peg and the number of units was kept after the coin was removed. The
 // number printed to the player and the number the database pays must be the
 // same number, so this pins both to the client's own constant.
-const sql15 = readFileSync('supabase/migrations/0015_daily_bonus_matches_its_promise.sql', 'utf8')
+const sql15 = readFileSync('supabase/migrations/0016_production_money_paths.sql', 'utf8')
 const clientCurrency = readFileSync('src/lib/currency.ts', 'utf8')
 const bonusMatch = clientCurrency.match(/DAILY_BONUS_UGX\s*=\s*([0-9_]+)/)
 const bonus = bonusMatch ? Number(bonusMatch[1].replace(/_/g, '')) : NaN
@@ -155,8 +170,42 @@ ok('0015: records the bonus on the ledger like any other money',
   /insert into ledger \(user_id, kind, delta_px, balance_after, ref, meta\)/.test(sql15))
 ok('0015: never debits anyone to claw back an overpayment',
   !/balance_px\s*-\s*/.test(sql15))
-ok('the client reports the returned amount, not a hardcoded one',
-  /setDailyPxAwarded\(data\)/.test(readFileSync('src/lib/auth.tsx', 'utf8')))
+// claim_daily_px returns the resulting BALANCE, not the amount awarded.
+ok('the client does not present the returned balance as the award',
+  !/setDailyPxAwarded\(data\)/.test(readFileSync('src/lib/auth.tsx', 'utf8')))
+ok('the client treats a repeat claim as normal, because the function throws',
+  /if \(error \|\| typeof data !== 'number'\)/.test(readFileSync('src/lib/auth.tsx', 'utf8')))
+
+// --------------------------------------------------- 0016: the live patches --
+// 0014 was written against a schema that does not exist and would have broken
+// the database: it dropped two KYC gates that exist only in the live body, used
+// a ledger kind that is not a member of the enum, and wrote a column that is not
+// there. 0016 is the live body with only the arithmetic changed, and these
+// assertions are what stop a future edit from reintroducing 0014's mistakes.
+const sql16 = readFileSync('supabase/migrations/0016_production_money_paths.sql', 'utf8')
+ok('0016 keeps the 18-or-older gate', /if not v_profile\.age_confirmed then/.test(sql16))
+ok('0016 keeps the phone-verified gate', /if not v_profile\.phone_verified then/.test(sql16))
+ok('0016 keeps the 7-day account-age gate',
+  /v_age_days < 7 then/.test(sql16) && /86400/.test(sql16))
+ok('0016 uses the cashout_hold ledger kind that exists',
+  /'cashout_hold'/.test(sql16) && !/'cashout', *-/.test(sql16))
+ok('0016 does not write a cashouts.currency column that does not exist',
+  !/insert into cashouts \([^)]*currency/.test(sql16))
+ok('0016 keeps the already-claimed raise the client expects',
+  /already claimed today/.test(sql16))
+// Only the function bodies matter. The file's comments quote the old
+// arithmetic to explain it, and the one-time conversion block below deliberately
+// divides stored PX by 100 -- that is the migration, not a money path.
+// Strip SQL line comments first: the file quotes the old arithmetic to explain
+// what it replaced, and a comment is not a money path.
+const sql16Functions = sql16.slice(0, sql16.indexOf('-- 2. Convert every stored PX'))
+  .split('\n').map((l) => l.replace(/--.*$/, '')).join('\n')
+ok('0016 has no money multiplication by ten left in any function',
+  !/\* *10\b/.test(sql16Functions))
+ok('0016 has no money division by a hundred left in any function',
+  !/\/ *100\.0\b/.test(sql16Functions))
+ok('the conversion block runs at most once',
+  /if exists \(select 1 from ledger where ref = 'ugx-migration-0016'\) then/.test(sql16))
 
 // A bet default of 1000 was ten times the minimum and pre-dated the re-scale.
 const gameFiles = readdirSync('src/games').filter((f) => f.endsWith('.tsx'))

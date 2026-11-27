@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { isBackendConfigured, supabase } from './supabase'
+import { DAILY_BONUS_UGX } from './currency'
 
 export type PlayerProfile = {
   id: string
@@ -81,17 +82,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * were, every player would see a red banner every day after the first. The
    * award is also entirely server-side: the client passes no amount, so a
    * tampered browser cannot name its own reward.
+   *
+   * WHAT IT RETURNS: the resulting balance, not the amount awarded. Reading it
+   * as the award would have shown a player their whole balance as today's
+   * bonus, so the credited amount comes from the constant the interface also
+   * promises -- and `test:migration` pins that constant to the database's.
    */
   const claimDaily = useCallback(async (uid: string) => {
     if (!supabase) return
     const { data, error } = await supabase.rpc('claim_daily_px')
     if (error || typeof data !== 'number') {
+      // Including 'already claimed today', which is the normal second visit.
       setDailyPxAwarded(0)
       return
     }
-    // Report what was credited, not what we assumed. It is 0 when today's
-    // bonus was already claimed, and the grant is authoritative either way.
-    setDailyPxAwarded(data)
+    // Success: the database credited the fixed daily amount.
+    setDailyPxAwarded(DAILY_BONUS_UGX)
     void uid
   }, [])
 
