@@ -487,9 +487,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   )
 
   /**
-   * Record a ProxiCash exchange and credit the ProxiCoin balance when the
-   * payout lands. Sending ProxiCoin to mobile money spends from the balance;
-   * sending external crypto mints ProxiCoin instead.
+   * Record a ProxiCash exchange and credit the UGX balance when the payout
+   * lands. Crypto converts into shillings; there is no coin to mint.
    */
   const recordExchange = useCallback(
     (order: ExchangeOrder) => {

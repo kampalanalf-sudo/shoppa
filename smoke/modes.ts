@@ -64,6 +64,11 @@ ok('no source still prints "PX" as a currency',
 // an EXISTING PX balance into UGX during migration. A live conversion function
 // (pxToUgx/ugxToPx) is what must not exist, because that is what a screen would
 // call to render a second currency.
+// Brand copy drifts independently of code, and it is what a player actually
+// reads. "ProxiCoin" was the PX product name; it must not survive the currency.
+const coinBranding = sources.filter((f) => /ProxiCoin/.test(stripComments(read(f))))
+ok('no copy still names the ProxiCoin product', coinBranding.length === 0, coinBranding.join(', '))
+
 const pegFunctions = sources.filter((f) => /pxToUgx|ugxToPx|PROXICOIN|STARTING_PX/.test(stripComments(read(f))))
 ok('no source exports or calls a live PX conversion',
   pegFunctions.length === 0, pegFunctions.join(', '))

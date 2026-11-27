@@ -25,7 +25,7 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props)
     {
       kicker: 'Welcome to FloatBet Gaming',
       title: 'Float above the house',
-      body: '8 provably fair originals. Instant settlement in UGX, ProxiCoin rewards and up to 1,000,000× multipliers.',
+      body: '8 provably fair originals. Instant settlement in UGX and up to 1,000,000× multipliers.',
       cta: 'Start playing',
       badge: 'NEW PLAYER BONUS +200%',
       art: asset('/art/hero.webp'),
@@ -315,7 +315,7 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props)
             { icon: <IconGift size={18} />, t: 'Daily Rakeback', d: 'Up to 12% back on every wager, paid hourly.', cta: 'Claim rakeback', c: 'from-neon-lime/15', onClick: () => setPromo(true) },
             { icon: <IconTrophy size={18} />, t: 'Weekly Race', d: 'UGX 50,000 across 100 winners. Ends Sunday.', cta: 'Join the race', c: 'from-neon-violet/20', onClick: () => setPromo(true) },
             { icon: <IconSpade size={18} />, t: 'VIP Club', d: 'Personal host, custom limits and faster payouts.', cta: 'Apply for VIP', c: 'from-neon-cyan/20', onClick: () => setPromo(true) },
-            { icon: <IconBolt size={18} />, t: 'ProxiCash', d: 'Convert crypto or ProxiCoin to UGX on MTN MoMo & Airtel Money.', cta: 'Open ProxiCash', c: 'from-[#26a17b]/25', onClick: () => onProxiCash?.() },
+            { icon: <IconBolt size={18} />, t: 'ProxiCash', d: 'Convert crypto to UGX on MTN MoMo & Airtel Money.', cta: 'Open ProxiCash', c: 'from-[#26a17b]/25', onClick: () => onProxiCash?.() },
           ].map((p) => (
             <div key={p.t} className={`group relative overflow-hidden rounded-2xl border border-white/[0.07] bg-gradient-to-br ${p.c} via-ink-850 to-ink-850 p-4`}>
               <div className="flex items-center gap-2 text-neon-lime">{p.icon}<span className="text-[13px] font-bold text-white">{p.t}</span></div>

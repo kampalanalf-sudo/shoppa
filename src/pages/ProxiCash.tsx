@@ -124,7 +124,7 @@ export function ProxiCash({ onBack }: Props) {
           <div className="panel p-4">
             {/* direction */}
             <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-ink-900/80 p-1">
-              {([['out', 'Crypto → MoMo'], ['in', 'Buy ProxiCoin']] as const).map(([k, label]) => (
+              {([['out', 'Crypto → MoMo'], ['in', 'Top up']] as const).map(([k, label]) => (
                 <button
                   key={k}
                   type="button"
@@ -211,7 +211,7 @@ export function ProxiCash({ onBack }: Props) {
               onClick={submit}
               className="btn-primary mt-3 w-full !py-3"
             >
-              {direction === 'in' ? 'Buy ProxiCoin' : `Send & receive UGX ${money(q.net)}`}
+              {direction === 'in' ? 'Fund in UGX' : `Send & receive UGX ${money(q.net)}`}
               <IconArrowUpRight size={15} />
             </button>
             <p className="mt-2 text-center text-[10px] text-slate-600">
