@@ -24,7 +24,7 @@
 import { CORS, json, readEnv } from '../_shared/http.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
 import {
-  GatewayError, disbursePayment, normalizePhone, assertLiveSafety,
+  GatewayError, disbursePayment, normalizePhone, assertLiveSafety, paymentReadiness,
 } from '../_shared/zengapay.ts'
 
 /** Env var, trimmed. Missing becomes '' and never the string "undefined". */
@@ -272,6 +272,26 @@ async function health(): Promise<Response> {
     : checks.some((c) => c.state === 'warn')
       ? 'warn'
       : 'ok'
+
+  // ------------------------------------------------ can we actually take money --
+  // This was missing, and it is the reason a live site sat there refusing every
+  // deposit with "Mobile money is not configured" while this screen reported
+  // everything healthy: eight checks, none of them payments. A player found it
+  // before the operator did.
+  //
+  // Read from the same helper the payment functions use, so the health screen
+  // cannot disagree with what `pay` will actually do.
+  {
+    const p = paymentReadiness()
+    checks.push({
+      key: 'payments',
+      label: 'Card & mobile-money deposits',
+      state: p.blockers.length === 0 ? 'ok' : 'bad',
+      detail: p.blockers.length === 0
+        ? `live, ${p.mode} — collections and checkouts enabled`
+        : p.blockers.join('; '),
+    })
+  }
 
   return json({ checks, overall: worst, checked_at: new Date(now).toISOString() })
 }

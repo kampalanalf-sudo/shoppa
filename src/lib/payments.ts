@@ -64,6 +64,29 @@ export async function fetchStatus(reference: string, fresh = false): Promise<Sta
 const POLL_MS = 10_000
 const GIVE_UP_MS = 5 * 60 * 1000
 
+/** The server's answer for a hosted-checkout session. */
+export type SessionResolution = {
+  sessionId: string
+  /** The provider says the session itself was processed. Evidence, not a claim. */
+  paid: boolean
+  /** The transaction reference behind it, once one exists. */
+  reference: string | null
+  status: 'pending' | 'completed' | 'failed'
+  rawStatus?: string
+  amount?: number | null
+}
+
+/**
+ * Exchange a hosted-checkout session id for its transaction.
+ *
+ * The id in the return URL is only a placeholder the player could type, so it
+ * is resolved on the server (signed-in, using our own gateway credentials)
+ * before the success page asserts anything about payment.
+ */
+export function resolveCheckoutSession(sessionId: string): Promise<SessionResolution> {
+  return api<SessionResolution>('/api/session', { params: { session: sessionId } })
+}
+
 /**
  * Polls /api/status every 10 seconds until the payment is terminal, and gives
  * up after 5 minutes. Never polls faster than the spec allows — the server also

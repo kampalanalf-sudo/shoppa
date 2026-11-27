@@ -117,6 +117,39 @@ export function assertLiveSafety(): void {
 }
 
 /**
+ * Whether this deployment can take money right now, and if not, why.
+ *
+ * `assertLiveSafety` throws on the first problem because a payment must stop.
+ * An operator needs the whole list instead, so this returns every blocker at
+ * once without throwing. The two share `secrets`, so the health screen and the
+ * payment path cannot drift apart: if this says ok, `assertLiveSafety` passes.
+ *
+ * Newlines are stripped from the reasons: they are rendered on one line of an
+ * admin screen, and a stray newline in an env var is itself a common cause of a
+ * broken token.
+ */
+export function paymentReadiness(): { mode: 'live' | 'sandbox' | 'unconfigured'; blockers: string[] } {
+  const blockers: string[] = []
+  if (!secrets.apiToken) {
+    blockers.push('ZENGAPAY_API_TOKEN is not set, so no deposit can be requested')
+  }
+  if (secrets.apiToken && !/^ZPYPUBK-/i.test(secrets.apiToken)) {
+    blockers.push('ZENGAPAY_API_TOKEN does not start with ZPYPUBK-, so it is probably not an API key')
+  }
+  const live = Boolean(secrets.apiToken) && !secrets.isSandbox && !/^(test|sandbox|sk_test)/i.test(secrets.apiToken)
+  if (live && !secrets.webhookSecret) {
+    blockers.push(
+      'ZENGAPAY_WEBHOOK_SECRET is not set, so a real charge could be taken and never credited',
+    )
+  }
+  if (!secrets.isSandbox && /sandbox/i.test(secrets.apiUrl)) {
+    blockers.push('ZENGAPAY_API_URL still points at the sandbox while the token looks like production')
+  }
+  const mode = !secrets.apiToken ? 'unconfigured' : live ? 'live' : 'sandbox'
+  return { mode, blockers: blockers.map((b) => b.replace(/[\r\n]+/g, ' ')) }
+}
+
+/**
  * ZENGAPAY wants an international number without the `+`: 256775203801.
  *
  * Uganda only, deliberately. This app pays out to UGX wallets, and a

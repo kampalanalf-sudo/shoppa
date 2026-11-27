@@ -46,7 +46,7 @@ type View =
   | { name: 'set-password' }
   | { name: 'sportsbook' }
   | { name: 'support' }
-  | { name: 'topup-success'; reference: string | null }
+  | { name: 'topup-success'; reference: string | null; sessionId: string | null }
   | { name: 'admin-parked' }
   | { name: 'admin-players' }
   | { name: 'admin-console' }
@@ -104,8 +104,15 @@ function Shell() {
       // question an operator has is 'is anything broken right now'.
       if (h === 'admin' || h === 'admin/console') { setView({ name: 'admin-console' }); return }
       if (h.startsWith('topup-success')) {
-        const ref = new URLSearchParams(raw.split('?')[1] || '').get('reference')
-        setView({ name: 'topup-success', reference: ref })
+        const qs = new URLSearchParams(raw.split('?')[1] || '')
+        // Two different rails land here. A mobile-money collect carries a
+        // transaction `reference`; a hosted checkout carries a `session` id that
+        // has to be resolved before the page can say anything about payment.
+        setView({
+          name: 'topup-success',
+          reference: qs.get('reference'),
+          sessionId: qs.get('session'),
+        })
         return
       }
       if (h && h !== 'home') {
@@ -139,7 +146,7 @@ function Shell() {
   }, [])
 
   const openSuccess = useCallback((reference: string | null) => {
-    setView({ name: 'topup-success', reference })
+    setView({ name: 'topup-success', reference, sessionId: null })
     try {
       window.history.replaceState(
         null, '', reference ? `#topup-success?reference=${encodeURIComponent(reference)}` : '#topup-success',
@@ -290,6 +297,7 @@ function Shell() {
         {view.name === 'topup-success' && (
           <TopUpSuccess
             reference={view.reference}
+            sessionId={view.sessionId}
             onHome={home}
             onTopUpAgain={() => { home(); setTopUpOpen(true) }}
           />

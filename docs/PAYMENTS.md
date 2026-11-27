@@ -34,7 +34,7 @@ the browser, and never with a `VITE_` prefix.
 | `ZENGAPAY_API_URL` | `https://api.zengapay.com/v1` (sandbox: `https://api.sandbox.zengapay.com/v1`) |
 | `ZENGAPAY_API_TOKEN` | your `ZPYPUBK-…` token from Dashboard → Settings → API Settings |
 | `ZENGAPAY_WEBHOOK_SECRET` | the **Secret Hash** from Dashboard → Developer Settings |
-| `APP_URL` | `https://shoppa-sigma.vercel.app` (used to build checkout return URLs) |
+| `APP_URL` | `https://floatbet.space` (builds checkout return URLs — must be the domain players use) |
 | `SUPABASE_URL` | `https://<ref>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | service role key — **server only** |
 
