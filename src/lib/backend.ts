@@ -52,6 +52,7 @@ const ROUTES: Record<string, string> = {
   '/api/collect': 'pay?op=collect',
   '/api/disburse': 'pay?op=disburse',
   '/api/status': 'pay?op=status',
+  '/api/session': 'pay?op=session',
   '/api/topup/claim': 'pay?op=claim',
   '/api/admin/health': 'admin-ops?op=health',
   '/api/admin/cashouts': 'admin-ops?op=cashouts',

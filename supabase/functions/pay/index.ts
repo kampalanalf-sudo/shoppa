@@ -24,6 +24,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
 import {
   GatewayError, assertLiveSafety, collectPayment, disbursePayment, fetchTransactionStatus,
   isWholeAmount, normalizeCurrency, normalizePhone, normalizeStatus, createCheckoutSession,
+  fetchCheckoutSession,
 } from '../_shared/zengapay.ts'
 
 /** Env var, trimmed. Missing becomes '' and never the string "undefined". */
@@ -245,7 +246,14 @@ async function checkout(req: Request, userId: string) {
   const origin = appOrigin(req)
   // The provider substitutes CHECKOUT_SESSION_ID; without the placeholder the
   // return URL cannot identify the session.
-  const back = `${origin}/#topup-success?session=CHECKOUT_SESSION_ID`
+  //
+  // The parameter is `reference`, not `session`: the app's router reads
+  // `#topup-success?reference=...` (src/App.tsx). Sending `session=` meant every
+  // hosted-checkout return landed with no reference, and the success page treats
+  // that as "assume it worked" without ever asking the provider. This value is
+  // only a placeholder the player could type; the success page resolves it with
+  // a signed-in `op=session` call before it claims anything.
+  const back = `${origin}/#topup-success?reference=CHECKOUT_SESSION_ID`
 
   try {
     const session = await createCheckoutSession({
@@ -303,6 +311,47 @@ type StatusPayload = {
  * with an empty map. It is a courtesy to the provider, not a security control,
  * and the same was true of the Vercel version.
  */
+/**
+ * Resolve a hosted-checkout return to the transaction it produced.
+ *
+ * The success URL only carries `CHECKOUT_SESSION_ID`, which the player could
+ * type. Answering "paid" from it would be a claim with no evidence behind it —
+ * and the page did exactly that before: with no reference it set the state to
+ * `paid` and showed the balance without ever asking anyone. So the session id is
+ * exchanged here, server-side and signed-in only, for the provider's own
+ * transaction reference, and the page then polls `op=status` with *that*.
+ *
+ * A session that has no transaction yet is an unpaid session: it is reported as
+ * pending, never as paid.
+ */
+async function sessionStatus(url: URL) {
+  const sessionId = (url.searchParams.get('session') || '').trim()
+  if (!sessionId) return json({ error: 'session is required' }, 400)
+  // The id goes into a URL path upstream; refuse anything that is not a plain
+  // token rather than letting the provider parse a smuggled path.
+  if (!/^[A-Za-z0-9_-]{8,128}$/.test(sessionId)) {
+    return json({ error: 'session is malformed' }, 400)
+  }
+
+  try {
+    const session = await fetchCheckoutSession(sessionId)
+    return json({
+      sessionId,
+      // A session is only paid when the provider says the session itself was
+      // processed. `status` alone is enough to refuse, never to credit: the
+      // credit comes from the webhook calling the same status endpoint.
+      paid: session.status.toUpperCase() === 'PROCESSED',
+      reference: session.reference || null,
+      status: session.reference ? normalizeStatus(session.transactionStatus) : 'pending',
+      rawStatus: session.transactionStatus,
+      amount: session.amount ?? null,
+    })
+  } catch (e) {
+    const err = e as GatewayError
+    return json({ error: err.message, code: err.code }, err.httpStatus || 502)
+  }
+}
+
 const cache = new Map<string, { at: number; payload: StatusPayload }>()
 const inflight = new Map<string, Promise<StatusPayload>>()
 
@@ -422,6 +471,7 @@ Deno.serve(async (req) => {
   try {
     if (req.method === 'GET') {
       if (op === 'status') return await status(url)
+      if (op === 'session') return await sessionStatus(url)
       return json({ error: 'method not allowed' }, 405)
     }
     if (req.method === 'POST') {

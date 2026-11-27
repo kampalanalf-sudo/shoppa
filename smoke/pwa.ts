@@ -134,7 +134,11 @@ ok('pwa: never auto-reloads on update (explicit user action only)',
 // `shoppa-ten.vercel.app`, which belongs to someone else's project, and then
 // pointed at a Vercel project called `proxicore-visor` that was actually this
 // app under a misleading name. Both cost real time. Pin the truth here.
-const SITE = 'shoppa-sigma.vercel.app'
+// floatbet.space is the production domain (public/CNAME, and the Pages deploy).
+// This constant used to be shoppa-sigma.vercel.app, the Vercel fallback host --
+// so the suite demanded every document cite the fallback as the production URL
+// while the custom domain was the one players actually used.
+const SITE = 'floatbet.space'
 const docs = ['docs/GO-LIVE.md', 'docs/PAYMENTS.md', 'docs/PRODUCTION.md', '.env.example']
   .map((f) => readFileSync(f, 'utf8'))
 const cfg = readFileSync('capacitor.config.ts', 'utf8')
@@ -165,7 +169,12 @@ ok('the service worker scope follows the build base',
   readFileSync('src/lib/pwa.ts', 'utf8').includes('scope: import.meta.env.BASE_URL'))
 
 ok('the production URL is the project domain, not a borrowed one',
-  docs.every((d) => d.includes(SITE)) && cfg.includes(SITE))
+  docs.every((d) => d.includes(SITE)))
+// capacitor.config.ts keeps the Vercel hostname on purpose. That value keys the
+// Android WebView's storage origin, so changing it would silently reset every
+// installed player's local wallet. It must still be a host this project owns.
+ok('the Android shell points at a host this project owns',
+  /hostname: '(?:shoppa-sigma\.vercel\.app|floatbet\.space)'/.test(cfg))
 // shoppa-ten was never ours. Allow it only in prose explaining that fact.
 // Allow the mention only where it is being explained as a mistake. The prose
 // wraps, so scan by paragraph rather than by line.

@@ -98,6 +98,15 @@ jobs:
       - name: Verify UGX-only and free-play separation
         run: npm run test:modes
 
+      # Can this deployment take money? The live site once refused every deposit
+      # with "Mobile money is not configured" while the admin health screen
+      # reported all-healthy, and the hosted-checkout return URL used a key the
+      # router did not read, so the success page claimed "paid" without evidence.
+      # This asserts the config verdict, the health check and the return URL
+      # agree — all three are silent failures otherwise.
+      - name: Verify deposits are configured and honestly reported
+        run: npm run test:readiness
+
       # The peg bug: 0002/0003/0004 still multiplied a UGX top-up by 10 after
       # 0009 moved the displayed peg, so every top-up credited a tenth of what
       # was paid. This asserts no money multiplier survives in any money path.

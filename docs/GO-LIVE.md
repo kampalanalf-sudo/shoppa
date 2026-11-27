@@ -224,6 +224,51 @@ nothing in the code can register it for you.
 payments will be taken and **nothing will credit**. That is the single
 most expensive misconfiguration on this page.
 
+### 3a-bis. Turning deposits on, in order
+
+Nothing here is optional and the order matters: setting the token before the
+webhook URL exists takes real money that nothing will ever credit.
+
+```bash
+# 1. The webhook must already be registered (3a) and pointing at the EDGE
+#    FUNCTION, not the retired Vercel path:
+#      https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/webhooks-zengapay
+
+# 2. Secrets. ZENGAPAY_API_TOKEN is the only one that unblocks the UI;
+#    the webhook secret is what makes a credit possible at all.
+supabase secrets set --project-ref dtroufrfavmjldtlprpn \
+  ZENGAPAY_API_URL=https://api.zengapay.com/v1 \
+  ZENGAPAY_API_TOKEN=ZPYPUBK-... \
+  ZENGAPAY_WEBHOOK_SECRET=... \
+  APP_URL=https://floatbet.space
+```
+
+```bash
+# 3. The functions read secrets at module load, so redeploy them. This is the
+#    step everyone forgets; the old isolate keeps answering 503.
+gh workflow run deploy-functions.yml -f functions=pay,webhooks-zengapay,admin-ops
+```
+
+4. **Verify before telling anyone it works.** Open `#admin/health`. There is now
+   a row *Card & mobile-money deposits* that reads the same helper the payment
+   path uses:
+
+   | Row reads | Meaning |
+   |---|---|
+   | `live, live — collections and checkouts enabled` | deposits are on |
+   | `ZENGAPAY_API_TOKEN is not set…` | step 2 or step 3 did not take |
+   | `…could be taken and never credited` | webhook secret missing — do **not** enable |
+
+   Before this check existed the screen reported eight green rows while every
+   deposit was refused, and a player found it first.
+
+5. **One real minimum deposit, on a real number.** UGX 500 is the minimum. Watch
+   three things, in this order: the number gets a prompt, the webhook returns
+   `202` in the Supabase function logs, and the balance moves in `#admin/players`.
+   If the money leaves the player's phone and the balance does not move, stop and
+   read the logs — that is the webhook URL or the secret, and every further
+   payment makes it worse.
+
 ### 3b. API token
 
 | Field | Value |
@@ -273,15 +318,22 @@ ZENGAPAY has no hosted-store cart. Two consequences, both simplifications:
   Protection (SSO), and only custom domains are exempt. Removing it makes
   production private again.
 
-Set these in **Project → Settings → Environment Variables**, for
-**Production + Preview**:
+These are **Supabase Edge Function secrets**, not Vercel env vars — the `/api`
+routes are Edge Functions now (`pay`, `admin-ops`, …). Set them with:
+
+```bash
+supabase secrets set --project-ref dtroufrfavmjldtlprpn ZENGAPAY_API_TOKEN=… …
+```
+
+or Dashboard → **Edge Functions → Secrets**. The two `VITE_` values are build
+variables and belong in the Pages workflow instead (see the table note).
 
 | Key | Value | Notes |
 |---|---|---|
 | `ZENGAPAY_API_URL` | `https://api.zengapay.com/v1` | sandbox: `https://api.sandbox.zengapay.com/v1` |
 | `ZENGAPAY_API_TOKEN` | `ZPYPUBK-…` | **sensitive**, server only |
 | `ZENGAPAY_WEBHOOK_SECRET` | the Secret Hash | **required in live mode** — without it every collect/disburse/checkout returns 503 `WEBHOOK_SECRET_MISSING` and charges nothing |
-| `APP_URL` | `https://shoppa-sigma.vercel.app` | builds checkout return URLs |
+| `APP_URL` | `https://floatbet.space` | builds checkout return URLs. **Must be the domain players use** — the wrong host returns a paid checkout to a site that does not exist |
 | `SUPABASE_URL` | `https://dtroufrfavmjldtlprpn.supabase.co` | |
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role key | **sensitive**, server only |
 | `VITE_SUPABASE_URL` | `https://dtroufrfavmjldtlprpn.supabase.co` | public, shipped to browser |

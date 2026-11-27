@@ -41,7 +41,7 @@ profile and a **10,000 PX** welcome grant by the `handle_new_user()` trigger.
 *Authentication → URL Configuration*:
 
 ```
-Site URL:            https://shoppa-sigma.vercel.app
+Site URL:            https://floatbet.space
 Redirect URLs:       https://shoppa-sigma.vercel.app/**
                      http://localhost:5173/**
 ```
@@ -66,7 +66,7 @@ supabase secrets set \
   DGATEWAY_WEBHOOK_SECRET=... \
   ZENGAPAY_API_URL=https://api.zengapay.com/v1 \
   DGATEWAY_ALLOW_TEST_PAYMENTS=false \
-  APP_URL=https://shoppa-sigma.vercel.app
+  APP_URL=https://floatbet.space
 ```
 
 You said these are the same credentials Tank Tickets uses. They are not in any
