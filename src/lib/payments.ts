@@ -149,35 +149,29 @@ export function usePaymentPoll(reference: string | null) {
   }
 }
 
-// ---------------------------------------------------------------- store mode --
+// ------------------------------------------------------------- hosted mode --
 
 /**
- * Hosted-store checkout. The buyer pays on DGateway's own page, so this is a
- * plain navigation — the browser only follows a link, which is why it also
- * works on GitHub Pages where /api routes do not exist.
+ * Hosted checkout, ZENGAPAY's own payment page.
  *
- * Safe to call with no reference: the return trip cannot carry our order_id,
- * which is exactly why the browser return is cosmetic and the webhook is the
- * only thing that credits.
+ * Unlike the old DGateway storefront this is not a static per-merchant URL:
+ * the server creates a session and returns its one-time URL, so nothing about
+ * the merchant is baked into the bundle and the API token never reaches the
+ * browser.
+ *
+ * Returns null when the server cannot create a session, and the caller falls
+ * back to the in-app mobile-money prompt.
  */
-export function storeUrl(ugx: number): string | null {
-  const base = (import.meta.env.VITE_DGATEWAY_STORE_URL as string | undefined)?.trim()
-  if (!base || base === 'off') return null
-  try {
-    const url = new URL(base)
-    if (Number.isInteger(ugx) && ugx > 0) url.searchParams.set('amount', String(ugx))
-    return url.toString()
-  } catch {
-    return null
-  }
+export async function startHostedCheckout(ugx: number): Promise<string | null> {
+  if (!Number.isInteger(ugx) || ugx <= 0) return null
+  const res = await api<{ url?: string }>('/api/pay?op=checkout', {
+    method: 'POST',
+    body: { amount: ugx, currency: 'UGX' },
+  })
+  return res.url ?? null
 }
 
-export function storeEnabled(): boolean {
-  const base = (import.meta.env.VITE_DGATEWAY_STORE_URL as string | undefined)?.trim()
-  return Boolean(base && base !== 'off')
-}
-
-/** The URL we tell DGateway to send the buyer back to. Cosmetic only. */
+/** Where the player lands after paying. Cosmetic only — the webhook credits. */
 export function successReturnUrl(): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   return `${origin}/#topup-success`

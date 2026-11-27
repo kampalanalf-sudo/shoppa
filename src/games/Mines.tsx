@@ -82,7 +82,7 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
     setActive(false)
     setBusted(null)
     if (sound) (currentMult >= 5 ? sfx.bigwin : sfx.cashout)()
-    toast({ kind: 'win', title: `Cashed out ${mult(currentMult)}`, body: `+${money(pay)} PX secured.` })
+    toast({ kind: 'win', title: `Cashed out ${mult(currentMult)}`, body: `+$UGX {money(pay)} secured.` })
   }
 
   const reset = () => {
@@ -119,7 +119,7 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
           </div>
 
           {active ? (
-            <BetButton onClick={cashout} disabled={!picks} sub={`${money(potential)} PX`}>
+            <BetButton onClick={cashout} disabled={!picks} sub={`$UGX {money(potential)}`}>
               Cash out {mult(currentMult)}
             </BetButton>
           ) : (
@@ -148,7 +148,7 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
           </div>
           {picks > 0 && active && (
             <p className="text-center text-[10.5px] text-slate-500">
-              Potential win <span className="num font-bold text-neon-lime">{money(potential)} PX</span>
+              Potential win <span className="num font-bold text-neon-lime">UGX {money(potential)}</span>
             </p>
           )}
         </div>
@@ -163,7 +163,7 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">UGX</span>
           </div>
           {active ? (
             <button type="button" onClick={cashout} disabled={!picks} className="btn-danger h-10 flex-1 !text-[13px]">

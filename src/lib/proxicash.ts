@@ -1,15 +1,15 @@
 /**
  * ProxiCash -- crypto-to-mobile-money exchange.
  *
- * Converts supported crypto assets and ProxiCoin (PX) into Ugandan Shillings
- * paid out to a mobile money wallet (MTN MoMo / Airtel Money).
+ * Converts supported crypto assets into Ugandan Shillings paid out to a mobile
+ * money wallet (MTN MoMo / Airtel Money).
  *
  * This is a demo model: rates are fixed reference rates, not live market data.
  */
 
 export type Rail = 'MTN' | 'Airtel'
 
-export type AssetId = 'PX' | 'USDT' | 'BTC' | 'ETH' | 'USDC'
+export type AssetId = 'USDT' | 'BTC' | 'ETH' | 'USDC'
 
 export type Asset = {
   id: AssetId
@@ -28,43 +28,20 @@ export type Asset = {
 }
 
 /**
- * How many PX make one UGX. 100 PX = 1 UGX, so 100,000 PX = 1,000 UGX.
+ * There is no PX and no peg.
  *
- * This was 10:1 until PX became the in-house currency. PX is now *earned*
- * (15,000 a day for logging in) rather than bought, so the peg had to make
- * that a meaningful but not extractive amount: a day's allowance is worth
- * UGX 150, and a month of perfect attendance is UGX 4,500. At 10:1 the same
- * allowance was UGX 1,500 a day, which is a wage rather than a game.
- */
-export const PX_PER_UGX = 100
-
-/** Convert a PX balance into UGX at the platform peg. */
-export function pxToUgx(px: number): number {
-  return Math.floor(Math.max(0, px) / PX_PER_UGX)
-}
-
-/** Convert UGX into PX at the platform peg. */
-export function ugxToPx(ugx: number): number {
-  return Math.round(Math.max(0, ugx) * PX_PER_UGX)
-}
-
-/**
- * Reference UGX rates. PX is pegged at 100 PX = 1 UGX so the in-game coin has a
- * predictable payout value: 100,000 PX cashes out as 1,000 UGX.
+ * The balance is shillings. The only thing this module converts is crypto, which
+ * has a real market rate. Anything that needed a coin-to-fiat rate was PX and has
+ * been deleted rather than left returning 1.
  */
 export const ASSETS: Record<AssetId, Asset> = {
-  // Minimums are in PX and scale with the peg: 50,000 PX was 5,000 UGX at the
-  // old 10:1 rate, so at 100:1 the same UGX floor is 500,000 PX. Leaving it at
-  // 50,000 would let a player cash out UGX 500, under the 1,000 UGX floor
-  // request_cashout enforces, and they would only find out after submitting.
-  PX: { id: 'PX', name: 'ProxiCoin', ugxRate: 1 / PX_PER_UGX, networkFee: 0, min: 500000, step: 100000, decimals: 0, color: '#c6f24e', kind: 'coin' },
   USDT: { id: 'USDT', name: 'Tether', ugxRate: 3780, networkFee: 0.6, min: 2, step: 1, decimals: 2, color: '#26a17b', kind: 'crypto' },
   USDC: { id: 'USDC', name: 'USD Coin', ugxRate: 3778, networkFee: 0.6, min: 2, step: 1, decimals: 2, color: '#2775ca', kind: 'crypto' },
   BTC: { id: 'BTC', name: 'Bitcoin', ugxRate: 356_000_000, networkFee: 0.00004, min: 0.0002, step: 0.0001, decimals: 5, color: '#f7931a', kind: 'crypto' },
   ETH: { id: 'ETH', name: 'Ethereum', ugxRate: 12_400_000, networkFee: 0.0012, min: 0.01, step: 0.005, decimals: 4, color: '#8a92b2', kind: 'crypto' },
 }
 
-export const ASSET_IDS: AssetId[] = ['PX', 'USDT', 'USDC', 'BTC', 'ETH']
+export const ASSET_IDS: AssetId[] = ['USDT', 'USDC', 'BTC', 'ETH']
 
 /** Mobile money payout fee tiers, as a fraction of the payout. */
 export const RAIL_FEE = 0.01
@@ -154,8 +131,8 @@ export type ExchangeOrder = {
 
 const B32 = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
 export function depositAddress(asset: AssetId): string {
-  let out = asset === 'PX' ? 'PX' : asset === 'BTC' ? 'bc1q' : '0x'
-  const len = asset === 'PX' ? 20 : asset === 'BTC' ? 34 : 38
+  let out = asset === 'BTC' ? 'bc1q' : '0x'
+  const len = asset === 'BTC' ? 34 : 38
   for (let i = 0; i < len; i++) out += B32[Math.floor(Math.random() * B32.length)]
   return out
 }

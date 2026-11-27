@@ -9,7 +9,7 @@ for the next.
 > lockdown are verified against the live database.
 >
 > Still outstanding: Vercel env vars (step 4), Google OAuth credentials (step 2),
-> your admin flag (step 5). No real DGateway call has ever succeeded, so step 7
+> your admin flag (step 5). No real ZENGAPAY call has ever succeeded, so step 7
 > is not optional.
 
 ---
@@ -204,55 +204,56 @@ under Authentication → Settings → SMTP.
 
 ---
 
-## 3. DGateway settings — this is the part you asked about
+## 3. ZENGAPAY settings — this is the part you asked about
 
-DGateway → **My Apps → Settings**, and the FloatBet product.
+ZENGAPAY Dashboard → **Account Settings → Developer Settings**.
 
-### 3a. App-level settings
-
-| Field | Value |
-|---|---|
-| **Webhook URL** | `https://shoppa-sigma.vercel.app/api/webhooks/dgateway-store` |
-| **API key** | the `dgw_live_…` key — copy it once, it goes into Vercel in step 4 |
-
-⚠️ Note `/dgateway-store`, **not** `/dgateway`. The plain `/dgateway` path expects
-the flat API payload (`{reference, status}`) and will return **404** on a hosted
-store cart, which means **no credit and no error the buyer can see**.
-
-If DGateway only offers one webhook field per app rather than per product, set it
-to `/api/webhooks/dgateway-store`. The floatbet product is the only one using
-this store.
-
-### 3b. Success / return URL
+### 3a. Webhook
 
 | Field | Value |
 |---|---|
-| **Success redirect** | `https://shoppa-sigma.vercel.app/#topup-success` |
+| **Webhook URL** | `https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/webhooks-zengapay` |
+| **Secret Hash** | a long random string — put the same value in `ZENGAPAY_WEBHOOK_SECRET` |
+| **Enable webhooks** | on |
 
-This is **cosmetic**. It is not a security boundary and nothing credits on it.
-If DGateway has no such field, skip it — the webhook still credits and the player
-can reach `#topup-success` any time.
+The URL must be `https`, publicly reachable, and answer `200`/`201`/`202`. It is
+set **here, once** — ZENGAPAY does not take a callback URL per request, so
+nothing in the code can register it for you.
 
-### 3c. The FloatBet deposit product
+⚠️ If this points at the old `shoppa-sigma.vercel.app/api/webhooks/…` path,
+payments will be taken and **nothing will credit**. That is the single
+most expensive misconfiguration on this page.
+
+### 3b. API token
 
 | Field | Value |
 |---|---|
-| Store slug | `floatbet` |
-| Product slug | any, e.g. `floatbet-topup` — it is recorded, not matched |
-| Price | **UGX**, whole numbers only (mobile money has no sub-unit) |
-| Currency | `UGX` |
-| Quantity | limit to 1–10 (the webhook rejects anything else) |
+| **API key** | the `ZPYPUBK-…` token from **Settings → API Settings** |
 
-**Critical:** at checkout the buyer must enter **the same email they registered
-with**. That email is the only thing tying the payment to an account. If they
-type a different one, the payment is *parked*, not credited — recoverable from
-the admin queue, but only by a human.
+Sandbox and production tokens are different keys. Using the sandbox token
+against `api.zengapay.com` returns `401` (the error body names the environment),
+and vice versa.
 
-### 3d. Two webhooks, if DGateway requires one per product
+### 3c. IP whitelisting — needed for withdrawals only
 
-If you keep the in-app `/api/collect` rail alive as a fallback, those payments go
-to `/api/webhooks/dgateway` and the store ones to `/api/webhooks/dgateway-store`.
-Both can be registered; they do not conflict.
+| Field | Value |
+|---|---|
+| **Allowed IPs** | Supabase's egress IPs |
+
+**Transfers (payouts) require the calling IP to be whitelisted.** Collections do
+not. If top-ups work and every withdrawal fails with `401`/`403`, this is why —
+not the token. Check the current egress address in the Supabase dashboard; it is
+not stable across all plans, so re-check after any platform network change.
+
+### 3d. No store product, no per-product email matching
+
+ZENGAPAY has no hosted-store cart. Two consequences, both simplifications:
+
+* There is no store slug to configure and no "buyer must use their account
+  email" rule — the player is signed in when they top up, and the order is keyed
+  on their own `order_id`, so the weaker email-matching path is no longer used.
+* Hosted checkout, if enabled, is created per-session from the server
+  (`/v1/checkout/sessions`) and returns to `APP_URL`. Nothing to configure.
 
 ---
 
@@ -277,22 +278,20 @@ Set these in **Project → Settings → Environment Variables**, for
 
 | Key | Value | Notes |
 |---|---|---|
-| `DGATEWAY_API_URL` | `https://dgatewayapi.desispay.com` | |
-| `DGATEWAY_API_KEY` | `dgw_live_…` | **sensitive**, server only |
-| `DGATEWAY_WEBHOOK_SECRET` | from DGateway | **required in live mode** — without it every collect/disburse returns 503 `WEBHOOK_SECRET_MISSING` and charges nothing |
-| `DGATEWAY_STORE_SLUG` | `floatbet` | rejects payments from another shop |
-| `APP_URL` | `https://shoppa-sigma.vercel.app` | builds the `callback_url` |
+| `ZENGAPAY_API_URL` | `https://api.zengapay.com/v1` | sandbox: `https://api.sandbox.zengapay.com/v1` |
+| `ZENGAPAY_API_TOKEN` | `ZPYPUBK-…` | **sensitive**, server only |
+| `ZENGAPAY_WEBHOOK_SECRET` | the Secret Hash | **required in live mode** — without it every collect/disburse/checkout returns 503 `WEBHOOK_SECRET_MISSING` and charges nothing |
+| `APP_URL` | `https://shoppa-sigma.vercel.app` | builds checkout return URLs |
 | `SUPABASE_URL` | `https://dtroufrfavmjldtlprpn.supabase.co` | |
 | `SUPABASE_SERVICE_ROLE_KEY` | service_role key | **sensitive**, server only |
 | `VITE_SUPABASE_URL` | `https://dtroufrfavmjldtlprpn.supabase.co` | public, shipped to browser |
 | `VITE_SUPABASE_ANON_KEY` | anon key | public, shipped to browser |
-| `VITE_DGATEWAY_STORE_URL` | `https://dgatewayadmin.desispay.com/store/shop/floatbet?products` | public URL only, no key. Set to `off` to use the in-app rail |
 
 **Rules that are not negotiable:**
 
 1. Anything secret gets **no** `VITE_` prefix. A `VITE_` variable is compiled into
    the JavaScript bundle and readable by anyone.
-2. `DGATEWAY_API_KEY` and `SUPABASE_SERVICE_ROLE_KEY` go in as **Sensitive**.
+2. `ZENGAPAY_API_TOKEN` and `SUPABASE_SERVICE_ROLE_KEY` go in as **Sensitive**.
 3. After adding variables, **redeploy**. Existing deployments keep the old env.
 
 **Automated helper.**
@@ -369,7 +368,7 @@ for T in production preview; do
   printf %s "$ANON"                             | vercel env add VITE_SUPABASE_ANON_KEY      $T --force
   printf %s "https://$PROJECT_REF.supabase.co" | vercel env add SUPABASE_URL                $T --force
   printf %s "$SITE"                             | vercel env add APP_URL                     $T --force
-  printf %s "off"                               | vercel env add VITE_DGATEWAY_STORE_URL     $T --force
+  printf %s "https://api.zengapay.com/v1"       | vercel env add ZENGAPAY_API_URL            $T --force
 done
 
 vercel env add SUPABASE_SERVICE_ROLE_KEY production   # paste, mark sensitive
@@ -458,7 +457,7 @@ For 500 UGX you should see **5,000 PX** (10 PX = 1 UGX).
 
 ## 8. What "parked" means, and what to do
 
-A payment lands in `#admin/parked` when DGateway confirmed the money but the
+A payment lands in `#admin/parked` when ZENGAPAY confirmed the money but the
 checkout email matched zero or several accounts.
 
 | `parked_reason` | Meaning | Action |

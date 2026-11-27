@@ -10,20 +10,27 @@ import { Cashout } from '../src/pages/Cashout'
 import { Onboarding } from '../src/pages/Onboarding'
 import { Support } from '../src/pages/Support'
 import { SupportBubble } from '../src/components/SupportBubble'
-import { pxToUgx, ugxToPx, PX_PER_UGX, ASSETS, quote } from '../src/lib/proxicash'
+import { ASSETS, ASSET_IDS, quote } from '../src/lib/proxicash'
+import { MIN_BET, MAX_BET, FREE_PLAY_START, DAILY_BONUS_UGX } from '../src/lib/currency'
 
 const fails: string[] = []
 const ok = (name: string, cond: boolean) => { if (!cond) fails.push(name); console.log(`${cond ? 'ok  ' : 'FAIL'} ${name}`) }
 
-// --- peg maths ---
-ok('PX_PER_UGX is 100', PX_PER_UGX === 100)
-ok('100,000 PX = 1,000 UGX', pxToUgx(100000) === 1000)
-ok('1,000 UGX = 100,000 PX', ugxToPx(1000) === 100000)
-ok('round-trip holds', pxToUgx(ugxToPx(5000)) === 5000)
-ok('PX quote at 100:1', Math.round(quote('PX', 400000).gross) === 4000)
-// The daily login bonus is the number that makes the peg legible. If these two
-// drift apart, the app is promising a reward it does not pay.
-ok('a daily bonus is worth a round UGX figure', pxToUgx(15000) === 150)
+// --- one currency, no peg ---
+//
+// PX is gone. The thing worth asserting is that nothing claims to convert
+// between a coin and fiat any more: a leftover conversion is how a "UGX 1,000"
+// screen quietly shows 10,000.
+ok('there is no PX asset', !(ASSET_IDS as string[]).includes('PX'))
+ok('every asset is crypto', ASSET_IDS.every((id) => ASSETS[id].kind === 'crypto'))
+ok('no asset is pegged to the shilling', ASSET_IDS.every((id) => ASSETS[id].ugxRate > 1))
+ok('a crypto quote is in UGX', Math.round(quote('USDT', 10).gross) === Math.round(10 * ASSETS.USDT.ugxRate))
+
+// Bet bounds and the free-play float are the numbers a player sees promised.
+ok('the minimum bet is whole shillings', Number.isInteger(MIN_BET) && MIN_BET === 100)
+ok('the maximum bet is above the minimum', MAX_BET > MIN_BET)
+ok('free play starts with a usable float', FREE_PLAY_START >= MIN_BET * 100)
+ok('the daily bonus is a round UGX figure', Number.isInteger(DAILY_BONUS_UGX) && DAILY_BONUS_UGX > 0)
 
 // --- render without a backend ---
 const wrap = (n: React.ReactNode) => (
@@ -90,8 +97,10 @@ const bar = renderToString(wrap(<PlayBar bet={1000} onBet={() => {}} onSpin={() 
 for (const label of ['Balance', 'Last win', 'Bet', 'Auto', 'Spin']) {
   ok(`PlayBar shows "${label}"`, bar.includes(label))
 }
-// The PlayBar quotes stake size in UGX at the live peg, not a hardcoded ratio.
-ok('PlayBar shows UGX conversion', /\d[\d,]* UGX/.test(bar))
+// Every amount the PlayBar prints is labelled shillings — there is no second
+// currency and no conversion left to be wrong.
+ok('PlayBar labels its amounts UGX', /UGX [\d,]/.test(bar))
+ok('PlayBar prints no PX amount', !/\bPX\b/.test(bar))
 
 // --- auth screen requirements ---
 const authHtml = renderToString(wrap(<Auth />) as any)

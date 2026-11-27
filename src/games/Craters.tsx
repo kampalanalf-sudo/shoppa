@@ -343,7 +343,7 @@ export function Craters({ id, onBack, onFair }: Props) {
         >
           <p className="text-[11.5px] font-bold">
             {outcome.total > 0
-              ? `You won ${money(bet * outcome.total)} PX · ${outcome.total}×${
+              ? `You won $UGX {money(bet * outcome.total)} · ${outcome.total}×${
                   outcome.roundMultiplier > 1 ? ` (${outcome.roundMultiplier}× round)` : ''
                 }`
               : 'No win this spin — the crates are still out there'}

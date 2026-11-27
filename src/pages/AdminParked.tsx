@@ -97,7 +97,7 @@ export function AdminParked({ onHome }: { onHome: () => void }) {
         })
         setNote(
           action === 'release'
-            ? `Released ${money(body.px ?? 0)} PX — new balance ${money(body.balance ?? 0)} PX.`
+            ? `Released UGX ${money(body.px ?? 0)} — new balance UGX ${money(body.balance ?? 0)}.`
             : 'Dismissed. This payment will never be credited.',
         )
         setOpenRef(null)
@@ -221,7 +221,7 @@ export function AdminParked({ onHome }: { onHome: () => void }) {
                         ×{row.quantity}
                       </span>
                     )}
-                    <span className="text-[10px] text-neon-lime">≈ {money(px)} PX</span>
+                    <span className="text-[10px] text-neon-lime">UGX {money(px)}</span>
                   </div>
                   <p className="truncate text-[10.5px] text-slate-500">
                     {row.buyer_email || 'no email'} · {row.product_slug || 'unknown product'}
@@ -297,7 +297,7 @@ export function AdminParked({ onHome }: { onHome: () => void }) {
                                 onClick={() => void act(row, 'release', a.id)}
                                 className="btn-primary shrink-0 !px-2.5 !py-1 !text-[10.5px] disabled:opacity-40"
                               >
-                                {busy ? '…' : `Release ${money(px)} PX`}
+                                {busy ? '…' : `Release UGX ${money(px)}`}
                               </button>
                             </div>
                           ))}

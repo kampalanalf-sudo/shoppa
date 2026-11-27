@@ -23,8 +23,8 @@ import { CORS, json, readEnv } from '../_shared/http.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
 import {
   GatewayError, assertLiveSafety, collectPayment, disbursePayment, fetchTransactionStatus,
-  isWholeAmount, normalizeCurrency, normalizePhone, normalizeStatus,
-} from '../_shared/dgateway.ts'
+  isWholeAmount, normalizeCurrency, normalizePhone, normalizeStatus, createCheckoutSession,
+} from '../_shared/zengapay.ts'
 
 /** Env var, trimmed. Missing becomes '' and never the string "undefined". */
 const env = (key: string) => readEnv(key)
@@ -58,7 +58,11 @@ async function requireUser(req: Request): Promise<{ id: string } | null> {
   return { id: data.user.id }
 }
 
-const publicOrigin = (req: Request) => {
+/**
+ * The public origin of the app, for the URLs ZENGAPAY sends the player back to.
+ * APP_URL wins; otherwise derive it from the request.
+ */
+const appOrigin = (req: Request) => {
   const app = env('APP_URL')
   if (app) return app.replace(/\/$/, '')
   const u = new URL(req.url)
@@ -100,12 +104,15 @@ async function collect(req: Request, userId: string) {
   const description = String(body.description || `FloatBet top-up ${orderId}`).slice(0, 120).trim()
 
   try {
+    // ZENGAPAY takes the webhook URL from its dashboard, not from the request,
+    // so there is nothing to pass here. `order_id` becomes external_reference,
+    // which is what makes a repeated request reject rather than charge twice.
     const tx = await collectPayment({
       amount,
       currency,
       phone_number: phone,
       description,
-      callback_url: `${publicOrigin(req)}/functions/v1/webhooks-dgateway`,
+      order_id: orderId,
     })
 
     // Best-effort record: a missing row must not fail a charge the provider has
@@ -172,7 +179,7 @@ async function disburse(req: Request, userId: string) {
   const cashoutId = typeof body.cashoutId === 'string' ? body.cashoutId : null
 
   try {
-    const tx = await disbursePayment({ amount, currency, phone_number: phone, description })
+    const tx = await disbursePayment({ amount, currency, phone_number: phone, description, order_id: orderId })
 
     try {
       await serviceClient().rpc('record_disburse', {
@@ -198,6 +205,75 @@ async function disburse(req: Request, userId: string) {
       orderId,
       message: 'Payout submitted. It usually lands within a minute.',
     })
+  } catch (e) {
+    const err = e as GatewayError
+    return json({ error: err.message, code: err.code }, err.httpStatus || 502)
+  }
+}
+
+// -------------------------------------------------------------- checkout ---
+
+/**
+ * Start a hosted checkout session.
+ *
+ * Same money rules as `collect`, but the player pays on ZENGAPAY's page
+ * instead of approving a prompt on their own phone. This is what replaced the
+ * DGateway storefront: no per-merchant store URL to configure, and the secret
+ * stays on the server.
+ */
+async function checkout(req: Request, userId: string) {
+  const body = await req.json().catch(() => null) as Record<string, unknown> | null
+  if (!body) return json({ error: 'invalid JSON body' }, 400)
+
+  try { assertLiveSafety() } catch (e) {
+    const err = e as GatewayError
+    return json({ error: err.message, code: err.code }, err.httpStatus)
+  }
+
+  const currency = normalizeCurrency(body.currency || 'UGX')
+  if (currency !== 'UGX') return json({ error: 'Only UGX top-ups are supported.' }, 400)
+
+  const amount = body.amount
+  if (!isWholeAmount(amount)) {
+    return json({ error: 'amount must be a whole positive integer' }, 400)
+  }
+  if (amount < MIN_COLLECT) {
+    return json({ error: `Minimum top-up is ${MIN_COLLECT.toLocaleString()} ${currency}.` }, 400)
+  }
+
+  const orderId = String(body.orderId || '').trim() || `TOP-${Date.now().toString(36).toUpperCase()}`
+  const origin = appOrigin(req)
+  // The provider substitutes CHECKOUT_SESSION_ID; without the placeholder the
+  // return URL cannot identify the session.
+  const back = `${origin}/#topup-success?session=CHECKOUT_SESSION_ID`
+
+  try {
+    const session = await createCheckoutSession({
+      amount,
+      order_id: orderId,
+      narration: `FloatBet top-up ${orderId}`,
+      return_url: back,
+      cancel_url: `${origin}/#topup-cancelled`,
+    })
+
+    // Record the SESSION id as the reference: it exists before the payment
+    // does, so the order can be looked up while the player is still paying.
+    // The webhook later resolves the transaction and credits through it.
+    try {
+      await serviceClient().rpc('record_collect', {
+        p_user: userId,
+        p_order: orderId,
+        p_reference: session.id,
+        p_amount: amount,
+        p_currency: currency,
+        p_phone: null,
+        p_provider: 'ZENGAPAY_CHECKOUT',
+      })
+    } catch (e) {
+      console.error('record_collect (checkout) failed', (e as Error).message)
+    }
+
+    return json({ sessionId: session.id, url: session.url, orderId, helper: 'checkout' })
   } catch (e) {
     const err = e as GatewayError
     return json({ error: err.message, code: err.code }, err.httpStatus || 502)
@@ -248,7 +324,16 @@ async function status(url: URL) {
   let pending = inflight.get(reference)
   if (!pending) {
     pending = (async (): Promise<StatusPayload> => {
-      const tx = await fetchTransactionStatus(reference)
+      // A payout is a /transfers object and a top-up is a /collections object;
+      // asking the wrong one 404s. The order row says which it is.
+      const { data: orderRow } = await serviceClient()
+        .from('payment_orders')
+        .select('direction')
+        .eq('reference', reference)
+        .limit(1)
+        .maybeSingle()
+      const direction = orderRow?.direction === 'disburse' ? 'disburse' : 'collect'
+      const tx = await fetchTransactionStatus(reference, direction)
       const payload: StatusPayload = {
         reference,
         status: normalizeStatus(tx.status),
@@ -343,6 +428,7 @@ Deno.serve(async (req) => {
       if (op === 'collect') return await collect(req, user.id)
       if (op === 'disburse') return await disburse(req, user.id)
       if (op === 'claim') return await claim(req)
+      if (op === 'checkout') return await checkout(req, user.id)
       return json({ error: 'unknown operation' }, 400)
     }
     return json({ error: 'method not allowed' }, 405)

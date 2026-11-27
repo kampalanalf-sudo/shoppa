@@ -77,7 +77,7 @@ export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       setLevel(LEVELS)
       setActive(false)
       if (sound) sfx.bigwin()
-      toast({ kind: 'win', title: 'Tower cleared!', body: `+${money(pay)} PX — top floor reached.` })
+      toast({ kind: 'win', title: 'Tower cleared!', body: `+$UGX {money(pay)} — top floor reached.` })
     } else {
       setLevel((l) => l + 1)
     }
@@ -91,7 +91,7 @@ export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       if (currentMult >= 5) sfx.bigwin()
       else sfx.cashout()
     }
-    toast({ kind: 'win', title: `Cashed out ${mult(currentMult)}`, body: `+${money(pay)} PX secured.` })
+    toast({ kind: 'win', title: `Cashed out ${mult(currentMult)}`, body: `+$UGX {money(pay)} secured.` })
   }
 
   const reset = () => { setActive(false); setCrashed(null); setPicked([]); setLevel(0) }
@@ -123,7 +123,7 @@ export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => vo
             </div>
           </div>
           {active ? (
-            <BetButton onClick={cashout} disabled={level === 0} sub={`${money(potential)} PX`}>
+            <BetButton onClick={cashout} disabled={level === 0} sub={`$UGX {money(potential)}`}>
               Cash out {mult(currentMult)}
             </BetButton>
           ) : (
@@ -160,7 +160,7 @@ export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => vo
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">UGX</span>
           </div>
           {active ? (
             <button type="button" onClick={cashout} disabled={level === 0} className="btn-danger h-10 flex-1 !text-[13px]">

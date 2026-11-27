@@ -111,7 +111,7 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
         toast({
           kind: 'error',
           title: 'Faith appeared',
-          body: `${out.omenCount} witch symbols — fined ${out.fine}× (${money(bet * out.fine)} PX).`,
+          body: `${out.omenCount} witch symbols — fined ${out.fine}× ($UGX {money(bet * out.fine)}).`,
         })
       } else if (out.triggered) {
         setGlow('free')
@@ -294,9 +294,9 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
         >
           <p className="text-[11.5px] font-bold">
             {outcome.fine > 0
-              ? `Faith fined you ${outcome.fine}× — ${money(bet * outcome.fine)} PX`
+              ? `Faith fined you ${outcome.fine}× — $UGX {money(bet * outcome.fine)}`
               : outcome.totalMultiplier > 0
-                ? `You won ${money(bet * outcome.totalMultiplier)} PX · ${outcome.totalMultiplier}×`
+                ? `You won $UGX {money(bet * outcome.totalMultiplier)} · ${outcome.totalMultiplier}×`
                 : 'No win this spin'}
           </p>
         </div>

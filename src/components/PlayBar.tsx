@@ -66,7 +66,7 @@ export function PlayBar({
   label,
   sub,
 }: PlayBarProps) {
-  const { balance, balanceHidden } = useStore()
+  const { balanceHidden, mode, playBalance } = useStore()
   const locked = disabled || spinning || freeSpins > 0
 
   const step = (d: number) => {
@@ -82,10 +82,10 @@ export function PlayBar({
         {/* readouts */}
         <div className="flex min-w-0 flex-1 gap-1.5">
           <Stat
-            label="Balance"
-            value={balanceHidden ? '••••••' : `${money(balance)} PX`}
-            accent="text-white"
-            hint={balanceHidden ? undefined : `≈ ${money(Math.round(balance / 10))} UGX`}
+            label={mode === 'free' ? 'Free credits' : 'Balance'}
+            value={balanceHidden ? '••••••' : `UGX ${money(playBalance)}`}
+            accent={mode === 'free' ? 'text-amber-200' : 'text-white'}
+            hint={mode === 'free' ? 'not real money' : undefined}
           />
           <Stat
             label={spinning ? 'Spinning' : freeSpins > 0 ? 'Free spins' : 'Last win'}
@@ -101,7 +101,7 @@ export function PlayBar({
             accent={spinning ? 'text-slate-500' : freeSpins > 0 ? 'text-neon-cyan' : winTone}
             hint={
               !spinning && freeSpins === 0 && lastWin > 0
-                ? `${money(Math.round(bet * lastWin))} PX`
+                ? `UGX ${money(Math.floor(bet * lastWin))}`
                 : undefined
             }
           />
@@ -129,7 +129,7 @@ export function PlayBar({
                 aria-label="Bet amount"
                 className="num w-[68px] bg-transparent text-center text-[14px] font-black text-white focus:outline-none disabled:opacity-60"
               />
-              <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
+              <span className="text-[9px] font-bold text-neon-lime/70">UGX</span>
             </div>
           </div>
           <button

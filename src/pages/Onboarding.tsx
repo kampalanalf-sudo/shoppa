@@ -67,7 +67,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
       <div className="mb-4 text-center">
         <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-neon-lime/30 bg-neon-lime/10 px-3 py-1">
           <span className="text-[10px] font-black uppercase tracking-[.16em] text-neon-lime">
-            {money(wallet?.balance_px ?? 0)} PX granted
+            UGX {money(wallet?.balance_px ?? 0)} granted
           </span>
         </div>
         <h1 className="text-[22px] font-black text-white">Finish setting up</h1>

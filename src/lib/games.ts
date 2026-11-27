@@ -195,11 +195,12 @@ export const GAMES: GameMeta[] = [
 
 export const gameById = (id: string) => GAMES.find((g) => g.id === id)
 
+/** Demo rows for the win ticker. Amounts are whole shillings, like a real win. */
 export const LIVE_WINS = [
-  { user: 'Nakato_UG', game: 'Lift Off', mult: 842.19, amount: 8421.9 },
+  { user: 'Nakato_UG', game: 'Lift Off', mult: 842.19, amount: 8422 },
   { user: 'zeroCool', game: 'Float Plinko', mult: 1000, amount: 5000 },
   { user: 'KampalaKid', game: 'Deep Mines', mult: 64.5, amount: 3225 },
-  { user: 'moon_vault', game: 'High Limbo', mult: 155.02, amount: 1550.2 },
+  { user: 'moon_vault', game: 'High Limbo', mult: 155.02, amount: 1550 },
   { user: 'Achieng', game: 'Sky Tower', mult: 44.1, amount: 2205 },
   { user: 'betKing_256', game: 'Fortune Wheel', mult: 50, amount: 1250 },
   { user: 'slyfox', game: 'Precision Dice', mult: 24.75, amount: 990 },

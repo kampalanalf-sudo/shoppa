@@ -427,7 +427,7 @@ distribution country for that category, and Play requires country-by-country
 approval. Sideloading the APK or going through a licensed distributor avoids
 that, and both carry the compliance problem in section 4.
 
-**Payments inside the WebView.** The store flow navigates to DGateway's hosted
+**Payments inside the WebView.** The hosted flow navigates to ZENGAPAY's
 page. Android WebView handles it, but a mobile-money prompt needs the phone's
 browser to reach the telco USSD flow reliably — test this on a real device
 before taking money through the APK.

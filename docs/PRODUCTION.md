@@ -55,7 +55,7 @@ paste the client ID and secret into Supabase.
 Phone*. Supabase needs an SMS provider — Twilio, MessageBird, Vonage or Textlocal.
 Ugandan numbers work; expect roughly UGX 100–200 per OTP.
 
-## 4. DGateway secrets
+## 4. ZENGAPAY secrets
 
 These are server-side only. Set them as **edge function secrets**, never in
 `.env`:
@@ -64,7 +64,7 @@ These are server-side only. Set them as **edge function secrets**, never in
 supabase secrets set \
   DGATEWAY_API_KEY=... \
   DGATEWAY_WEBHOOK_SECRET=... \
-  DGATEWAY_API_URL=https://dgatewayapi.desispay.com \
+  ZENGAPAY_API_URL=https://api.zengapay.com/v1 \
   DGATEWAY_ALLOW_TEST_PAYMENTS=false \
   APP_URL=https://shoppa-sigma.vercel.app
 ```
@@ -83,10 +83,10 @@ supabase functions deploy cashout-status
 
 `cashout` and `cashout-status` verify the caller's JWT. `cashout-webhook` is
 public by necessity, so it authenticates by HMAC signature and then re-fetches
-the transaction from DGateway before releasing money. It **fails closed** if
+the transaction from ZENGAPAY before releasing money. It **fails closed** if
 `DGATEWAY_WEBHOOK_SECRET` is unset.
 
-Register the webhook URL in the DGateway dashboard:
+Register the webhook URL in the ZENGAPAY dashboard (Developer Settings):
 
 ```
 https://<ref>.supabase.co/functions/v1/cashout-webhook

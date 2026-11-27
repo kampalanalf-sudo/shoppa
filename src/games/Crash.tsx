@@ -173,11 +173,11 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
           </div>
 
           {phase === 'running' && !cashedAt ? (
-            <BetButton variant="danger" onClick={cashout} sub={`${money(potential)} PX`}>
+            <BetButton variant="danger" onClick={cashout} sub={`$UGX {money(potential)}`}>
               Cash out {mult(m)}
             </BetButton>
           ) : (
-            <BetButton onClick={() => void play()} loading={false} sub={cashedAt ? `Won ${money(payout)} PX` : 'Space to launch'}>
+            <BetButton onClick={() => void play()} loading={false} sub={cashedAt ? `Won $UGX {money(payout)}` : 'Space to launch'}>
               {phase === 'crashed' ? 'Next round' : phase === 'cashed' ? 'Play again' : 'Place bet'}
             </BetButton>
           )}
@@ -192,7 +192,7 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
             <div className="animate-popIn rounded-xl border border-neon-lime/30 bg-neon-lime/10 px-3 py-2 text-center">
               <p className="text-[10px] uppercase tracking-wider text-neon-lime/70">Cashed out</p>
               <p className="num text-xl font-black text-neon-lime">{mult(cashedAt)}</p>
-              <p className="num text-[11px] text-slate-300">+{money(payout)} PX</p>
+              <p className="num text-[11px] text-slate-300">+UGX {money(payout)}</p>
             </div>
           )}
           <div className="space-y-1.5">
@@ -231,7 +231,7 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">UGX</span>
           </div>
           {phase === 'running' && !cashedAt ? (
             <button type="button" onClick={cashout} className="btn-danger h-10 flex-1 !text-[13px]">
@@ -317,7 +317,7 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
 
       <div className="mt-2 flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
         <span className="text-[11px] text-slate-500">Potential payout</span>
-        <span className="num text-[13px] font-bold text-neon-lime">{money(potential)} PX</span>
+        <span className="num text-[13px] font-bold text-neon-lime">UGX {money(potential)}</span>
       </div>
     </GameShell>
   )

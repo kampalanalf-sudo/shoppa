@@ -7,7 +7,7 @@
 //
 // A deployed Supabase Edge Function is a single module. The Management API takes
 // one `body` string, and the CLI does not follow relative imports either, so
-// `import { x } from '../_shared/dgateway.ts'` cannot resolve once uploaded.
+// `import { x } from '../_shared/zengapay.ts'` cannot resolve once uploaded.
 //
 // Copying the shared clients into every function by hand is how two webhook
 // handlers drift apart until one of them stops verifying signatures. So the
@@ -15,7 +15,7 @@
 // order, exactly once each:
 //
 //   _shared/http.ts      leaf — CORS, json, preflight, readEnv
-//   _shared/dgateway.ts  imports http.ts (not yet, but allowed)
+//   _shared/zengapay.ts  imports http.ts (not yet, but allowed)
 //   _shared/oddsfeed.ts  leaf
 //
 // The output is generated and git-ignored. Never edit it.

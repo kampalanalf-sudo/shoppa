@@ -26,7 +26,7 @@ function AssetBadge({ id, size = 34 }: { id: AssetId; size?: number }) {
       className="grid shrink-0 place-items-center rounded-full font-black text-ink-950"
       style={{ width: size, height: size, background: a.color, fontSize: size * 0.34 }}
     >
-      {id === 'PX' ? 'PX' : id.slice(0, 1)}
+      {id.slice(0, 1)}
     </span>
   )
 }
@@ -47,7 +47,7 @@ export function ProxiCash({ onBack }: Props) {
   const phoneOk = validPhone(phone)
   const a = ASSETS[asset]
 
-  const canSubmit = phoneOk && !q.tooSmall && sendNum > 0 && (direction === 'in' || asset !== 'PX' || sendNum <= balance)
+  const canSubmit = phoneOk && !q.tooSmall && sendNum > 0
 
   const submit = () => {
     if (!canSubmit || !rail) {
@@ -93,7 +93,7 @@ export function ProxiCash({ onBack }: Props) {
       {/* balance strip */}
       <div className="mb-3 grid gap-2 sm:grid-cols-3">
         {[
-          { l: 'ProxiCoin balance', v: `${money(balance)} PX`, c: 'text-neon-lime' },
+          { l: 'UGX balance', v: `UGX ${money(balance)}`, c: 'text-neon-lime' },
           { l: 'Payout fee', v: `${(RAIL_FEE * 100).toFixed(1)}%`, c: 'text-white' },
           { l: 'Networks', v: '5 assets', c: 'text-white' },
         ].map((s) => (
@@ -124,7 +124,7 @@ export function ProxiCash({ onBack }: Props) {
           <div className="panel p-4">
             {/* direction */}
             <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-ink-900/80 p-1">
-              {([['out', 'Crypto → MoMo'], ['in', 'Buy ProxiCoin']] as const).map(([k, label]) => (
+              {([['out', 'Crypto → MoMo'], ['in', 'Top up']] as const).map(([k, label]) => (
                 <button
                   key={k}
                   type="button"
@@ -167,7 +167,7 @@ export function ProxiCash({ onBack }: Props) {
               <button
                 type="button"
                 onClick={() => {
-                  if (asset === 'PX') setSend(String(Math.floor(balance)))
+                  if (asset === 'USDT') setSend(String(Math.floor(balance / ASSETS.USDT.ugxRate)))
                   else setSend(String(Math.round(q.net / a.ugxRate)))
                   sfx.click()
                 }}
@@ -211,7 +211,7 @@ export function ProxiCash({ onBack }: Props) {
               onClick={submit}
               className="btn-primary mt-3 w-full !py-3"
             >
-              {direction === 'in' ? 'Buy ProxiCoin' : `Send & receive UGX ${money(q.net)}`}
+              {direction === 'in' ? 'Fund in UGX' : `Send & receive UGX ${money(q.net)}`}
               <IconArrowUpRight size={15} />
             </button>
             <p className="mt-2 text-center text-[10px] text-slate-600">

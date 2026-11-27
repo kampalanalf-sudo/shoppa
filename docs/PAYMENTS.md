@@ -1,254 +1,206 @@
-# DGateway payments
+# ZENGAPAY payments
 
-> **Current key is LIVE (`dgw_live_...`).** Real money moves. Read
-> "Live-mode guards" below before deploying.
+> **Real money moves.** Read "Live-mode guards" and "IP whitelisting" below
+> before deploying.
 
-Three server functions under `/api` plus the webhook receiver. The API key lives
-**only** in server env and is never bundled into the browser — verified by
-grepping `dist/` for the key.
+All payment traffic goes through one shared client,
+`supabase/functions/_shared/zengapay.ts`, and runs as Supabase Edge Functions.
+The API token lives **only** in function secrets and is never bundled into the
+browser.
 
 | Route | Method | Purpose |
 |---|---|---|
-| `/api/collect` | POST | Charge a customer (top-up). Opens the mobile-money prompt. |
-| `/api/disburse` | POST | Pay a customer out (withdrawal) to any MTN/Airtel number. |
-| `/api/status?reference=` | GET | Status proxy the client polls every 10s. |
-| `/api/topup/claim` | POST | Recover a hosted-store top-up by its reference. |
-| `/api/webhooks/dgateway` | POST | Receiver: verifies the signature, credits the order. |
+| `?op=collect` on `pay` | POST | Charge a customer (top-up). Opens the mobile-money prompt. |
+| `?op=disburse` on `pay` | POST | Pay a customer out (withdrawal). |
+| `?op=checkout` on `pay` | POST | Create a hosted checkout session, return its URL. |
+| `?op=status` on `pay` | GET | Status proxy the client polls every 10s. |
+| `?op=claim` on `pay` | POST | Recover a hosted top-up by its reference. |
+| `webhooks-zengapay` | POST | Receiver: verifies the signature, credits the order. |
+| `webhooks-zengapay-store` | POST | Same, kept for the old store URL. |
 
-### One function, four operations
-
-Those four routes are **not** four files. They are operations on `api/pay.ts`:
-
-```
-/api/collect      -> /api/pay?op=collect
-/api/disburse     -> /api/pay?op=disburse
-/api/status       -> /api/pay?op=status
-/api/topup/claim  -> /api/pay?op=claim
-```
-
-The Hobby plan allows 12 Serverless Functions per deployment and the project
-reached 16. Vercel does **not** fail the build in that case: the build goes
-green, the deployment fails at `patchBuild` with
-`exceeded_serverless_functions_per_deployment`, and production quietly keeps
-serving the previous commit. That happened three deploys in a row.
-
-So the paths above are rewrites (see `vercel.json`), and every caller and every
-existing URL is unchanged. Add a payment operation by extending `api/pay.ts` and
-adding a rewrite — **never** by adding a file. `npm run test:deploy` fails the
-build if the function count crosses the limit or a rewrite points at a function
-that no longer exists.
+The browser still calls the friendly paths (`/api/collect`, `/api/status`, …);
+`src/lib/backend.ts` maps them onto those functions. One mapping table, one
+place to keep honest.
 
 ---
 
 ## Environment variables
 
-Set these in **Vercel → Project → Settings → Environment Variables**. Never
-prefix them with `VITE_`.
+Set these as **Supabase Edge Function secrets** (`supabase secrets set`) — not in
+the browser, and never with a `VITE_` prefix.
 
 | Name | Value |
 |---|---|
-| `DGATEWAY_API_URL` | `https://dgatewayapi.desispay.com` |
-| `DGATEWAY_API_KEY` | your `dgw_...` key |
-| `DGATEWAY_WEBHOOK_SECRET` | the webhook signing secret from DGateway |
-| `APP_URL` | `https://shoppa-sigma.vercel.app` (used to build `callback_url`) |
+| `ZENGAPAY_API_URL` | `https://api.zengapay.com/v1` (sandbox: `https://api.sandbox.zengapay.com/v1`) |
+| `ZENGAPAY_API_TOKEN` | your `ZPYPUBK-…` token from Dashboard → Settings → API Settings |
+| `ZENGAPAY_WEBHOOK_SECRET` | the **Secret Hash** from Dashboard → Developer Settings |
+| `APP_URL` | `https://shoppa-sigma.vercel.app` (used to build checkout return URLs) |
 | `SUPABASE_URL` | `https://<ref>.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | service role key — **server only** |
 
-`DGATEWAY_WEBHOOK_SECRET` is **required in live mode**. See the guards below.
+`ZENGAPAY_WEBHOOK_SECRET` is **required in live mode**. See the guards below.
+
+**Sandbox and production keys are separate.** Using one against the other
+returns `401` with a `data.env` field, and `isLiveMode()` treats "pointed at
+sandbox" as non-live so the strict guards can relax for local work.
 
 ## Live-mode guards
 
-`isLiveMode()` is true when `DGATEWAY_API_KEY` starts with `dgw_live_`. In that
-state the server refuses to take money unless it can verify the result:
+In live mode the server refuses to take money unless it can verify the result:
 
 | Guard | Behaviour |
 |---|---|
-| `assertLiveSafety()` | Live key + no `DGATEWAY_WEBHOOK_SECRET` => `/api/collect` and `/api/disburse` return **503 `WEBHOOK_SECRET_MISSING`** and **no charge is attempted**. |
+| `assertLiveSafety()` | Live + no `ZENGAPAY_WEBHOOK_SECRET` ⇒ collect / disburse / checkout return **503 `WEBHOOK_SECRET_MISSING`** and **no charge is attempted**. |
 | Webhook signature | Always fail-closed. No secret means 401 on every webhook. |
 | Top-up ceiling | 5,000,000 UGX max, 500 UGX min per charge. |
 | Payout ceiling | 2,000,000 UGX max per payout; larger amounts need manual review. |
-| Amount integrity | Webhook re-fetches from DGateway and rejects on amount/currency mismatch. |
+| Amount integrity | Webhook re-fetches from ZENGAPAY and rejects on amount/currency mismatch. |
 
-The reasoning: a live key with an unverifiable webhook is the one combination
-where a player can be charged and never credited. Rather than let that happen
-quietly, payments stop and say why.
+A live token with an unverifiable webhook is the one combination where a player
+can be charged and never credited. Rather than let that happen quietly, payments
+stop and say why.
 
-Sandbox keys (`dgw_test_`) skip only the secret requirement, for local dev.
+## IP whitelisting — required for payouts
 
-## Hosted store mode (active)
+**ZENGAPAY requires the source IP to be whitelisted before it will accept a
+transfer.** Collections work without it; `POST /transfers` returns `401`/`403`
+until the account's "Allowed IPs" list in the dashboard contains the address the
+request comes from.
 
-FloatBet deposit is configured as a **hosted DGateway store product**. The
-buyer pays on DGateway's own page; we only navigate there.
+That address is Supabase's egress IP, not the player's and not yours. If
+withdrawals fail while top-ups succeed, this is the cause — not the token.
 
-| Setting | Value |
-|---|---|
-| Store URL | `VITE_DGATEWAY_STORE_URL` — e.g. `https://dgatewayadmin.desispay.com/store/shop/floatbet?products` |
-| Store slug | `DGATEWAY_STORE_SLUG=floatbet` (payments for another shop are rejected 409) |
-| Webhook URL | `https://shoppa-sigma.vercel.app/api/webhooks/dgateway-store` |
-| Success redirect | `https://shoppa-sigma.vercel.app/#topup-success` |
+## The webhook
 
-### The one real difference from API mode
+Unlike DGateway, the callback URL is **not sent per request**. Set it once:
 
-The hosted store is a page we do not control, so it **cannot carry our
-`order_id`**. The only identity it returns is the buyer's **checkout email**.
+1. Dashboard → Account Settings → **Developer Settings**
+2. Set **Webhook URL** to
+   `https://<project-ref>.supabase.co/functions/v1/webhooks-zengapay`
+3. Set a **Secret Hash** — the same value as `ZENGAPAY_WEBHOOK_SECRET`
+4. Enable webhooks
 
-That makes matching weaker than `order_id`, so the rules are stricter:
+Only `https` URLs are accepted. The endpoint must answer `200`/`201`/`202`; any
+other status is retried up to 3 times, then dropped.
 
-| Situation | What happens |
-|---|---|
-| Email matches exactly one account, payment `completed` | Credited automatically |
-| No email / email not registered | Recorded as `pending`, **not credited** — waits for a claim |
-| Two or more accounts share the email | Recorded as `pending`, **not credited** — needs an admin |
-| Payment `failed` | Final, never credited |
-| Mixed cart (two products) | Rejected 409 before any look-up |
-| Payment for a different store slug | Rejected 409 |
+### Signature
 
-### Claim path
-
-A player whose checkout email differed from their account email pastes the
-DGateway reference from their payment SMS into `#topup-success`.
-
-`POST /api/topup/claim` calls `claim_store_topup`, which:
-
-* is granted to `authenticated` only and takes the user from `auth.uid()` — a
-  caller can never credit a wallet other than their own
-* requires the reference to be unclaimed, `completed` at DGateway, and settled
-* is idempotent: replaying your own claim returns `replay: true`, no double credit
-
-The reference is the shared secret — it appears in the buyer's SMS and nowhere
-public.
-
-### Env for hosted store
-
-Add to Vercel (and `.env.local` for local work):
+`X-ZENGAPAY-SIGNATURE` is **HMAC-SHA256 over three fields concatenated, in
+order, with no separator**:
 
 ```
-VITE_DGATEWAY_STORE_URL=https://dgatewayadmin.desispay.com/store/shop/floatbet?products
-DGATEWAY_STORE_SLUG=floatbet
+transactionReference + msisdn + amount
 ```
 
-`VITE_` means this one *is* shipped to the browser. That is fine — it is a public
-URL, and no key is involved. Set `VITE_DGATEWAY_STORE_URL=off` to fall back to
-the in-app `/api/collect` rail instead.
+It is **not** a signature over the raw request body. Signing the raw body — the
+obvious guess, and what the old DGateway code did — fails every verification, so
+no top-up is ever credited. `verifyWebhookSignature()` in `_shared/zengapay.ts`
+builds the signed string from the parsed `data` object, and compares in constant
+time. Missing fields, a bad header, or an absent secret all return `false`.
 
-### Apply the migration
+### Payload
 
-```
-supabase/migrations/0003_store_topups.sql
-```
-
-Creates `store_topups` plus `apply_store_topup`, `claim_store_topup`,
-`release_store_topup`. Without it the store webhook returns 503 on every call.
-
-## URLs for the DGateway product settings
-
-| Field | Value |
-|---|---|
-| Webhook / callback | `https://shoppa-sigma.vercel.app/api/webhooks/dgateway` |
-| Success redirect | `https://shoppa-sigma.vercel.app/#topup-success` |
-
-The webhook is the one that matters: it is what credits the PX. The success
-redirect is cosmetic. A player who closes the tab after approving the prompt
-still gets credited, which is deliberate — a URL a player can visit must never
-be able to move money.
-
-`#topup-success?reference=DG-...` works too; the page polls that reference and
-shows the confirmed balance.
-
-Configure the product as an **API product**, not a hosted-store product. The
-webhook payloads differ: ours handles the flat `{reference, status}` shape from
-`/v1/payments/*`, while hosted-store sends a cart with `product_id` /
-`product_slug`, which this route will 404 on.
-
-## Registering the webhook
-
-In the DGateway dashboard set the callback URL to:
-
-```
-https://shoppa-sigma.vercel.app/api/webhooks/dgateway
+```json
+{
+  "event": "collection.success",
+  "data": {
+    "transactionReference": "20570a12-…",
+    "transactionStatus": "SUCCEEDED",
+    "amount": "5000",
+    "msisdn": "256392003738",
+    "MNOTransactionReferenceId": "13981886537",
+    "currencyCode": "UGX-MTNMM"
+  }
+}
 ```
 
-The route also sends this same URL on every collect, so it is registered per
-payment too.
+Events: `collection.success`, `collection.failed`, `transfer.success`,
+`transfer.failed`. The `data` object carries no `direction` field, so the
+**event name** decides whether the transaction is re-fetched from `/collections`
+or `/transfers` — asking the wrong one 404s.
+
+### Rules the receiver follows, in order
+
+1. Verify the signature over `transactionReference + msisdn + amount` (fail closed).
+2. Match `transactionReference` against the order we stored.
+3. **Re-fetch** the transaction from ZENGAPAY and trust only that response.
+4. Fulfil **only** on `SUCCEEDED`; `FAILED` is final; `INDETERMINATE` stays pending.
+5. Be idempotent — a repeated reference must never credit twice.
+
+The webhook body is a claim. The API is the truth. Step 3 is not optional, and a
+failure there returns `502` so ZENGAPAY retries rather than us guessing.
+
+## Statuses
+
+| ZENGAPAY | Ours | Meaning |
+|---|---|---|
+| `SUCCEEDED` | `completed` | Settled. Credit. |
+| `FAILED` | `failed` | Final. Never credit. |
+| `PENDING` | `pending` | Still processing. |
+| `INDETERMINATE` | `pending` | **Unknown** outcome — reconcile, do not guess |
+
+`INDETERMINATE` is deliberately not treated as failed. Refunding a payment that
+actually succeeded, or crediting one that failed, are both worse than waiting.
+
+## Hosted checkout
+
+Replaces the old DGateway storefront link. `POST /v1/checkout/sessions` returns a
+one-time `checkout.zengapay.com/pay/cs_…` URL; the player pays there and we never
+see their PIN.
+
+`return_url` and `cancel_url` **must** contain the literal
+`CHECKOUT_SESSION_ID` placeholder — the provider substitutes it. The session id
+is stored as the order reference because it exists *before* the payment does, so
+the order can be looked up while the player is still paying.
+
+In the app the mobile-money prompt is the primary button and hosted checkout is
+offered underneath it, because checkout can fail server-side (no session ⇒
+nothing to navigate to) while the prompt is the shorter path for most players.
 
 ## Phone numbers
 
-Accepted: `07XXXXXXXX`, `2567XXXXXXXX`, `+2567XXXXXXXX`, plus KE/TZ/RW
-(`254`, `255`, `250`).
+**ZENGAPAY wants digits only, international format, no `+` and no leading `0`:**
 
-**The leading `0` is preserved.** DGateway routes on the prefix, so stripping it
-breaks `07...` input. `normalizePhone()` is covered by tests.
+| Input | Sent as |
+|---|---|
+| `0771234567` | `256771234567` |
+| `+256771234567` | `256771234567` |
+| `256771234567` | `256771234567` |
+| `077123456` (short) | rejected |
 
-## Amounts
+This is the **opposite** of the old DGateway rule, which required the leading `0`
+to be preserved. Uganda only, deliberately: this app pays UGX wallets, and a
+plausibly-wrong number is money sent to a stranger. `normalizePhone()` returns
+`null` for anything it does not recognise, and the callers refuse the request
+rather than sending a guess.
 
-Mobile money is whole units (UGX/KES/TZS). Stripe USD is cents. Either way the
-value must be a positive integer — `50.5` is rejected with 400 before any
-upstream call is made.
+## Idempotency and double-tap protection
 
-## Status polling
+`external_reference` **must be unique per request**; ZENGAPAY rejects a repeat.
+It is set to our own `order_id` (`TOP-…` / `PAY-…`), and admin payouts append a
+timestamp so an admin double-tap cannot pay one cashout twice.
 
-The client polls **our** `/api/status`, never DGateway. Two layers keep us inside
-the 10-second rule:
+## Migrations
 
-1. `usePaymentPoll` waits `POLL_MS = 10_000` between ticks and stops after 5
-   minutes.
-2. `/api/status` memoises each reference for 10 seconds and collapses concurrent
-   polls into one upstream request, so extra browser tabs cannot multiply the
-   rate.
-
-While waiting, the UI says **"Check your phone and approve the prompt"** — not a
-generic spinner.
-
-## Webhook order of operations
-
-1. Verify `X-DGateway-Signature` = HMAC-SHA256(raw body, secret). Fail closed.
-2. Look up `payment_orders.reference`. Unknown → 404, nothing credited.
-3. If the order is already terminal → return `{ idempotent: true }`.
-4. Re-fetch the transaction from DGateway (never trust the body alone).
-5. Compare amount and currency. Mismatch → mark failed, 409, no credit.
-6. `pending` → 200 `{status:"pending"}`, DGateway calls again.
-7. `completed`/`failed` → call `apply_gateway_result()`, which is atomic and
-   idempotent.
-
-## Database
-
-`supabase/migrations/0002_payment_orders.sql` adds:
-
-- `payment_orders` — one row per DGateway reference, RLS: read own only, no
-  client write.
-- `record_collect()`, `record_disburse()` — called by the server routes.
-- `apply_gateway_result()` — the only function that credits a completed deposit
-  or finalises/refunds a cashout hold. Granted to `service_role` only.
-
-Deposits convert at the platform peg: **10 PX = 1 UGX**, so a 5,000 UGX top-up
-credits 50,000 PX.
-
----
-
-## Testing
-
-```bash
-npm run typecheck:api   # typecheck the server routes
-npm run test:live       # live-mode guards: 503 without a secret, ceilings
-npm run test:dg         # phone/amount/status normalisation (24 assertions)
-npm run test:routes     # auth gating, payload shape, 10s memoisation (28)
-npm run test:webhook    # signature, idempotency, mismatch, fulfil (13)
+```
+supabase/migrations/0002_payment_orders.sql
+supabase/migrations/0003_store_topups.sql
 ```
 
-All of the above pass. The route tests mock `fetch`, so they run offline and
-assert the exact payload sent to DGateway — including that the leading `0`
-survives and that decimals are rejected before an upstream call.
+Without `0003` the store webhook returns 503 on every call.
 
-## First live call
+## Deploying
 
-Take **one small payment** and watch it end-to-end before letting players in:
-start a 1,000 UGX top-up, approve the prompt, confirm the webhook returns 200
-and the balance increases by exactly 10,000 PX (10 PX = 1 UGX). Then run the
-same test for a 1,000 UGX payout. Only then open it up.
-
-Check `/api/status` on a known reference with:
+The functions deploy from `.github/workflows/deploy-functions.yml`, which
+bundles each function with its shared modules inlined (`_shared/*` cannot be
+uploaded as a relative import). Set the secrets first:
 
 ```bash
-curl -H "Authorization: Bearer <supabase access token>" \
-     "https://shoppa-sigma.vercel.app/api/status?reference=YOUR-REF"
+supabase secrets set \
+  ZENGAPAY_API_URL=https://api.zengapay.com/v1 \
+  ZENGAPAY_API_TOKEN=ZPYPUBK-... \
+  ZENGAPAY_WEBHOOK_SECRET=...
 ```
+
+Then set the webhook URL and secret hash in the ZENGAPAY dashboard, and whitelist
+the egress IPs if you intend to enable withdrawals.

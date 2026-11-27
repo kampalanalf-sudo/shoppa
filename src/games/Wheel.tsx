@@ -128,7 +128,7 @@ export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => vo
         else sfx.lose()
       }
       if (m === 0) flashLoss()
-      if (m >= 3) toast({ kind: 'win', title: `Wheel jackpot ${mult(m)}!`, body: `+${money(payout)} PX paid out.` })
+      if (m >= 3) toast({ kind: 'win', title: `Wheel jackpot ${mult(m)}!`, body: `+$UGX {money(payout)} paid out.` })
     }, 5400)
   }, [spinning, bet, balance, placeBet, nextFloats, angle, settleBet, sound, toast])
 
@@ -143,7 +143,7 @@ export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       aside={
         <div className="space-y-3.5">
           <BetAmount value={bet} onChange={setBet} disabled={spinning} />
-          <BetButton onClick={() => void spin()} loading={spinning} sub={`Max win ${money(potential)} PX`}>
+          <BetButton onClick={() => void spin()} loading={spinning} sub={`Max win $UGX {money(potential)}`}>
             {spinning ? 'Spinning…' : 'Spin wheel'}
           </BetButton>
           {landed !== null && (
@@ -184,7 +184,7 @@ export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => vo
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">UGX</span>
           </div>
           <button type="button" onClick={() => void spin()} disabled={spinning} className="btn-primary h-10 flex-1 !text-[13px]">
             {spinning ? 'Spinning…' : 'Spin wheel'}

@@ -1,13 +1,13 @@
-// supabase/functions/webhooks-dgateway/index.ts
+// supabase/functions/webhooks-zengapay/index.ts
 //
-// DGateway calls this when a payment settles. Rules, in order:
+// ZENGAPAY calls this when a payment settles. Rules, in order:
 //   1. verify the HMAC signature over the raw body (fails closed)
 //   2. match the `reference` we stored against our order
 //   3. re-fetch the transaction from DGateway and confirm amount + currency
 //   4. fulfil ONLY on "completed"; treat "failed" as final
 //   5. be idempotent — a repeated reference must not credit twice
 //
-// This route must stay PUBLIC: the caller is DGateway, not a signed-in player.
+// This route must stay PUBLIC: the caller is ZENGAPAY, not a signed-in player.
 // verify_jwt is therefore false on deploy, and the HMAC signature is the only
 // thing standing between an anonymous request and a wallet credit. That is why
 // every check below fails closed.
@@ -15,7 +15,8 @@ import { CORS, json, readEnv } from '../_shared/http.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
 import {
   fetchTransactionStatus, normalizeStatus, transactionMatches, verifyWebhookSignature,
-} from '../_shared/dgateway.ts'
+  webhookDirection, webhookReference,
+} from '../_shared/zengapay.ts'
 
 /** Env var, trimmed. Missing becomes '' and never the string "undefined". */
 const env = (key: string) => readEnv(key)
@@ -38,22 +39,25 @@ Deno.serve(async (req) => {
   // The raw body is needed for the HMAC, so read text exactly once.
   const raw = await req.text()
   const signature =
-    req.headers.get('X-DGateway-Signature') || req.headers.get('x-dgateway-signature')
+    req.headers.get('X-ZENGAPAY-SIGNATURE') || req.headers.get('x-zengapay-signature')
 
   if (!(await verifyWebhookSignature(raw, signature))) {
     // 401 makes an unsigned or forged attempt visible in the logs.
     return json({ error: 'invalid signature' }, 401)
   }
 
-  let payload: { reference?: string; status?: string }
+  let payload: Record<string, unknown>
   try {
     payload = JSON.parse(raw)
   } catch {
     return json({ error: 'invalid JSON body' }, 400)
   }
 
-  const reference = (payload.reference || '').trim()
+  // The reference is nested under `data` in a ZENGAPAY webhook, and the event
+  // name says whether it describes a collection or a transfer.
+  const reference = webhookReference(payload)
   if (!reference) return json({ error: 'reference is required' }, 400)
+  const direction = webhookDirection(payload)
 
   const admin = createClient(env('SUPABASE_URL'), env('SUPABASE_SERVICE_ROLE_KEY'), {
     auth: { persistSession: false },
@@ -73,7 +77,7 @@ Deno.serve(async (req) => {
 
   const order = (rows ?? [])[0] as Order | undefined
   if (!order) {
-    // Unknown reference: never credit. 404 so DGateway stops retrying.
+    // Unknown reference: never credit. 404 so ZENGAPAY stops retrying.
     return json({ error: 'unknown reference' }, 404)
   }
 
@@ -82,17 +86,29 @@ Deno.serve(async (req) => {
     return json({ status: order.status, idempotent: true })
   }
 
-  // ---- 3. re-verify with DGateway -----------------------------------------
+  // ---- 3. re-verify with ZENGAPAY -----------------------------------------
+  // The webhook body is a claim; the API is the truth. Trust only this.
   let tx
   try {
-    tx = await fetchTransactionStatus(reference)
+    tx = await fetchTransactionStatus(reference, direction)
   } catch (e) {
     // Ask the provider to retry rather than guessing.
     console.error('webhook: status re-fetch failed', (e as Error).message)
     return json({ error: 'could not verify with provider', retryable: true }, 502)
   }
 
-  if (!transactionMatches(tx, { amount: order.amount, currency: order.currency })) {
+  // `reference` must be passed: transactionMatches compares it first, so
+  // omitting it made the function return false for EVERY payment and 409 every
+  // legitimate webhook. The order is the authority on direction, too — a
+  // transfer event that resolves to a collect order (or vice versa) is a
+  // mismatch worth refusing.
+  const expectedDirection = order.direction === 'disburse' ? 'disburse' : 'collect'
+  if (!transactionMatches(tx, {
+    reference,
+    amount: order.amount,
+    currency: order.currency,
+    direction: expectedDirection,
+  })) {
     // Amount or currency drift => do not fulfil. Record why.
     await admin
       .from('payment_orders')
@@ -103,7 +119,7 @@ Deno.serve(async (req) => {
 
   const status = normalizeStatus(tx.status)
   if (status === 'pending') {
-    // Still processing; DGateway will call again.
+    // Still processing; ZENGAPAY will call again.
     return json({ status: 'pending' })
   }
 

@@ -4,18 +4,40 @@ import type { BetRecord, FairSeedState, GameId, Stats, Toast } from './types'
 import { gameById } from './games'
 import { uid } from './format'
 import type { ExchangeOrder } from './proxicash'
+import {
+  FREE_PLAY_REFILL, FREE_PLAY_START, MAX_BET, MIN_BET, type PlayMode,
+} from './currency'
 
-const KEY = 'floatbet.v1'
+/** Real wallet. Migrated from PX, so the key is bumped deliberately. */
+const KEY = 'floatbet.v2'
 
 /**
- * Every new player is granted 10,000 PX, worth 100 UGX at 100 PX/UGX. The
- * 15,000 PX daily login bonus is worth more than this — deliberately: signing
- * up should not be the reward, showing up should.
+ * Every new player is granted UGX 1,000 of real money, and the daily bonus is
+ * larger than that — deliberately: signing up should not be the reward, showing
+ * up should.
+ *
+ * This replaced a 10,000 PX grant. The migration multiplies any existing PX by
+ * the last peg the platform actually used for display (100 PX = 1 UGX), so a
+ * player who held 100,000 PX sees UGX 1,000, which is exactly what the UI always
+ * told them it was worth.
  */
-export const STARTING_PX = 10000
+export const STARTING_UGX = 1000
+
+/** What one PX became on conversion, matching the peg the UI advertised. */
+export const PX_PER_UGX_AT_MIGRATION = 100
+
+/** The fake wallet. Separate object, separate key, never mixed with real money. */
+type FreePlay = {
+  credits: number
+  bets: BetRecord[]
+  stats: Stats
+}
 
 type Persisted = {
+  /** Real balance, in whole shillings. */
   balance: number
+  mode: PlayMode
+  free: FreePlay
   bets: BetRecord[]
   stats: Stats
   seeds: FairSeedState
@@ -38,8 +60,16 @@ const emptyStats: Stats = {
   bestStreak: 0,
 }
 
+const emptyFreePlay = (): FreePlay => ({
+  credits: FREE_PLAY_START,
+  bets: [],
+  stats: { ...emptyStats },
+})
+
 const defaults = (): Persisted => ({
-  balance: STARTING_PX,
+  balance: STARTING_UGX,
+  mode: 'real',
+  free: emptyFreePlay(),
   bets: [],
   stats: emptyStats,
   seeds: { serverSeed: randomHex(32), serverSeedHash: '', clientSeed: randomHex(8), nonce: 0, prevServerSeed: null },
@@ -51,19 +81,83 @@ const defaults = (): Persisted => ({
   exchanges: [],
 })
 
+/**
+ * Read a pre-PX-removal wallet and convert it.
+ *
+ * The old key held PX. Every player-facing surface declared 100 PX = 1 UGX, so
+ * that is the rate the conversion uses — a player who saw "100,000 PX" and
+ * "≈ UGX 1,000" keeps exactly UGX 1,000. Anything else would be a silent haircut.
+ *
+ * Bets and stats are converted the same way so the history still adds up.
+ */
+function migrateLegacy(): Persisted | null {
+  try {
+    const raw = localStorage.getItem('floatbet.v1')
+    if (!raw) return null
+    const old = JSON.parse(raw) as Record<string, unknown> & { balance?: number; bets?: BetRecord[] }
+
+    const toUgx = (px: unknown) => Math.max(0, Math.round(Number(px ?? 0) / PX_PER_UGX_AT_MIGRATION))
+
+    const oldBets = Array.isArray(old.bets) ? old.bets : []
+    const bets = oldBets.slice(0, 120).map((b) => ({
+      ...b,
+      wager: toUgx(b.wager),
+      payout: toUgx(b.payout),
+    }))
+    const oldStats = (old.stats ?? {}) as Partial<Stats>
+
+    const d = defaults()
+    return {
+      ...d,
+      ...(old as object),
+      // The converted balance is the point of this function; it must win over
+      // whatever `...old` would have spread in.
+      balance: toUgx(old.balance),
+      totalDeposited: toUgx(old.totalDeposited),
+      bets,
+      stats: {
+        ...emptyStats,
+        ...oldStats,
+        wagered: toUgx(oldStats.wagered),
+        profit: toUgx(oldStats.profit),
+        biggestWin: toUgx(oldStats.biggestWin),
+      },
+      mode: 'real',
+      free: emptyFreePlay(),
+      // PX-era orders were quoted in PX; the page that shows them is gone.
+      exchanges: [],
+    } as Persisted
+  } catch {
+    return null
+  }
+}
+
 function load(): Persisted {
   try {
     const raw = localStorage.getItem(KEY)
-    if (!raw) return defaults()
-    const parsed = JSON.parse(raw) as Persisted
+    if (!raw) {
+      // No v2 wallet: either brand new, or upgrading from the PX build.
+      return migrateLegacy() ?? defaults()
+    }
+    const parsed = JSON.parse(raw) as Partial<Persisted>
+    const d = defaults()
     return {
-      ...defaults(),
+      ...d,
       ...parsed,
+      // Free play must survive as its own object. A shallow spread of a corrupt
+      // or partial value would leave `free` undefined and the games would read
+      // a real balance for a fake one.
+      free: {
+        credits: Math.max(0, Math.round(Number(parsed.free?.credits ?? FREE_PLAY_START))),
+        bets: Array.isArray(parsed.free?.bets) ? parsed.free!.bets.slice(0, 120) : [],
+        stats: { ...emptyStats, ...(parsed.free?.stats ?? {}) },
+      },
+      mode: parsed.mode === 'free' ? 'free' : 'real',
       stats: { ...emptyStats, ...parsed.stats },
       bets: Array.isArray(parsed.bets) ? parsed.bets.slice(0, 120) : [],
     }
   } catch {
-    return defaults()
+    return migrateLegacy() ?? defaults()
   }
 }
 
@@ -91,6 +185,13 @@ type Ctx = Persisted & {
   toasts: Toast[]
   toast: (t: Omit<Toast, 'id'>) => void
   dismissToast: (id: string) => void
+  /** The balance the games should show and spend: real or free, by mode. */
+  playBalance: number
+  /** Stats for the active mode, so free play never inflates real stats. */
+  playStats: Stats
+  playBets: BetRecord[]
+  setMode: (m: PlayMode) => void
+  refillFreePlay: () => void
   placeBet: (game: GameId, wager: number) => boolean
   settleBet: (args: SettleArgs) => number
   refundBet: (game: GameId, wager: number) => void
@@ -179,18 +280,46 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         toast({ kind: 'error', title: 'Invalid bet', body: 'Enter a wager greater than zero.' })
         return false
       }
+      // Real stakes are whole shillings. Free credits are too, so the games read
+      // identically in both modes and no rounding difference can leak between
+      // them.
+      const stake = Math.round(wager)
+      if (stake < MIN_BET) {
+        toast({ kind: 'error', title: 'Bet too small', body: `The minimum bet is UGX ${MIN_BET}.` })
+        return false
+      }
+      if (stake > MAX_BET) {
+        toast({ kind: 'error', title: 'Bet too large', body: `The maximum bet is UGX ${MAX_BET.toLocaleString()}.` })
+        return false
+      }
+
+      const free = stateRef.current.mode === 'free'
       // Read the balance from the live ref, never from inside the updater: the
       // updater is deferred, so a flag written in there is not visible by the
       // time this function returns.
-      const balance = stateRef.current.balance
-      if (wager > balance) {
-        toast({ kind: 'error', title: 'Insufficient balance', body: 'Lower your bet or top up to keep playing.' })
+      const balance = free ? stateRef.current.free.credits : stateRef.current.balance
+      if (stake > balance) {
+        toast({
+          kind: 'error',
+          title: 'Insufficient balance',
+          body: free
+            ? 'Refill your free credits to keep practising.'
+            : 'Lower your bet or top up to keep playing.',
+        })
         return false
       }
+
       const key = `${game}:${Date.now()}:${uid()}`
-      pendingRef.current.set(key, { wager, game })
-      stateRef.current = { ...stateRef.current, balance: Math.round(balance - wager) }
-      setState((s) => ({ ...s, balance: Math.round((s.balance - wager) * 100) / 100 }))
+      pendingRef.current.set(key, { wager: stake, game })
+
+      if (free) {
+        const next = { ...stateRef.current, free: { ...stateRef.current.free, credits: balance - stake } }
+        stateRef.current = next
+        setState((s) => ({ ...s, free: { ...s.free, credits: Math.round(s.free.credits - stake) } }))
+      } else {
+        stateRef.current = { ...stateRef.current, balance: balance - stake }
+        setState((s) => ({ ...s, balance: Math.round(s.balance - stake) }))
+      }
       return true
     },
     [toast],
@@ -198,8 +327,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const settleBet = useCallback(
     ({ game, wager, multiplier, detail, silent, nonce }: SettleArgs) => {
-      const payout = Math.round(wager * multiplier * 100) / 100
-      const net = Math.round((payout - wager) * 100) / 100
+      // Whole shillings, in both modes. A payout keeps its fraction until the
+      // round is over, then rounds down -- rounding up would pay out more than
+      // the multiplier says.
+      const payout = Math.floor(wager * multiplier)
+      const net = payout - wager
       const prevHash = prevBetsRef.current[0]?.hash ?? ''
       const record: BetRecord = {
         id: uid(),
@@ -215,24 +347,56 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         clientSeed: clientSeedRef.current,
         hash: prevHash,
       }
+
+      const isFree = stateRef.current.mode === 'free'
       setState((s) => {
         const won = payout > 0
         const streak = won ? s.stats.streak + 1 : 0
-        return {
-          ...s,
-          balance: Math.round((s.balance + payout) * 100) / 100,
-          bets: [record, ...s.bets].slice(0, 120),
-          stats: {
-            wagered: Math.round((s.stats.wagered + wager) * 100) / 100,
-            profit: Math.round((s.stats.profit + net) * 100) / 100,
-            biggestWin: Math.max(s.stats.biggestWin, payout),
-            rounds: s.stats.rounds + 1,
-            wins: s.stats.wins + (won ? 1 : 0),
-            streak,
-            bestStreak: Math.max(s.stats.bestStreak, streak),
-          },
-        }
+
+        /*
+         * Free play keeps its own bets AND its own stats.
+         *
+         * Mixing them would be the quiet version of the bug this whole change is
+         * about: a player could inflate their real wagered/profit/biggest-win
+         * numbers in free play, and those numbers drive the profile screen. Each
+         * mode counts only itself.
+         */
+        /*
+         * Both branches build their stats explicitly rather than through a
+         * shared `bank` variable: the two wallets have different shapes (one has
+         * `credits`, the other `balance`) and a union of the two does not
+         * typecheck, which is the compiler correctly pointing out that they are
+         * not interchangeable.
+         */
+        const nextStats = (stats: Stats): Stats => ({
+          wagered: stats.wagered + wager,
+          profit: stats.profit + net,
+          biggestWin: Math.max(stats.biggestWin, payout),
+          rounds: stats.rounds + 1,
+          wins: stats.wins + (won ? 1 : 0),
+          streak,
+          bestStreak: Math.max(stats.bestStreak, streak),
+        })
+
+        // The seed stream is shared, so a free round still advances the
+        // verifier. What it must not do is touch the real wallet.
+        return isFree
+          ? {
+              ...s,
+              free: {
+                credits: Math.round(s.free.credits + payout),
+                stats: nextStats(s.free.stats),
+                bets: [record, ...s.free.bets].slice(0, 120),
+              },
+            }
+          : {
+              ...s,
+              balance: Math.round(s.balance + payout),
+              stats: nextStats(s.stats),
+              bets: [record, ...s.bets].slice(0, 120),
+            }
       })
+
       if (multiplier >= 10 && !silent) {
         setWinFlash(payout)
         if (flashTimer.current) window.clearTimeout(flashTimer.current)
@@ -250,6 +414,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const refundBet = useCallback((game: GameId, wager: number) => {
+    // Refund to whichever wallet was charged. Read from the ref, not inside the
+    // updater, for the same reason placeBet does.
+    if (stateRef.current.mode === 'free') {
+      stateRef.current = {
+        ...stateRef.current,
+        free: { ...stateRef.current.free, credits: stateRef.current.free.credits + wager },
+      }
+      setState((s) => ({ ...s, free: { ...s.free, credits: Math.round(s.free.credits + wager) } }))
+      return
+    }
     setState((s) => ({ ...s, balance: Math.round(s.balance + wager) }))
   }, [])
 
@@ -292,7 +466,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         balance: Math.round(s.balance + amount),
         totalDeposited: Math.round(s.totalDeposited + amount),
       }))
-      toast({ kind: 'success', title: 'Deposit confirmed', body: `${amount.toLocaleString()} PX added to your balance.` })
+      toast({ kind: 'success', title: 'Deposit confirmed', body: `UGX ${amount.toLocaleString()} added to your balance.` })
     },
     [toast],
   )
@@ -306,16 +480,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
       stateRef.current = { ...stateRef.current, balance: Math.round(balance - amount) }
       setState((s) => ({ ...s, balance: Math.round(s.balance - amount) }))
-      toast({ kind: 'success', title: 'Withdrawal submitted', body: `${amount.toLocaleString()} PX is on the way.` })
+      toast({ kind: 'success', title: 'Withdrawal submitted', body: `UGX ${amount.toLocaleString()} is on the way.` })
       return true
     },
     [toast],
   )
 
   /**
-   * Record a ProxiCash exchange and credit the ProxiCoin balance when the
-   * payout lands. Sending ProxiCoin to mobile money spends from the balance;
-   * sending external crypto mints ProxiCoin instead.
+   * Record a ProxiCash exchange and credit the UGX balance when the payout
+   * lands. Crypto converts into shillings; there is no coin to mint.
    */
   const recordExchange = useCallback(
     (order: ExchangeOrder) => {
@@ -335,14 +508,42 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const order = s.exchanges.find((e) => e.id === id)
         if (!order || order.status === 'paid') return s
         const exchanges = s.exchanges.map((e) => (e.id === id ? { ...e, status: 'paid' as const } : e))
-        // PX sent out reduces the coin balance; external crypto converts into PX
-        const delta = order.asset === 'PX' ? -order.send : Math.round(order.net)
+        // External crypto converts into shillings. There is no coin to send out
+        // any more, so this is one-directional.
+        const delta = Math.round(order.net)
         return { ...s, exchanges, balance: Math.max(0, Math.round(s.balance + delta)) }
       })
       toast({ kind: 'success', title: 'Paid to mobile money', body: 'Funds sent to the wallet.' })
     },
     [toast],
   )
+
+  /**
+   * Switch between real money and free play.
+   *
+   * Nothing is transferred. The two wallets are separate objects, so switching
+   * is only a change of which one the games read -- which is exactly why a
+   * free-play win can never become a real balance.
+   */
+  const setMode = useCallback(
+    (m: PlayMode) => {
+      setState((s) => ({ ...s, mode: m }))
+      toast({
+        kind: m === 'free' ? 'info' : 'success',
+        title: m === 'free' ? 'Free play on' : 'Real money on',
+        body: m === 'free'
+          ? 'You are playing with practice credits. They cannot be withdrawn.'
+          : 'You are playing with your real balance.',
+      })
+    },
+    [toast],
+  )
+
+  /** Top free play back up. Touches only the fake wallet, by construction. */
+  const refillFreePlay = useCallback(() => {
+    setState((s) => ({ ...s, free: { ...s.free, credits: FREE_PLAY_REFILL } }))
+    toast({ kind: 'info', title: 'Free credits refilled', body: 'Practice credits are not real money.' })
+  }, [toast])
 
   const toggleSound = useCallback(() => setState((s) => ({ ...s, sound: !s.sound })), [])
   const toggleBalanceHidden = useCallback(() => setState((s) => ({ ...s, balanceHidden: !s.balanceHidden })), [])
@@ -352,7 +553,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const d = defaults()
     d.seeds.serverSeedHash = state.seeds.serverSeedHash
     setState(d)
-    toast({ kind: 'info', title: 'Account reset', body: `Balance restored to ${STARTING_PX.toLocaleString()} PX.` })
+    toast({ kind: 'info', title: 'Account reset', body: `Balance restored to UGX ${STARTING_UGX.toLocaleString()}.` })
   }, [state.seeds.serverSeedHash, toast])
 
   const value = useMemo<Ctx>(
@@ -387,11 +588,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       flashLoss,
       recordExchange,
       settleExchange,
+      // The games read these, never `balance` directly, so a free-play round
+      // physically cannot spend real money.
+      playBalance: state.mode === 'free' ? state.free.credits : state.balance,
+      playStats: state.mode === 'free' ? state.free.stats : state.stats,
+      playBets: state.mode === 'free' ? state.free.bets : state.bets,
+      setMode,
+      refillFreePlay,
     }),
     [
       state, hydrated, walletOpen, historyOpen, fairOpen, rewardsOpen, toasts, toast, dismissToast, placeBet, settleBet,
       refundBet, nextFloats, rotateSeed, updateClientSeed, deposit, withdraw, toggleSound, toggleBalanceHidden,
       setUsername, resetAccount, winFlash, lossFlash, flashLoss, recordExchange, settleExchange,
+      setMode, refillFreePlay,
     ],
   )
 
