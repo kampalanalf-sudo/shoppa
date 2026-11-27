@@ -6,6 +6,7 @@ import { gameById } from '../lib/games'
 import { BetAmount, BetButton, useHotkey } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
 import { IconShield } from '../components/Icons'
+import { MIN_BET } from '../lib/currency'
 
 /**
  * Paytables are generated so that Σ P(bucket) × multiplier = 99% for every
@@ -59,7 +60,7 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
   const { placeBet, settleBet, nextFloats, balance, sound, flashLoss } = useStore()
   const [risk, setRisk] = useState<Risk>('medium')
   const [rows, setRows] = useState(12)
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [balls, setBalls] = useState<Ball[]>([])
   const [auto, setAuto] = useState(false)
   const [last, setLast] = useState<{ mult: number; payout: number } | null>(null)

@@ -44,6 +44,14 @@ Object.assign(globalThis as any, {
   cancelAnimationFrame: (id: any) => clearTimeout(id),
   matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }),
   IS_REACT_ACT_ENVIRONMENT: true,
+  // SlotBoard3D measures its own width with ResizeObserver, which jsdom does
+  // not implement. Without a stub the board throws on mount and the portrait
+  // proof below would silently be an empty div.
+  ResizeObserver: class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  },
 })
 ;(globalThis as any).fetch = async () =>
   new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -91,6 +99,31 @@ async function snapshot(seed: Record<string, unknown>, hash = ''): Promise<strin
 
 const real = await snapshot(REAL, '#/')
 const free = await snapshot(FREE, '#/')
+// The Blue Mountain paytable, in both wallets: the JKaz portrait has to read
+// as the same man at board size, and the board must not change with the mode.
+const mountain = await snapshot(REAL, '#/bluemountain')
+
+// A forced line-up of the Blue Mountain symbols, drawn by the same component
+// the game uses. The board deals random symbols, so a screenshot of a live spin
+// proves nothing about whether JKaz's face renders; this does.
+const { SlotBoard3D } = await import('../src/components/SlotBoard3D')
+const { BLUE_MOUNTAIN } = await import('../src/lib/slots/games')
+const lineup = await (async () => {
+  const host = w.document.getElementById('root')!
+  host.innerHTML = ''
+  const root = createRoot(host)
+  const grid = [['jkaz', 'nyank', 'georgie'], ['vip', 'jkaz', 'cigar'], ['cigar', 'vip', 'jkaz']]
+  await act(async () => {
+    root.render(
+      React.createElement(SlotBoard3D, {
+        config: BLUE_MOUNTAIN, grid, spinning: false, spinKey: 0, winCells: new Set(),
+      }),
+    )
+  })
+  const html = host.innerHTML
+  await act(async () => { root.unmount() })
+  return html
+})()
 
 const shell = (body: string) => `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -100,6 +133,8 @@ const shell = (body: string) => `<!doctype html>
 </head><body>
 <div class="label">REAL MONEY MODE — real balance 25,000</div>${real}
 <div class="label">FREE PLAY MODE — 1,000,000 practice credits, real balance still 25,000</div>${free}
+<div class="label">BLUE MOUNTAIN — the game board, JKaz forced onto the reels</div>${lineup}
+<div class="label">BLUE MOUNTAIN — the game page as opened from the lobby</div>${mountain}
 </body></html>`
 
 writeFileSync('currency-preview.html', shell(''))

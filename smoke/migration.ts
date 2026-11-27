@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 
 const sql = readFileSync('supabase/migrations/0003_store_topups.sql', 'utf8')
 const sql14 = readFileSync('supabase/migrations/0014_ugx_only_and_free_play.sql', 'utf8')
@@ -131,6 +131,39 @@ ok('0005: never grants a credit path to authenticated',
   !/grant execute on function (apply_store_topup|admin_release_store_topup|dismiss_store_topup|settle_cashout|record_collect|record_disburse|apply_gateway_result)[\s\S]{0,40}to authenticated/.test(sql5))
 ok('0005: the retired release is dead for every role',
   /revoke all on function release_store_topup\(text, uuid\) from public, anon, authenticated, service_role;/.test(sql5))
+
+// --------------------------------------------------- 0015: the bonus is honest --
+// 0014 shipped the daily grant as 15,000 shillings -- one hundred times the
+// UGX 150 the interface promised, because 15,000 PX used to be worth UGX 150 at
+// the peg and the number of units was kept after the coin was removed. The
+// number printed to the player and the number the database pays must be the
+// same number, so this pins both to the client's own constant.
+const sql15 = readFileSync('supabase/migrations/0015_daily_bonus_matches_its_promise.sql', 'utf8')
+const clientCurrency = readFileSync('src/lib/currency.ts', 'utf8')
+const bonusMatch = clientCurrency.match(/DAILY_BONUS_UGX\s*=\s*([0-9_]+)/)
+const bonus = bonusMatch ? Number(bonusMatch[1].replace(/_/g, '')) : NaN
+
+ok('0015: the client declares a daily bonus in shillings', Number.isFinite(bonus) && bonus > 0)
+ok("0015: the database grants exactly the client bonus",
+  !!bonusMatch && new RegExp(`p_amount bigint default ${bonus}\\b`).test(sql15) &&
+  new RegExp(`coalesce\\(p_amount, ${bonus}\\)`).test(sql15))
+ok('0015: the database refuses any other amount',
+  new RegExp(`if v_amount <> ${bonus} then raise exception`).test(sql15))
+ok('0015: keeps the exact 0009 signature so it replaces, not overloads',
+  /create or replace function claim_daily_px\(p_amount bigint default \d+\)/.test(sql15))
+ok('0015: records the bonus on the ledger like any other money',
+  /insert into ledger \(user_id, kind, delta_px, balance_after, ref, meta\)/.test(sql15))
+ok('0015: never debits anyone to claw back an overpayment',
+  !/balance_px\s*-\s*/.test(sql15))
+ok('the client reports the returned amount, not a hardcoded one',
+  /setDailyPxAwarded\(data\)/.test(readFileSync('src/lib/auth.tsx', 'utf8')))
+
+// A bet default of 1000 was ten times the minimum and pre-dated the re-scale.
+const gameFiles = readdirSync('src/games').filter((f) => f.endsWith('.tsx'))
+const staleBet = gameFiles.filter((f) =>
+  /const \[bet, setBet\] = useState\(\d/.test(readFileSync(`src/games/${f}`, 'utf8')))
+ok('every game opens on the minimum bet, not a hardcoded number',
+  staleBet.length === 0, staleBet.join(', '))
 
 if (fails.length) { console.log(`\n${fails.length} FAILED: ${fails.join(', ')}`); process.exit(1) }
 console.log('\nall migration invariants hold')

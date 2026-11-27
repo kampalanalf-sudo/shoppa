@@ -7,11 +7,12 @@ import { gameById } from '../lib/games'
 import { BetAmount, BetButton } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
 import { IconFlame } from '../components/Icons'
+import { MIN_BET } from '../lib/currency'
 
 export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('limbo')!
   const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [target, setTarget] = useState(2)
   const [running, setRunning] = useState(false)
   const [display, setDisplay] = useState(1)

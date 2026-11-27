@@ -13,6 +13,7 @@ import {
 import { IconBolt, IconFlame, IconTrophy } from '../components/Icons'
 import { spinPlan } from '../lib/reels'
 import { Celebration, celebrationSound, FreeSpinHud } from '../components/Celebration'
+import { MIN_BET } from '../lib/currency'
 
 const PAY_ROWS: SymbolId[] = ['wild', 'bonita', 'clyve', 'diamond', 'badge', 'cash', 'key', 'donut']
 
@@ -20,7 +21,7 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
   const game = gameById('bonni')!
   const { placeBet, settleBet, nextFloats, balance, toast, sound } = useStore()
 
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [grid, setGrid] = useState<Grid | null>(null)
   const [spinning, setSpinning] = useState(false)
   const [outcome, setOutcome] = useState<SlotOutcome | null>(null)

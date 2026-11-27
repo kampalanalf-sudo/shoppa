@@ -6,6 +6,7 @@ import { gameById } from '../lib/games'
 import { BetAmount, BetButton } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
 import { IconDiamond } from '../components/Icons'
+import { MIN_BET } from '../lib/currency'
 
 const LEVELS = 8
 const houses = 0.99
@@ -15,7 +16,7 @@ const stepMult = (difficulty: 1 | 2 | 3) => (1 / (4 - difficulty)) * (1 / houses
 export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('tower')!
   const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [difficulty, setDifficulty] = useState<1 | 2 | 3>(1)
   const [active, setActive] = useState(false)
   const [level, setLevel] = useState(0)

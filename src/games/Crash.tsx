@@ -7,6 +7,7 @@ import { gameById } from '../lib/games'
 import { BetAmount, BetButton } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
 import { IconBolt, IconFlame } from '../components/Icons'
+import { MIN_BET } from '../lib/currency'
 
 const CW = 700
 const CH = 300
@@ -20,7 +21,7 @@ type Phase = 'idle' | 'running' | 'crashed' | 'cashed'
 export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('crash')!
   const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [autoCash, setAutoCash] = useState(2)
   const [autoEnabled, setAutoEnabled] = useState(false)
   const [phase, setPhase] = useState<Phase>('idle')
