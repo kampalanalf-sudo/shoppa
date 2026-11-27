@@ -4,9 +4,8 @@ import { SPORTS_HERO } from '../lib/fixtureArt'
 import type { GameId } from '../lib/types'
 import { compact, money, mult } from '../lib/format'
 import { useStore } from '../lib/store'
-import { IconArrowUpRight, IconBolt, IconCheck, IconChevronLeft, IconDiamond, IconFlame, IconGift, IconLive, IconPlay, IconSearch, IconShield, IconSpade, IconTrophy } from '../components/Icons'
+import { IconArrowUpRight, IconBolt, IconCheck, IconChevronLeft, IconDiamond, IconFlame, IconLive, IconPlay, IconSearch, IconShield, IconSpade, IconTrophy } from '../components/Icons'
 import { WinTicker } from '../components/Chrome'
-import { PromoModal } from '../components/Modals'
 import { sfx } from '../lib/sound'
 
 type Props = { onPlay: (id: GameId) => void; onSearch: () => void; onFair: () => void; onProxiCash?: () => void; onSports?: () => void }
@@ -16,7 +15,6 @@ const TABS = ['All', 'Slots', 'Originals', 'Instant', 'Table'] as const
 export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props) {
   const { mode, playBalance, playStats, username } = useStore()
   const [tab, setTab] = useState<(typeof TABS)[number]>('All')
-  const [promo, setPromo] = useState(false)
   const [slide, setSlide] = useState(0)
 
   const games = useMemo(() => (tab === 'All' ? GAMES : GAMES.filter((g) => g.category === tab)), [tab])
@@ -27,9 +25,9 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props)
       title: 'Float above the house',
       body: '8 provably fair originals. Instant settlement in UGX and up to 1,000,000× multipliers.',
       cta: 'Start playing',
-      badge: 'NEW PLAYER BONUS +200%',
+      badge: '8 ORIGINAL GAMES',
       art: asset('/art/hero.webp'),
-      onClick: () => setPromo(true),
+      onClick: () => onPlay('crash'),
       accent: '#c6f24e',
     },
     {
@@ -47,9 +45,9 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props)
       title: 'UGX 50,000 prize pool',
       body: 'Race the top 100 players across all originals. New leaderboard every Monday, 00:00 UTC.',
       cta: 'View leaderboard',
-      badge: 'ENDS IN 2D 14H',
+      badge: 'NEW BOARD MONDAY',
       art: asset('/art/wheel.webp'),
-      onClick: () => setPromo(true),
+      onClick: () => onPlay('crash'),
       accent: '#ffcf5c',
     },
   ]
@@ -120,16 +118,6 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props)
 
           {/* right stack */}
           <div className="grid gap-3">
-            <div className="relative overflow-hidden rounded-2xl border border-neon-lime/20 bg-gradient-to-br from-neon-lime/[0.14] via-ink-850 to-ink-850 p-4">
-              <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-neon-lime/20 blur-2xl" />
-              <p className="text-[10px] font-bold uppercase tracking-[.2em] text-neon-lime/80">Active bonus</p>
-              <p className="mt-1 text-[22px] font-black leading-none text-white">+200% <span className="text-[13px] font-bold text-slate-400">deposit match</span></p>
-              <p className="mt-1.5 text-[11px] text-slate-400">Up to UGX 5,000 on your first top-up.</p>
-              <button type="button" onClick={() => setPromo(true)} className="btn-primary mt-3 h-9 w-full !text-[12px]">
-                <IconGift size={14} /> Claim now
-              </button>
-            </div>
-
             <div className="rounded-2xl border border-white/[0.07] bg-ink-850/80 p-4">
               <div className="flex items-center justify-between">
                 <p className="text-[10px] font-bold uppercase tracking-[.18em] text-slate-500">Your session</p>
@@ -312,9 +300,9 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props)
         {/* promo strip */}
         <div className="mt-8 grid gap-3 md:grid-cols-3">
           {[
-            { icon: <IconGift size={18} />, t: 'Daily Rakeback', d: 'Up to 12% back on every wager, paid hourly.', cta: 'Claim rakeback', c: 'from-neon-lime/15', onClick: () => setPromo(true) },
-            { icon: <IconTrophy size={18} />, t: 'Weekly Race', d: 'UGX 50,000 across 100 winners. Ends Sunday.', cta: 'Join the race', c: 'from-neon-violet/20', onClick: () => setPromo(true) },
-            { icon: <IconSpade size={18} />, t: 'VIP Club', d: 'Personal host, custom limits and faster payouts.', cta: 'Apply for VIP', c: 'from-neon-cyan/20', onClick: () => setPromo(true) },
+            { icon: <IconBolt size={18} />, t: 'Daily Rakeback', d: 'Up to 12% back on every wager, paid hourly.', cta: 'View games', c: 'from-neon-lime/15', onClick: () => onPlay('crash') },
+            { icon: <IconTrophy size={18} />, t: 'Weekly Race', d: 'UGX 50,000 across 100 winners. Ends Sunday.', cta: 'Play now', c: 'from-neon-violet/20', onClick: () => onPlay('crash') },
+            { icon: <IconSpade size={18} />, t: 'VIP Club', d: 'Personal host, custom limits and faster payouts.', cta: 'Play now', c: 'from-neon-cyan/20', onClick: () => onPlay('crash') },
             { icon: <IconBolt size={18} />, t: 'ProxiCash', d: 'Convert crypto to UGX on MTN MoMo & Airtel Money.', cta: 'Open ProxiCash', c: 'from-[#26a17b]/25', onClick: () => onProxiCash?.() },
           ].map((p) => (
             <div key={p.t} className={`group relative overflow-hidden rounded-2xl border border-white/[0.07] bg-gradient-to-br ${p.c} via-ink-850 to-ink-850 p-4`}>
@@ -371,7 +359,6 @@ export function Home({ onPlay, onSearch, onFair, onProxiCash, onSports }: Props)
         </div>
       </div>
 
-      <PromoModal open={promo} onClose={() => setPromo(false)} />
     </div>
   )
 }

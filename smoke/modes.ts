@@ -110,7 +110,17 @@ ok('a free round does not touch real stats', /stats: nextStats\(s\.free\.stats\)
 // Deposits and withdrawals are refused in free play, in the action itself rather
 // than only by hiding the button.
 ok('deposit and withdraw are refused in free play', /Not available in free play/.test(read('src/components/Modals.tsx')))
-ok('the welcome bonus is refused in free play', /Switch to real money to claim this bonus/.test(read('src/components/Modals.tsx')))
+// The welcome-bonus promotion was removed at the user's request, so the modal
+// that declined it no longer exists. The rule it protected is unchanged and
+// still rests on the deposit/withdraw guard above.
+//
+// Removed on request: the +200% deposit-match card and its modal. It also
+// called deposit(5000), so claiming it created UGX 5,000 of withdrawable money
+// from nothing -- a free-money path, not merely an advert.
+const home = read('src/pages/Home.tsx')
+for (const gone of ['+200%', 'deposit match', 'Active bonus', 'Claim now', 'Welcome bonus', 'PromoModal']) {
+  ok(`the deposit-match promotion is gone: ${gone}`, !home.includes(gone) && !read('src/components/Modals.tsx').includes(gone))
+}
 
 // Marking. The requirement is that free play is CLEARLY marked.
 ok('free play renders a full-width warning strip', /variant="bar"/.test(read('src/App.tsx')))

@@ -653,47 +653,6 @@ export function SearchModal({ open, onClose, onPick }: { open: boolean; onClose:
   )
 }
 
-/* ------------------------------------------------------------------ Bonus / promo */
-
-export function PromoModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { deposit, toast, mode } = useStore()
-  const [claimed, setClaimed] = useState(false)
-  return (
-    <Sheet open={open} onClose={onClose} title="Welcome bonus" subtitle="Available to new FloatBet players" icon={<IconGift size={18} />}>
-      <div className="relative overflow-hidden rounded-2xl border border-neon-lime/25 bg-gradient-to-br from-neon-lime/15 via-ink-800 to-ink-850 p-5 text-center">
-        <div className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-neon-lime/20 blur-2xl" />
-        <p className="text-[10.5px] font-bold uppercase tracking-[.24em] text-neon-lime/80">Deposit bonus</p>
-        <p className="mt-1 text-4xl font-black text-white">+200%</p>
-        <p className="mt-1 text-[12px] text-slate-400">on your first deposit, up to UGX 5,000</p>
-        <div className="mt-3 flex items-center justify-center gap-1.5">
-          {['Instant', 'Provably fair', '18+ only'].map((t) => (
-            <span key={t} className="rounded-full bg-black/30 px-2 py-0.5 text-[10px] font-semibold text-slate-300">{t}</span>
-          ))}
-        </div>
-      </div>
-      <button
-        type="button"
-        disabled={claimed}
-        onClick={() => {
-          // A welcome bonus is real money. It must not land in the free-play
-          // wallet, where it would look like a real reward and then evaporate.
-          if (mode === 'free') {
-            toast({ kind: 'error', title: 'Not available in free play', body: 'Switch to real money to claim this bonus.' })
-            return
-          }
-          deposit(5000)
-          setClaimed(true)
-          toast({ kind: 'success', title: 'Bonus claimed', body: 'UGX 5,000 welcome bonus credited.' })
-        }}
-        className="btn-primary mt-4 h-12 w-full text-[14px]"
-      >
-        {claimed ? <><IconCheck size={16} /> Bonus credited</> : <><IconGift size={16} /> Claim UGX 5,000 bonus</>}
-      </button>
-      <p className="mt-2 text-center text-[10.5px] text-slate-600">Bonus funds carry wagering requirements · 18+</p>
-    </Sheet>
-  )
-}
-
 /* ------------------------------------------------------------------ Verifier */
 
 function VerifyPanel({

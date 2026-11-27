@@ -67,7 +67,7 @@ export const BLUE_MOUNTAIN: SlotConfig = {
   volatility: 'high',
   symbols: [
     { id: 'nyank', name: 'Top Nyank (Wild)', pay: [0.299, 2.591, 19.93], weight: 2, tier: 'special', glyph: '🎖️', color: '#c6f24e', art: asset('/art/bluemountain/nyank.webp') },
-    { id: 'jkaz', name: 'Jkaz', pay: [0.3654, 2.99, 23.25], weight: 2, tier: 'high', glyph: '🍸', color: '#ffcf5c', art: asset('/art/bluemountain/jkaz.webp') },
+    { id: 'jkaz', name: 'Jkaz', pay: [0.3654, 2.99, 23.25], weight: 2, tier: 'high', glyph: '🤵', color: '#ffcf5c', art: asset('/art/bluemountain/jkaz.webp') },
     { id: 'vip', name: 'Lounge VIP', pay: [0.1993, 1.661, 12.96], weight: 3, tier: 'high', glyph: '💎', color: '#3ad7ff', art: asset('/art/bluemountain/vip.webp') },
     { id: 'stash', name: 'Blue Mountain Stash', pay: [0.1329, 0.9966, 7.308], weight: 5, tier: 'mid', glyph: '📦', color: '#5c7cff', art: asset('/art/chape/stash.webp') },
     { id: 'cash', name: 'Cash Roll', pay: [0.09966, 0.7308, 5.149], weight: 7, tier: 'mid', glyph: '💵', color: '#5cd68a', art: asset('/art/chape/cash.webp') },
