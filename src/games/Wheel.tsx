@@ -5,6 +5,7 @@ import { money, mult } from '../lib/format'
 import { gameById } from '../lib/games'
 import { BetAmount, BetButton, useHotkey } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
+import { MIN_BET } from '../lib/currency'
 
 /**
  * Fortune Wheel — 80 physical slices with an audited layout.
@@ -77,7 +78,7 @@ const SEG = 360 / SLICES.length
 export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('wheel')!
   const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [spinning, setSpinning] = useState(false)
   const [angle, setAngle] = useState(0)
   const [last, setLast] = useState<number | null>(null)

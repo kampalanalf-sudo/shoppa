@@ -7,6 +7,7 @@ import { gameById } from '../lib/games'
 import { BetAmount, BetButton } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
 import { IconDiamond } from '../components/Icons'
+import { MIN_BET } from '../lib/currency'
 
 const GRID = 25
 const houseEdge = 0.99
@@ -26,7 +27,7 @@ const multiplierFor = (mines: number, picks: number) => {
 export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('mines')!
   const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [mines, setMines] = useState(3)
   const [active, setActive] = useState(false)
   const [mineSet, setMineSet] = useState<Set<number>>(new Set())

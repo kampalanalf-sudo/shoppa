@@ -7,13 +7,14 @@ import { gameById } from '../lib/games'
 import { BetAmount, BetButton, useHotkey } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
 import { Dice3D } from '../components/Dice3D'
+import { MIN_BET } from '../lib/currency'
 
 const EDGE = 0.99
 
 export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('dice')!
   const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [target, setTarget] = useState(50)
   const [mode, setMode] = useState<'over' | 'under'>('under')
   const [roll, setRoll] = useState<number | null>(null)

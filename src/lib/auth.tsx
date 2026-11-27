@@ -72,7 +72,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [dailyPxAwarded, setDailyPxAwarded] = useState(0)
 
   /**
-   * The daily login bonus: 15,000 PX, once per calendar day (Africa/Kampala).
+   * The daily login bonus, once per calendar day (Africa/Kampala). The amount
+   * lives in `DAILY_BONUS_UGX` and is enforced server-side, so the only number
+   * this file may show is the one the database actually returns.
    *
    * Deliberately best-effort. `claim_daily_px` raises 'already claimed today'
    * as its normal, expected outcome, so a failure here is not an error — if it
@@ -87,7 +89,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setDailyPxAwarded(0)
       return
     }
-    setDailyPxAwarded(15000)
+    // Report what was credited, not what we assumed. It is 0 when today's
+    // bonus was already claimed, and the grant is authoritative either way.
+    setDailyPxAwarded(data)
     void uid
   }, [])
 

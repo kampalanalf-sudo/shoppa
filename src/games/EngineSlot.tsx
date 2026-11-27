@@ -11,6 +11,7 @@ import { PlayBar } from '../components/PlayBar'
 import { buildGrid, resolve, type Grid, type SlotConfig, type SlotOutcome } from '../lib/slots/engine'
 import { spinPlan } from '../lib/reels'
 import { Celebration, celebrationSound, FreeSpinHud } from '../components/Celebration'
+import { MIN_BET } from '../lib/currency'
 
 type Props = { config: SlotConfig; id: GameId; onBack: () => void; onFair: () => void }
 
@@ -18,7 +19,7 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
   const game = gameById(id)!
   const { placeBet, settleBet, nextFloats, balance, toast, sound, flashLoss } = useStore()
 
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [grid, setGrid] = useState<Grid | null>(null)
   const [spinning, setSpinning] = useState(false)
   const [outcome, setOutcome] = useState<SlotOutcome | null>(null)

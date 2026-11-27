@@ -16,6 +16,7 @@ import {
   IDLE_ROUND, advanceRound, resolveCraters, tierFor,
   type CratersOutcome, type RoundState,
 } from '../lib/slots/craters'
+import { MIN_BET } from '../lib/currency'
 
 type Props = { id: GameId; onBack: () => void; onFair: () => void }
 
@@ -33,7 +34,7 @@ export function Craters({ id, onBack, onFair }: Props) {
   const cfg = CRATERS
   const { placeBet, settleBet, nextFloats, balance, toast, sound, flashLoss } = useStore()
 
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [grid, setGrid] = useState<Grid | null>(null)
   const [spinning, setSpinning] = useState(false)
   const [outcome, setOutcome] = useState<CratersOutcome | null>(null)

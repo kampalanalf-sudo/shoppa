@@ -5,6 +5,7 @@ import { money, mult } from '../lib/format'
 import { gameById } from '../lib/games'
 import { BetAmount, BetButton } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
+import { MIN_BET } from '../lib/currency'
 
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36])
 const WHEEL = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26]
@@ -20,7 +21,7 @@ const PAYOUTS: Record<BetKind, number> = {
 export function Roulette({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('roulette')!
   const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [bets, setBets] = useState<Placed[]>([])
   const [spinning, setSpinning] = useState(false)
   const [angle, setAngle] = useState(0)
