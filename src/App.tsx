@@ -6,7 +6,7 @@ import { Header, Footer, BottomBar, ChatDock, Toasts, WinFlash } from './compone
 import { InstallPrompt } from './components/InstallPrompt'
 import { FreePlayBadge, ModeSwitch } from './components/ModeBadge'
 import { StudioIdent } from './components/StudioIdent'
-import { SearchModal, WalletModal, FairModal, HistoryModal, RewardsModal } from './components/Modals'
+import { SearchModal, WalletModal, FairModal, HistoryModal } from './components/Modals'
 import { Home } from './pages/Home'
 import { ProxiCash } from './pages/ProxiCash'
 import { Auth } from './pages/Auth'
@@ -349,7 +349,6 @@ function Shell() {
       <WalletModal />
       <FairModal />
       <HistoryModal />
-      <RewardsModal />
       <SearchModal open={search} onClose={() => setSearch(false)} onPick={(id) => play(id as GameId)} />
 
       {/* mobile sticky wallet CTA. Hidden while a game is open: every game

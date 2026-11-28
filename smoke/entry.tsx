@@ -22,7 +22,7 @@ import { Header, Footer, WinFlash, Toasts, ChatDock, BottomBar } from '../src/co
 import { AuthProvider } from '../src/lib/auth'
 import { readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
-import { WalletModal, FairModal, HistoryModal, SearchModal, RewardsModal } from '../src/components/Modals'
+import { WalletModal, FairModal, HistoryModal, SearchModal } from '../src/components/Modals'
 
 const noop = () => {}
 const games: [string, any][] = [
@@ -61,7 +61,6 @@ run('Modal:wallet', <WalletModal forceOpen />)
 run('Modal:fair', <FairModal forceOpen />)
 run('Modal:history', <HistoryModal forceOpen />)
 run('Modal:search', <SearchModal open onClose={noop} onPick={noop} />)
-run('Modal:rewards', <RewardsModal forceOpen />)
 
 // invariants
 const check = (name: string, cond: boolean, extra = '') => {

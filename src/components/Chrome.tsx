@@ -32,7 +32,7 @@ type HeaderProps = {
 }
 
 export function Header({ view, onNavigate, onSearch }: HeaderProps) {
-  const { balanceHidden, toggleBalanceHidden, setWalletOpen, setHistoryOpen, setFairOpen, setRewardsOpen, sound, toggleSound, username, bets, toast, mode, playBalance } = useStore()
+  const { balanceHidden, toggleBalanceHidden, setWalletOpen, setHistoryOpen, setFairOpen, sound, toggleSound, username, bets, toast, mode, playBalance } = useStore()
   // The account menu needs the real identity, not the local store's handle: the
   // store starts empty on a fresh device even when the player is signed in.
   const { user, profile, configured, signOut, dailyPxAwarded } = useAuth()
@@ -82,7 +82,6 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
           <NavItem active={view === 'sportsbook'} onClick={() => onNavigate('sportsbook')} icon={<IconBall size={17} />}>Sports</NavItem>
           <NavItem active={view === 'proxicash'} onClick={() => onNavigate('proxicash')} icon={<IconBolt size={17} />}>ProxiCash</NavItem>
           <NavItem onClick={() => setFairOpen(true)} icon={<IconShield size={17} />}>Fairness</NavItem>
-          <NavItem onClick={() => setRewardsOpen(true)} icon={<IconGift size={17} />}>Rewards</NavItem>
           <NavItem onClick={() => setHistoryOpen(true)} icon={<IconTrophy size={17} />}>Leaderboard</NavItem>
         </nav>
 
@@ -104,15 +103,6 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
             className="hidden h-9 w-9 place-items-center rounded-full text-slate-400 transition hover:bg-white/5 hover:text-white sm:grid"
           >
             {sound ? <IconVolume size={18} /> : <IconMuted size={18} />}
-          </button>
-          <button
-            type="button"
-            onClick={() => setRewardsOpen(true)}
-            aria-label="Rewards and bonuses"
-            className="relative grid h-9 w-9 place-items-center rounded-full text-slate-400 transition hover:bg-white/5 hover:text-gold"
-          >
-            <IconGift size={18} />
-            <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-rose-400 ring-2 ring-ink-900" />
           </button>
           <button
             type="button"
@@ -208,7 +198,6 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
                   </MenuItem>
                 )}
                 <MenuItem icon={<IconShield size={15} />} onClick={() => { setFairOpen(true); setAccountOpen(false) }}>Provably fair</MenuItem>
-                <MenuItem icon={<IconGift size={15} />} onClick={() => { setRewardsOpen(true); setAccountOpen(false) }}>Rewards &amp; bonuses</MenuItem>
                 <MenuItem icon={<IconTrophy size={15} />} onClick={() => { setHistoryOpen(true); setAccountOpen(false) }}>Rank &amp; leaderboard</MenuItem>
 
                 {/* Admin-only entries. is_admin comes from the database via
@@ -683,7 +672,7 @@ export function Footer({ onSupport }: { onSupport?: () => void } = {}) {
 /* ------------------------------------------------------------------ Bottom bar (mobile) */
 
 export function BottomBar({ view, onNavigate }: { view: NavView; onNavigate: HeaderProps['onNavigate'] }) {
-  const { setWalletOpen, setHistoryOpen, setRewardsOpen } = useStore()
+  const { setWalletOpen, setHistoryOpen } = useStore()
   const items: { label: string; icon: React.ReactNode; onClick: () => void; active?: boolean }[] = [
     { label: 'Home', icon: <IconHome size={19} />, onClick: () => onNavigate('home'), active: view === 'home' },
     { label: 'Wallet', icon: <IconWallet size={19} />, onClick: () => setWalletOpen(true) },
