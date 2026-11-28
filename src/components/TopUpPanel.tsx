@@ -61,6 +61,25 @@ export function TopUpPanel({
 
   const waiting = poll.state === 'pending'
 
+  /*
+   * Why the pay button is inert.
+   *
+   * It was silently `disabled` when the amount was under 500 or the number was
+   * short of nine digits, and a disabled button does nothing at all when tapped
+   * — no toast, no border, no message. A player pressing it saw "no outward
+   * sign" and had no way to learn that the phone field was empty.
+   *
+   * The requirement is stated up front instead, and the button only disables
+   * while a request is actually in flight.
+   */
+  const phoneDigits = phone.replace(/[^0-9]/g, '')
+  const blockedReason =
+    ugx < 500
+      ? 'The minimum top-up is UGX 500.'
+      : phoneDigits.length < 9
+        ? 'Enter the mobile money number to top up, for example 0758 443 666.'
+        : null
+
   // Hosted checkout: the player pays on ZENGAPAY's own page. Nothing here can
   // credit — the webhook does that once it has re-verified the transaction.
   // We only ask the server for a session and navigate to it.
@@ -143,11 +162,22 @@ export function TopUpPanel({
                 </div>
               )}
 
+              {blockedReason && (
+                <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-2.5 py-2 text-[11.5px] text-amber-200">
+                  {blockedReason}
+                </p>
+              )}
+
               <button
                 type="button"
-                onClick={() => void start()}
-                disabled={busy || ugx < 500 || phone.trim().length < 9}
-                className="btn-primary w-full !py-3 !text-[13px]"
+                onClick={() => {
+                  // A tap on a blocked form must still say why. The button is no
+                  // longer disabled for a form problem, only while sending.
+                  if (blockedReason) { setError(blockedReason); return }
+                  void start()
+                }}
+                disabled={busy}
+                className="btn-primary w-full !py-3 !text-[13px] disabled:opacity-60"
               >
                 {busy ? 'Starting…' : `Pay ${money(ugx)} UGX`}
               </button>
@@ -157,8 +187,11 @@ export function TopUpPanel({
               </p>
               <button
                 type="button"
-                onClick={() => void startHosted()}
-                disabled={busy || ugx < 500}
+                onClick={() => {
+                  if (ugx < 500) { setError('The minimum top-up is UGX 500.'); return }
+                  void startHosted()
+                }}
+                disabled={busy}
                 className="w-full rounded-lg border border-white/10 py-2.5 text-[11.5px] font-semibold text-slate-300 hover:border-white/20 hover:text-white disabled:opacity-50"
               >
                 Or pay on the secure payment page
