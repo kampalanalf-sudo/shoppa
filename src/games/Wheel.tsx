@@ -90,7 +90,7 @@ export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => vo
         else sfx.lose()
       }
       if (m === 0) flashLoss()
-      if (m >= 3) toast({ kind: 'win', title: `Wheel jackpot ${mult(m)}!`, body: `+$UGX {money(payout)} paid out.` })
+      if (m >= 3) toast({ kind: 'win', title: `Wheel jackpot ${mult(m)}!`, body: `${money(payout)} paid out.` })
     }, 5400)
   }, [spinning, bet, balance, playGame, angle, sound, toast, flashLoss])
 
