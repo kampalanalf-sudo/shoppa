@@ -157,6 +157,17 @@ check('a session id is validated before it reaches the provider',
   /\^\[A-Za-z0-9_-\]\{8,128\}\$/.test(pay))
 check('the client can call it', /'\/api\/session': 'pay\?op=session'/.test(read('src/lib/backend.ts')))
 
+// ------------------------------------------- a blocked form explains itself --
+// The pay button was silently disabled when the amount was under 500 or the
+// phone was short. A tap on a disabled button does nothing at all, so a player
+// reported "no outward sign" and had no way to learn the phone field was empty.
+const panel = read('src/components/TopUpPanel.tsx')
+check('a blocked top-up states the requirement up front',
+  /blockedReason/.test(panel) && /minimum top-up is UGX 500/i.test(panel) && /mobile money number/i.test(panel))
+check('the pay button is not disabled for a form problem, only while sending',
+  /disabled=\{busy\}/.test(panel) && !/disabled=\{busy \|\| ugx < 500/.test(panel))
+check('a tap while blocked still surfaces the reason', /if \(blockedReason\) \{ setError\(blockedReason\); return \}/.test(panel))
+
 // ------------------------------------------------------- the env is honest --
 const env = read('.env.example')
 check('the env template no longer documents the retired gateway', !/DGATEWAY/i.test(env))
