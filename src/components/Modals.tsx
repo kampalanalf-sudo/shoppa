@@ -64,76 +64,41 @@ const COINS = [
   { s: 'LTC', name: 'Litecoin', net: 'Litecoin', rate: 1 / 78, color: '#bfbbbb' },
 ]
 
+/**
+ * The wallet.
+ *
+ * WHAT THIS USED TO BE, AND WHY IT IS GONE
+ *
+ * It offered a Deposit tab, an amount box, and a "Deposit UGX N" button that
+ * called a local `deposit(amount)` — pure state arithmetic, then a toast reading
+ * "Deposit confirmed". No payment provider was involved, nothing was charged, and
+ * the amount was whatever the player typed. Every figure entered was credited.
+ * The withdraw tab had the mirror bug: it subtracted a local number and printed
+ * "Withdrawal submitted" for money that no one was ever asked to send.
+ *
+ * Around that sat hardcoded crypto addresses, a fabricated "avg 42s" payout
+ * claim, and a "0x7f9A…" withdrawal address default. None of it was real.
+ *
+ * So the wallet now does exactly two honest things: it shows the balance, and it
+ * hands the player to the mobile-money flow, which charges through ZENGAY and
+ * credits only on a confirmed webhook. There is no local path that can increase
+ * a balance, so there is nothing here to abuse.
+ */
 export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
-  const { walletOpen, setWalletOpen, balance, deposit, withdraw, totalDeposited, stats, toast, resetAccount, username, setUsername, mode, playBalance } = useStore()
-  const [tab, setTab] = useState<'deposit' | 'withdraw' | 'account'>('deposit')
-  const [coin, setCoin] = useState('USDT')
-  const [amount, setAmount] = useState('100')
-  const [busy, setBusy] = useState(false)
-  const [done, setDone] = useState<null | { kind: 'deposit' | 'withdraw'; amt: number }>(null)
+  const { walletOpen, setWalletOpen, balance, totalDeposited, stats, mode, playBalance, username } = useStore()
+  const [tab, setTab] = useState<'overview' | 'topup' | 'cashout'>('overview')
 
-  const coinMeta = COINS.find((c) => c.s === coin)!
-  const amt = parseFloat(amount) || 0
-
-  const submit = () => {
-    /*
-     * Free play is not a wallet.
-     *
-     * Depositing would credit real money into a mode whose balance resets, and
-     * withdrawing would take money out of a balance that never held any. Both are
-     * refused here as well as being hidden, because "the button is not rendered"
-     * is not the same guarantee as "the action cannot run".
-     */
-    if (mode === 'free') {
-      toast({
-        kind: 'error',
-        title: 'Not available in free play',
-        body: 'Switch to real money to deposit or withdraw.',
-      })
-      return
-    }
-    if (!(amt > 0)) {
-      toast({ kind: 'error', title: 'Enter an amount', body: 'Amount must be greater than zero.' })
-      return
-    }
-    if (tab === 'withdraw' && amt > playBalance) {
-      toast({ kind: 'error', title: 'Insufficient balance', body: 'Reduce the amount and try again.' })
-      return
-    }
-    setBusy(true)
-    window.setTimeout(() => {
-      setBusy(false)
-      if (tab === 'deposit') {
-        deposit(amt)
-        sfx.deposit()
-        setDone({ kind: 'deposit', amt })
-      } else {
-        if (withdraw(amt)) {
-          sfx.cashout()
-          setDone({ kind: 'withdraw', amt })
-        }
-      }
-    }, 900)
+  const go = (hash: string) => {
+    setWalletOpen(false)
+    try { window.location.hash = hash } catch { /* ignore */ }
   }
-
-  const activeTabBtn = (t: typeof tab, label: string) => (
-    <button
-      type="button"
-      onClick={() => { setTab(t); setDone(null); sfx.click() }}
-      className={`flex-1 rounded-lg py-2 text-[12.5px] font-bold transition ${
-        tab === t ? 'bg-white/[0.09] text-white shadow-sm' : 'text-slate-400 hover:text-white'
-      }`}
-    >
-      {label}
-    </button>
-  )
 
   return (
     <Sheet
       open={forceOpen ?? walletOpen}
-      onClose={() => { setWalletOpen(false); setDone(null) }}
+      onClose={() => setWalletOpen(false)}
       title="Wallet"
-      subtitle={mode === 'free' ? `Free play · ${username}` : `Balance UGX ${money(balance)} · ${username}`}
+      subtitle={mode === 'free' ? `Free play · ${username}` : `Balance UGX ${money(playBalance)} · ${username}`}
       icon={<IconWallet size={18} />}
     >
       {/* The mode switch belongs next to the balance: it is the one place a
@@ -167,160 +132,73 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
         </div>
       </div>
 
-      <div className="mb-4 flex gap-1 rounded-xl border border-white/[0.07] bg-ink-900/70 p-1">
-        {activeTabBtn('deposit', 'Deposit')}
-        {activeTabBtn('withdraw', 'Withdraw')}
-        {activeTabBtn('account', 'Account')}
-      </div>
-
-      {done ? (
-        <div className="py-4 text-center">
-          <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-emerald-500/15 text-emerald-400">
-            <IconCheck size={26} />
-          </div>
-          <p className="mt-3 text-[15px] font-bold text-white">
-            {done.kind === 'deposit' ? 'Deposit confirmed' : 'Withdrawal sent'}
-          </p>
-          <p className="num mt-1 text-[13px] text-slate-400">UGX {money(done.amt)} {done.kind === 'deposit' ? 'credited' : 'on the way'}</p>
-          <p className="mt-1 text-[11px] text-slate-500">Payouts settle to mobile money via ProxiCash.</p>
-          <div className="mt-4 flex gap-2">
-            <button type="button" onClick={() => setDone(null)} className="btn-ghost flex-1">New transaction</button>
-            <button type="button" onClick={() => { setWalletOpen(false); setDone(null) }} className="btn-primary flex-1">Back to games</button>
-          </div>
-        </div>
-      ) : tab === 'account' ? (
-        <div className="space-y-4">
-          <div>
-            <label className="label" htmlFor="uname">Display name</label>
-            <div className="flex gap-2">
-              <input id="uname" className="field" value={username} onChange={(e) => setUsername(e.target.value)} maxLength={18} />
-            </div>
-          </div>
-          <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[12.5px] font-bold text-white">VIP Platinum</p>
-                <p className="text-[11px] text-slate-500">Level 24 · 76% to Diamond</p>
-              </div>
-              <span className="chip !border-gold/30 !text-gold">VIP</span>
-            </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-              <div className="h-full w-[76%] rounded-full bg-gradient-to-r from-neon-lime to-gold" />
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="panel-tight p-3">
-              <p className="text-[10px] uppercase tracking-wider text-slate-500">Wagered</p>
-              <p className="num text-[15px] font-bold text-white">{money(stats.wagered)}</p>
-            </div>
-            <div className="panel-tight p-3">
-              <p className="text-[10px] uppercase tracking-wider text-slate-500">Biggest win</p>
-              <p className="num text-[15px] font-bold text-neon-lime">{money(stats.biggestWin)}</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => { resetAccount(); setDone(null) }}
-            className="btn-ghost w-full !border-rose-500/25 !text-rose-300 hover:!bg-rose-500/10"
-          >
-            Reset local stats
-          </button>
-        </div>
+      {mode === 'free' ? (
+        <p className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-[11.5px] leading-relaxed text-amber-200">
+          You are in free play. These credits are practice only — they cannot be
+          topped up, cashed out, or turned into money. Switch to real money to
+          make a deposit.
+        </p>
       ) : (
-        <div className="space-y-3.5">
-          <div>
-            <span className="label">Currency</span>
-            <div className="grid grid-cols-3 gap-1.5">
-              {COINS.map((c) => (
-                <button
-                  key={c.s}
-                  type="button"
-                  onClick={() => { setCoin(c.s); sfx.click() }}
-                  className={`flex items-center gap-1.5 rounded-lg border px-2 py-2 transition ${
-                    coin === c.s ? 'border-neon-lime/50 bg-neon-lime/10' : 'border-white/[0.07] bg-white/[0.025] hover:border-white/20'
-                  }`}
-                >
-                  <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />
-                  <span className="text-[11.5px] font-bold text-white">{c.s}</span>
-                </button>
-              ))}
-            </div>
+        <>
+          <div className="mb-3 flex gap-1 rounded-xl border border-white/[0.07] bg-ink-900/70 p-1">
+            {([['overview', 'Overview'], ['topup', 'Top up'], ['cashout', 'Cash out']] as const).map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => { setTab(id); sfx.click() }}
+                className={`flex-1 rounded-lg py-2 text-[12.5px] font-bold transition ${
+                  tab === id ? 'bg-white/[0.09] text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
 
-          <div>
-            <label className="label" htmlFor="amt">
-              <span>Amount (UGX)</span>
-              <span className="normal-case tracking-normal text-slate-500">
-                ≈ {money(amt * coinMeta.rate)} {coinMeta.s}
-              </span>
-            </label>
-            <div className="relative">
-              <input
-                id="amt"
-                inputMode="decimal"
-                className="field num !pr-16 !text-lg !font-bold"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))}
-              />
-              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-bold text-neon-lime/70">UGX</span>
-            </div>
-            <div className="mt-1.5 flex gap-1.5">
-              {[50, 100, 500, 1000].map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => { setAmount(String(v)); sfx.click() }}
-                  className="flex-1 rounded-lg border border-white/[0.07] bg-white/[0.03] py-1 text-[11px] font-bold text-slate-300 transition hover:border-neon-lime/40 hover:text-white"
-                >
-                  {v}
-                </button>
-              ))}
-              {tab === 'withdraw' && (
-                <button
-                  type="button"
-                  onClick={() => setAmount(String(Math.floor(playBalance)))}
-                  className="flex-1 rounded-lg border border-neon-lime/30 bg-neon-lime/10 py-1 text-[11px] font-bold text-neon-lime"
-                >
-                  Max
-                </button>
-              )}
-            </div>
-          </div>
-
-          {tab === 'deposit' ? (
+          {tab === 'overview' && (
             <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
-              <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Send {coinMeta.s} to</p>
-              <CopyField label={`${coinMeta.s} · ${coinMeta.net}`} value="TQ8vN5kRfLz9m2yB7xJcWq4pAhD1sEuG3K" />
-              <p className="mt-2 flex items-center gap-1.5 text-[10.5px] text-slate-500">
-                <IconInfo size={12} /> Top up with mobile money. Your UGX balance can be paid out to MoMo.
+              <p className="text-[11.5px] leading-relaxed text-slate-400">
+                Top up with MTN or Airtel mobile money. Every deposit is charged by
+                the network and credited once the payment is confirmed — never
+                before.
               </p>
-            </div>
-          ) : (
-            <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
-              <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Withdraw to {coinMeta.s}</p>
-              <input className="field !text-[12px]" placeholder={`${coinMeta.s} address`} defaultValue="0x7f9A2c4B15eD8a3Ff61b0C9e2D4a5B6c7D8e9F01" readOnly />
-              <p className="mt-2 flex items-center gap-1.5 text-[10.5px] text-emerald-400/80">
-                <IconCheck size={12} /> Zero-fee instant withdrawals · avg 42s
-              </p>
+              <button type="button" onClick={() => go('#topup')} className="btn-primary mt-3 h-10 w-full !text-[12.5px]">
+                <IconBolt size={15} /> Top up
+              </button>
             </div>
           )}
 
-          <button type="button" onClick={submit} disabled={busy} className="btn-primary h-12 w-full text-[14px]">
-            {busy ? (
-              <span className="flex items-center gap-2">
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink-950/30 border-t-ink-950" /> Processing…
-              </span>
-            ) : tab === 'deposit' ? (
-              <>Deposit UGX {money(amt)} <IconBolt size={15} /></>
-            ) : (
-              <>Withdraw UGX {money(amt)} <IconExternal size={14} /></>
-            )}
-          </button>
-          <p className="text-center text-[10px] text-slate-600">
-            By continuing you agree to the FloatBet Terms. 18+ · Play responsibly.
-          </p>
-        </div>
+          {tab === 'topup' && (
+            <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
+              <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Mobile money</p>
+              <p className="text-[11.5px] leading-relaxed text-slate-400">
+                Minimum UGX 500. You will get a prompt on your phone — approve it
+                and the balance updates when the network confirms.
+              </p>
+              <button type="button" onClick={() => go('#topup')} className="btn-primary mt-3 h-10 w-full !text-[12.5px]">
+                <IconBolt size={15} /> Enter an amount
+              </button>
+            </div>
+          )}
+
+          {tab === 'cashout' && (
+            <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
+              <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Withdraw to mobile money</p>
+              <p className="text-[11.5px] leading-relaxed text-slate-400">
+                Minimum UGX 1,000. Your account must be 7 days old, with your age
+                and phone confirmed.
+              </p>
+              <button type="button" onClick={() => go('#cashout')} className="btn-primary mt-3 h-10 w-full !text-[12.5px]">
+                <IconBolt size={15} /> Request a cashout
+              </button>
+            </div>
+          )}
+        </>
       )}
+
+      <p className="mt-3 text-center text-[10px] text-slate-600">
+        Balances change only when a payment is confirmed by the network. 18+ · Play responsibly.
+      </p>
     </Sheet>
   )
 }
@@ -444,91 +322,23 @@ export function FairModal({ forceOpen }: { forceOpen?: boolean } = {}) {
 
 /* ------------------------------------------------------------------ Rewards hub */
 
-const REWARDS = [
-  { id: 'daily', title: 'Daily login', desc: 'Streak day 3 of 7', amount: 250, icon: '📅', ready: true },
-  { id: 'rakeback', title: 'Rakeback', desc: '2.4% of your last 24h volume', amount: 640, icon: '♻️', ready: true },
-  { id: 'race', title: 'Weekly race', desc: 'Rank #48 · pool UGX 50,000', amount: 1200, icon: '🏁', ready: true },
-  { id: 'vip', title: 'VIP airdrop', desc: 'Platinum tier · unlocks Friday', amount: 5000, icon: '💎', ready: false },
-]
-
-export function RewardsModal({ forceOpen }: { forceOpen?: boolean } = {}) {
-  const { rewardsOpen, setRewardsOpen, deposit, stats, toast } = useStore()
-  const [claimed, setClaimed] = useState<string[]>([])
-
-  const totalReady = REWARDS.filter((r) => r.ready && !claimed.includes(r.id)).reduce((a, r) => a + r.amount, 0)
-
-  return (
-    <Sheet
-      open={forceOpen ?? rewardsOpen}
-      onClose={() => setRewardsOpen(false)}
-      title="Rewards hub"
-      subtitle={`UGX ${money(totalReady)} ready to collect`}
-      icon={<IconGift size={18} />}
-    >
-      <div className="relative mb-4 overflow-hidden rounded-2xl border border-gold/25 bg-gradient-to-br from-gold/15 via-ink-800 to-ink-850 p-4">
-        <div className="pointer-events-none absolute -right-6 -top-8 h-28 w-28 rounded-full bg-gold/20 blur-2xl" />
-        <p className="text-[10px] font-bold uppercase tracking-[.2em] text-gold/80">Available now</p>
-        <p className="num mt-1 text-3xl font-black text-white">{money(totalReady)} <span className="text-[13px] font-bold text-slate-400">UGX</span></p>
-        <button
-          type="button"
-          disabled={totalReady === 0}
-          onClick={() => {
-            deposit(totalReady)
-            setClaimed(REWARDS.filter((r) => r.ready).map((r) => r.id))
-            sfx.deposit()
-            toast({ kind: 'success', title: 'Rewards collected', body: `UGX ${money(totalReady)} credited.` })
-          }}
-          className="btn-primary mt-3 h-10 w-full !text-[12.5px]"
-        >
-          {totalReady === 0 ? <><IconCheck size={15} /> All collected</> : <><IconGift size={15} /> Collect all</>}
-        </button>
-      </div>
-
-      <div className="space-y-2">
-        {REWARDS.map((r) => {
-          const done = claimed.includes(r.id) || !r.ready
-          return (
-            <div key={r.id} className={`flex items-center gap-3 rounded-xl border p-3 ${done ? 'border-white/[0.05] bg-white/[0.015]' : 'border-white/[0.08] bg-white/[0.03]'}`}>
-              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/[0.05] text-[16px]">{r.icon}</span>
-              <div className="min-w-0 flex-1">
-                <p className={`text-[12.5px] font-bold ${done ? 'text-slate-400' : 'text-white'}`}>{r.title}</p>
-                <p className="truncate text-[10.5px] text-slate-500">{r.desc}</p>
-              </div>
-              <button
-                type="button"
-                disabled={done}
-                onClick={() => {
-                  deposit(r.amount)
-                  setClaimed((c) => [...c, r.id])
-                  sfx.deposit()
-                  toast({ kind: 'success', title: `${r.title} claimed`, body: `+UGX ${money(r.amount)}` })
-                }}
-                className={`num shrink-0 rounded-lg px-2.5 py-1.5 text-[11px] font-bold transition ${
-                  done ? 'bg-white/[0.04] text-slate-500' : 'bg-neon-lime/15 text-neon-lime hover:bg-neon-lime/25'
-                }`}
-              >
-                {done ? (r.ready ? 'Claimed' : 'Locked') : `+${money(r.amount)}`}
-              </button>
-            </div>
-          )
-        })}
-      </div>
-
-      <div className="mt-4 rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
-        <div className="flex items-center justify-between text-[11px]">
-          <span className="text-slate-500">30-day volume</span>
-          <span className="num font-bold text-white">UGX {money(stats.wagered)}</span>
-        </div>
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
-          <div className="h-full rounded-full bg-gradient-to-r from-neon-lime to-gold" style={{ width: `${Math.min(100, (stats.wagered / 50000) * 100)}%` }} />
-        </div>
-        <p className="mt-1.5 text-[10px] text-slate-600">
-          {stats.wagered >= 50000 ? 'Gold tier unlocked — 15% rakeback' : `Wager UGX ${money(50000 - stats.wagered)} more to unlock Gold tier`}
-        </p>
-      </div>
-    </Sheet>
-  )
-}
+/*
+ * THE REWARDS HUB IS GONE.
+ *
+ * It listed four "rewards" with amounts summing to UGX 7,090, all from hardcoded
+ * data — a "Daily login · streak day 3 of 7", a rakeback percentage, a race rank,
+ * a VIP tier. None of it was computed from anything. Pressing "Collect all"
+ * called the local `deposit()` and added the total to the player's balance.
+ *
+ * It also contradicted the app: the real daily bonus is the server-side
+ * claim_daily_px, and the home page's own rakeback tile is not a claimable
+ * amount. Two systems awarded the same thing, and only one of them had a
+ * database behind it.
+ *
+ * The real daily bonus lives in the bar at the top of the app and is granted by
+ * the server, once per Kampala day. There is no second place to claim money, so
+ * there is nothing here to remove but the printer.
+ */
 
 /* ------------------------------------------------------------------ Stats / history */
 

@@ -109,7 +109,13 @@ ok('a free round does not touch real stats', /stats: nextStats\(s\.free\.stats\)
 
 // Deposits and withdrawals are refused in free play, in the action itself rather
 // than only by hiding the button.
-ok('deposit and withdraw are refused in free play', /Not available in free play/.test(read('src/components/Modals.tsx')))
+const storeSrc = stripComments(read('src/lib/store.tsx'))
+const modals = stripComments(read('src/components/Modals.tsx'))
+
+// The wallet refuses the whole money flow in free play now, which is stronger
+// than refusing one button: there is nothing to press.
+ok('the wallet refuses money flows in free play',
+  /mode === 'free' \? \(/.test(modals) && /practice only/.test(modals))
 // The welcome-bonus promotion was removed at the user's request, so the modal
 // that declined it no longer exists. The rule it protected is unchanged and
 // still rests on the deposit/withdraw guard above.
@@ -121,6 +127,42 @@ const home = read('src/pages/Home.tsx')
 for (const gone of ['+200%', 'deposit match', 'Active bonus', 'Claim now', 'Welcome bonus', 'PromoModal']) {
   ok(`the deposit-match promotion is gone: ${gone}`, !home.includes(gone) && !read('src/components/Modals.tsx').includes(gone))
 }
+
+// ------------------------------------------------ nobody can mint money --
+// The Wallet sheet's Deposit tab called a local `deposit(amount)` that did
+// `balance += amount` and toasted "Deposit confirmed". Nothing was charged. Every
+// figure a player typed was credited, with no prompt on any phone. The Rewards
+// hub called the same function to mint promotional credit.
+//
+// The rule these assert: the only thing that may increase a balance is the
+// server, after a payment it has confirmed. There is no local creator at all.
+
+ok('the store exposes no deposit creator', !/^\s+deposit: \(/m.test(storeSrc))
+ok('the store exposes no withdraw creator', !/^\s+withdraw: \(/m.test(storeSrc))
+// A settled win may credit the balance -- that is the game paying out. What must
+// not exist is a creator that credits an amount the player typed. The only
+// `+ amount` left in the store is the crypto-exchange delta, which is a
+// ProxiCash order the server owns, not a deposit box.
+ok('no creator adds a player-typed amount',
+  !/balance: Math\.round\(s\.balance \+ (amount|amt)/.test(storeSrc))
+ok('nothing in the UI calls a local deposit', !/\bdeposit\(/.test(modals))
+ok('nothing in the UI calls a local withdraw', !/\bwithdraw\(/.test(modals))
+
+// The fake wallet furniture went with it: hardcoded addresses and a fabricated
+// payout time are the same kind of lie as a fake credit.
+ok('no hardcoded crypto address survives', !/TQ8vN5kRfLz9m2yB7xJcWq4pAhD1sEuG3K/.test(modals))
+ok('no fabricated payout time survives', !/avg 42s/.test(modals))
+ok('no default ETH withdrawal address survives', !/0x7f9A2c4B15eD8a3Ff61b0C9e2D4a5B6c7D8e9F01/.test(modals))
+
+// The Rewards hub was four hardcoded amounts collecting through the same
+// printer, and it duplicated the real server-side daily bonus.
+ok('the hardcoded rewards hub is gone', !/REWARDS\b/.test(modals))
+ok('and so is its entry in the store', !/rewardsOpen/.test(storeSrc))
+ok('the wallet sends players to the real payment flow', /#topup/.test(modals))
+
+// The one thing that IS allowed to credit a balance is the payment webhook,
+// through the RPC the database owns.
+ok('credits come from the server RPC', /apply_gateway_result/.test(read('supabase/functions/webhooks-zengapay/index.ts')))
 
 // Marking. The requirement is that free play is CLEARLY marked.
 ok('free play renders a full-width warning strip', /variant="bar"/.test(read('src/App.tsx')))

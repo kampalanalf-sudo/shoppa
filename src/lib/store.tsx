@@ -179,8 +179,6 @@ type Ctx = Persisted & {
   historyOpen: boolean
   setHistoryOpen: (v: boolean) => void
   fairOpen: boolean
-  rewardsOpen: boolean
-  setRewardsOpen: (v: boolean) => void
   setFairOpen: (v: boolean) => void
   toasts: Toast[]
   toast: (t: Omit<Toast, 'id'>) => void
@@ -198,8 +196,6 @@ type Ctx = Persisted & {
   nextFloats: (count: number) => Promise<number[]>
   rotateSeed: () => Promise<void>
   updateClientSeed: (seed: string) => void
-  deposit: (amount: number) => void
-  withdraw: (amount: number) => boolean
   toggleSound: () => void
   toggleBalanceHidden: () => void
   setUsername: (v: string) => void
@@ -221,7 +217,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [walletOpen, setWalletOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [fairOpen, setFairOpen] = useState(false)
-  const [rewardsOpen, setRewardsOpen] = useState(false)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [winFlash, setWinFlash] = useState<number | null>(null)
   const [lossFlash, setLossFlash] = useState(false)
@@ -459,32 +454,22 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setState((s) => ({ ...s, clientSeed: clean, seeds: { ...s.seeds, clientSeed: clean, nonce: 0 } }))
   }, [])
 
-  const deposit = useCallback(
-    (amount: number) => {
-      setState((s) => ({
-        ...s,
-        balance: Math.round(s.balance + amount),
-        totalDeposited: Math.round(s.totalDeposited + amount),
-      }))
-      toast({ kind: 'success', title: 'Deposit confirmed', body: `UGX ${amount.toLocaleString()} added to your balance.` })
-    },
-    [toast],
-  )
-
-  const withdraw = useCallback(
-    (amount: number) => {
-      const balance = stateRef.current.balance
-      if (!(amount > 0) || amount > balance) {
-        toast({ kind: 'error', title: 'Insufficient balance', body: 'Reduce the amount and try again.' })
-        return false
-      }
-      stateRef.current = { ...stateRef.current, balance: Math.round(balance - amount) }
-      setState((s) => ({ ...s, balance: Math.round(s.balance - amount) }))
-      toast({ kind: 'success', title: 'Withdrawal submitted', body: `UGX ${amount.toLocaleString()} is on the way.` })
-      return true
-    },
-    [toast],
-  )
+  /*
+   * THERE IS NO `deposit` HERE ANY MORE, AND THERE MUST NOT BE.
+   *
+   * It was `balance += amount` in local state, followed by a toast saying
+   * "Deposit confirmed". Nothing was charged, nothing was sent to a payment
+   * provider, and the amount came from a number the player typed. The Wallet
+   * sheet's Deposit tab called it, so typing any figure credited that figure.
+   *
+   * The same shape appeared twice more: the Rewards hub's "Collect all" and its
+   * per-reward buttons each called it to mint promotional credit out of nothing.
+   *
+   * A local function that increases a balance without a payment is not a
+   * deposit flow with a bug in it; it is a money printer. Balances are now only
+   * ever credited by the server, after ZENGAPAY confirms a payment, through
+   * apply_gateway_result.
+   */
 
   /**
    * Record a ProxiCash exchange and credit the UGX balance when the payout
@@ -566,8 +551,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setHistoryOpen,
       fairOpen,
       setFairOpen,
-      rewardsOpen,
-      setRewardsOpen,
       toasts,
       toast,
       dismissToast,
@@ -577,8 +560,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       nextFloats,
       rotateSeed,
       updateClientSeed,
-      deposit,
-      withdraw,
       toggleSound,
       toggleBalanceHidden,
       setUsername,
@@ -597,8 +578,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       refillFreePlay,
     }),
     [
-      state, hydrated, walletOpen, historyOpen, fairOpen, rewardsOpen, toasts, toast, dismissToast, placeBet, settleBet,
-      refundBet, nextFloats, rotateSeed, updateClientSeed, deposit, withdraw, toggleSound, toggleBalanceHidden,
+      state, hydrated, walletOpen, historyOpen, fairOpen, toasts, toast, dismissToast, placeBet, settleBet,
+      refundBet, nextFloats, rotateSeed, updateClientSeed, toggleSound, toggleBalanceHidden,
       setUsername, resetAccount, winFlash, lossFlash, flashLoss, recordExchange, settleExchange,
       setMode, refillFreePlay,
     ],
