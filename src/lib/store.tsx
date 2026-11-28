@@ -1,5 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { freshSeeds, floats, randomHex, sha256 } from './fair'
+import { isServerSettled, settleRound, startRound } from './play'
+import { resolveBet } from '../../supabase/functions/_shared/games'
 import type { BetRecord, FairSeedState, GameId, Stats, Toast } from './types'
 import { gameById } from './games'
 import { uid } from './format'
@@ -201,6 +203,54 @@ type Ctx = Persisted & {
   setMode: (m: PlayMode) => void
   refillFreePlay: () => void
   placeBet: (game: GameId, wager: number) => boolean
+  /**
+   * Play a real-money round the server settles.
+   *
+   * `params` describes the bet (dice target, wheel segment) and never a payout.
+   * Resolves with the payout the SERVER decided; throws with its own wording
+   * when it refuses, so the caller can show the real reason.
+   *
+   * Free play must not use this: it has no server row.
+   */
+  /** Open a round without settling it (Crash needs to defer the outcome). */
+  beginRound: (game: GameId, wager: number, params?: Record<string, number | string>) => Promise<{
+    round: string
+    nonce: number
+    server_hash: string
+    balance: number
+  }>
+  /** Settle an open round and fold the server's answer into the wallet. */
+  finishRound: (
+    game: GameId,
+    started: { round: string; nonce: number; server_hash: string },
+    wager: number,
+    detail?: string,
+  ) => Promise<{
+    payout: number
+    multiplier: number
+    detail: string
+    payload: Record<string, number | string>
+    won: boolean
+  }>
+  playRound: (game: GameId, wager: number, params?: Record<string, number | string>) => Promise<{
+    payout: number
+    multiplier: number
+    detail: string
+    payload: Record<string, number | string>
+  }>
+  /**
+   * Play one round in the current mode and get back what the SERVER decided.
+   *
+   * Use this instead of `placeBet` + `settleBet` for anything played for money.
+   * Free play goes through the same function and settles against free credits.
+   */
+  playGame: (game: GameId, wager: number, params?: Record<string, number | string>) => Promise<{
+    payout: number
+    multiplier: number
+    detail: string
+    payload: Record<string, number | string>
+    won: boolean
+  }>
   settleBet: (args: SettleArgs) => number
   refundBet: (game: GameId, wager: number) => void
   nextFloats: (count: number) => Promise<number[]>
@@ -299,12 +349,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     /*
      * Keep anything the arcade added on top of the server figure.
      *
-     * The arcade settles in the browser and writes the result nowhere, so the
-     * local number is server + every game result since login. Overwriting it
-     * with the server figure -- which is what this did, and what "the balance
-     * goes back to the beginning of the session" looked like -- deleted real
-     * winnings from the screen. A player who won, refreshed, and found their
-     * balance restored to the pre-win figure was seeing this exact line.
+     * Real-money rounds are settled by the server now (see lib/play.ts), so the
+     * server figure IS the balance for those. The difference that remains is
+     * free-play credit and any round still in flight. Overwriting it with the
+     * server figure -- what "the balance goes back to the beginning of the
+     * session" looked like -- deleted it from the screen.
      *
      * The distinction that keeps both properties at once:
      *
@@ -394,6 +443,27 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
 
       const free = stateRef.current.mode === 'free'
+
+      /*
+       * REFUSE local settlement for real money.
+       *
+       * `placeBet` + `settleBet` credit the wallet in the browser. That is
+       * correct for free play, which has no server row, and it is exactly wrong
+       * for money: it was the printer, and it is why a win lived only in one tab.
+       *
+       * A game that is not yet server-settled therefore cannot be played for
+       * money at all. Refusing loudly is the honest outcome — silently letting
+       * it debit a real stake it will never pay out would be worse.
+       */
+      if (!free && !isServerSettled(game)) {
+        toast({
+          kind: 'error',
+          title: 'Not available for money yet',
+          body: `${gameById(game)?.name ?? game} settles on the device, so it cannot be played for cash. Switch to free play, or pick a game marked live.`,
+        })
+        return false
+      }
+
       // Read the balance from the live ref, never from inside the updater: the
       // updater is deferred, so a flag written in there is not visible by the
       // time this function returns.
@@ -425,8 +495,117 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [toast],
   )
 
+  /**
+   * Open a real-money round. The stake is debited by the server.
+   *
+   * Split from settling because Crash has to wait: the player commits blind and
+   * decides when to cash out, so the outcome can only be drawn afterwards.
+   */
+  const beginRound = useCallback(
+    async (game: GameId, wager: number, params: Record<string, number | string> = {}) => {
+      if (stateRef.current.mode === 'free') {
+        throw new Error('free play is settled on the device, not by the server')
+      }
+      if (!isServerSettled(game)) {
+        throw new Error(`${game} is not settled by the server yet`)
+      }
+      const stake = Math.round(wager)
+      const started = await startRound(game, stake, params as never)
+
+      // The server has taken the stake, so show that at once: a player must not
+      // be shown money they can no longer spend.
+      serverBaselineRef.current = started.balance
+      stateRef.current = { ...stateRef.current, balance: started.balance }
+      setState((prev) => ({ ...prev, balance: started.balance }))
+      return started
+    },
+    [],
+  )
+
+  /**
+   * Settle an open round and fold the server's answer into the wallet.
+   *
+   * The server balance wins outright: it settled this round and wrote the
+   * ledger row, so there is nothing for the client to compute or add.
+   */
+  const finishRound = useCallback(
+    async (
+      game: GameId,
+      started: { round: string; nonce: number; server_hash: string },
+      wager: number,
+      detail?: string,
+    ) => {
+      const stake = Math.round(wager)
+      const settled = await settleRound(started.round)
+
+      serverBaselineRef.current = settled.balance
+      const record: BetRecord = {
+        id: uid(),
+        game,
+        gameName: gameById(game)?.name ?? game,
+        wager: stake,
+        payout: settled.payout,
+        multiplier: settled.multiplier,
+        detail: detail ?? settled.detail,
+        won: settled.payout > 0,
+        ts: Date.now(),
+        nonce: started.nonce,
+        clientSeed: 'server',
+        hash: started.server_hash,
+      }
+
+      setState((prev) => {
+        const streak = settled.payout > 0 ? prev.stats.streak + 1 : 0
+        return {
+          ...prev,
+          balance: settled.balance,
+          bets: [record, ...prev.bets].slice(0, 120),
+          stats: {
+            wagered: prev.stats.wagered + stake,
+            profit: prev.stats.profit + (settled.payout - stake),
+            biggestWin: Math.max(prev.stats.biggestWin, settled.payout),
+            rounds: prev.stats.rounds + 1,
+            wins: prev.stats.wins + (settled.payout > 0 ? 1 : 0),
+            streak,
+            bestStreak: Math.max(prev.stats.bestStreak, streak),
+          },
+        }
+      })
+
+      return {
+        payout: settled.payout,
+        multiplier: settled.multiplier,
+        detail: settled.detail,
+        payload: settled.payload,
+        won: settled.payout > 0,
+      }
+    },
+    [],
+  )
+
+  /** One server-settled round, for games that settle the instant they resolve. */
+  const playRound = useCallback(
+    async (game: GameId, wager: number, params: Record<string, number | string> = {}) => {
+      const started = await beginRound(game, wager, params)
+      return finishRound(game, started, wager)
+    },
+    [beginRound, finishRound],
+  )
+
   const settleBet = useCallback(
     ({ game, wager, multiplier, detail, silent, nonce }: SettleArgs) => {
+      /*
+       * Local settlement is for free play only.
+       *
+       * The multiplier here comes from the caller, so letting it touch the real
+       * wallet would be the money printer again. Returns 0 rather than throwing:
+       * the games call this from animation frames, and a thrown error there
+       * would strand the round.
+       */
+      if (stateRef.current.mode === 'real') {
+        console.error('refused a client-side settle in real mode', game)
+        return 0
+      }
       // Whole shillings, in both modes. A payout keeps its fraction until the
       // round is over, then rounds down -- rounding up would pay out more than
       // the multiplier says.
@@ -537,6 +716,69 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return floats(seeds.serverSeed, clientSeed, nonce, count)
     },
     [state.seeds, state.clientSeed],
+  )
+
+  /**
+   * Play one round, in whichever mode the player is in.
+   *
+   * ONE entry point on purpose. The games must not each decide whether they are
+   * playing for money, because that is how the two paths drift apart and the
+   * fake one starts crediting the real wallet.
+   *
+   *   free play -> derive the float on the device, apply the SAME rules
+   *                (_shared/games.ts), settle against free credits only.
+   *   real money -> the server holds the seed, derives the float, applies the
+   *                same rules, and credits the real wallet. The client only
+   *                receives the outcome to animate.
+   *
+   * Both call `resolveBet`, so a free-play round shows exactly the odds a paid
+   * one does. Only one of them can move money, and it is not the one in the
+   * browser.
+   */
+  const playGame = useCallback(
+    async (
+      game: GameId,
+      wager: number,
+      params: Record<string, number | string> = {},
+    ): Promise<{
+      payout: number
+      multiplier: number
+      detail: string
+      payload: Record<string, number | string>
+      won: boolean
+    }> => {
+      if (stateRef.current.mode === 'real') {
+        if (!isServerSettled(game)) {
+          throw new Error(
+            `${gameById(game)?.name ?? game} is not settled by the server yet, so it cannot be played for money.`,
+          )
+        }
+        const settled = await playRound(game, wager, params)
+        return { ...settled, won: settled.payout > 0 }
+      }
+
+      // ---- free play: same rules, no money ----
+      const stake = Math.round(wager)
+      if (!placeBet(game, stake)) throw new Error('that bet was refused')
+
+      const [u] = await nextFloats(1)
+      const outcome = resolveBet(game as never, params as never, u)
+      const payout = settleBet({
+        game,
+        wager: stake,
+        multiplier: outcome.multiplier,
+        detail: outcome.detail,
+        nonce: nonceUsedRef.current,
+      })
+      return {
+        payout,
+        multiplier: outcome.multiplier,
+        detail: outcome.detail,
+        payload: outcome.payload ?? {},
+        won: payout > 0,
+      }
+    },
+    [placeBet, playRound, nextFloats, settleBet],
   )
 
   const rotateSeed = useCallback(async () => {
@@ -660,6 +902,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       toast,
       dismissToast,
       placeBet,
+      playRound,
+      beginRound,
+      finishRound,
+      playGame,
       settleBet,
       refundBet,
       nextFloats,

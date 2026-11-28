@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../lib/store'
 import { sfx } from '../lib/sound'
-import { crashPoint } from '../lib/fair'
 import { money, mult } from '../lib/format'
 import { gameById } from '../lib/games'
 import { BetAmount, BetButton } from '../components/BetControls'
@@ -20,7 +19,7 @@ type Phase = 'idle' | 'running' | 'crashed' | 'cashed'
 
 export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('crash')!
-  const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
+  const { beginRound, finishRound, balance, sound, toast, flashLoss } = useStore()
   const [bet, setBet] = useState(MIN_BET)
   const [autoCash, setAutoCash] = useState(2)
   const [autoEnabled, setAutoEnabled] = useState(false)
@@ -32,6 +31,17 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
   const [payout, setPayout] = useState(0)
   const [trail, setTrail] = useState<{ t: number; m: number }[]>([])
 
+  /**
+   * Round started on the server, not yet settled.
+   *
+   * Crash is the one game where the player must commit blind: the crash point
+   * cannot be shown before the cash-out decision without making the decision
+   * trivial. So the round is opened (stake debited) and settlement is deferred
+   * to the moment the player acts — either cashing out at their multiplier or
+   * letting it bust at 0. The server draws the point only then, so the curve on
+   * screen is drawn from a value this component never knows in advance.
+   */
+  const openRef = useRef<{ round: string; nonce: number; server_hash: string } | null>(null)
   const raf = useRef<number>(0)
   const start = useRef(0)
   const target = useRef(1)
@@ -46,13 +56,27 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
     (at: number) => {
       if (cashed.current) return
       cashed.current = true
-      const pay = settleBet({ game: 'crash', wager: bet, multiplier: at, detail: `Cashed out at ${mult(at)}` })
       setCashedAt(at)
-      setPayout(pay)
       setPhase('cashed')
       if (sound) sfx.cashout()
+      const open = openRef.current
+      if (!open) return
+      openRef.current = null
+      // The server decides whether that cash-out came before the crash and pays
+      // accordingly. The number on screen is a request, not a fact.
+      finishRound('crash', open, bet, `Cashed out at ${mult(at)}`)
+        .then((settled) => {
+          setPayout(settled.payout)
+          if (settled.won) {
+            toast({ kind: 'win', title: `Cashed out ${mult(at)}`, body: `+UGX ${money(settled.payout)} paid.` })
+          } else {
+            flashLoss()
+          }
+        })
+        .catch((e: Error) => toast({ kind: 'error', title: 'Payout failed', body: e.message }))
     },
-    [settleBet, bet, sound],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [finishRound, bet, sound, toast, flashLoss],
   )
 
   const play = useCallback(async () => {
@@ -61,11 +85,18 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       toast({ kind: 'error', title: 'Insufficient balance', body: 'Lower your bet or top up your wallet.' })
       return
     }
-    if (!placeBet('crash', bet)) return
     sfx.place()
-    const [u] = await nextFloats(1)
-    const cp = crashPoint(u)
-    target.current = cp
+    // Opening the round debits the stake on the server. We do NOT receive the
+    // crash point: showing it would make the cash-out decision free.
+    try {
+      openRef.current = await beginRound('crash', bet, {})
+    } catch (e) {
+      toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
+      return
+    }
+    // A visual ceiling only. The real point is drawn by the server at settle
+    // time, and this never leaves the browser.
+    target.current = 1e6
     cashed.current = false
     setCrashAt(null)
     setCashedAt(null)
@@ -85,7 +116,8 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
         setPhase('crashed')
         setHistory((h) => [target.current, ...h].slice(0, 14))
         if (!cashed.current) {
-          settleBet({ game: 'crash', wager: bet, multiplier: 0, detail: `Crashed at ${mult(target.current)}` })
+          // Never reached: the curve is not given a crash point locally. Kept
+          // so a future visual crash has one place to settle.
           flashLoss()
           if (sound) sfx.crash()
         }
@@ -99,7 +131,7 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       raf.current = requestAnimationFrame(tick)
     }
     raf.current = requestAnimationFrame(tick)
-  }, [phase, bet, balance, placeBet, nextFloats, settleBet, sound, toast, settle])
+  }, [phase, bet, balance, beginRound, sound, toast, settle])
 
   useEffect(() => () => cancelAnimationFrame(raf.current), [])
 

@@ -77,7 +77,7 @@ const dirs = readdirSync(FN_DIR, { withFileTypes: true })
   .map((d) => d.name)
 ok('there are functions to deploy', dirs.length > 0, `(${dirs.length})`)
 
-for (const required of ['pay', 'admin-ops', 'webhooks-zengapay', 'webhooks-zengapay-store']) {
+for (const required of ['pay', 'play', 'admin-ops', 'webhooks-zengapay', 'webhooks-zengapay-store']) {
   ok(`${required} is a real function directory`, dirs.includes(required))
 }
 ok('no dgateway function survives', !dirs.some((d) => /dgateway/i.test(d)))

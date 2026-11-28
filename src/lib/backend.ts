@@ -70,6 +70,7 @@ const ROUTES: Record<string, string> = {
   '/api/feed/sports': 'feed-sports',
   '/api/feed/settle': 'feed-settle',
   '/api/feed/sync': 'feed-sync',
+  '/api/play': 'play',
 }
 
 /**
