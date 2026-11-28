@@ -143,7 +143,7 @@ async function floats(serverSeed: string, nonce: number, count: number): Promise
 
 // ---------------------------------------------------------------- handlers ---
 
-async function start(req: Request): Promise<Response> {
+async function start(req: Request, user: { id: string }): Promise<Response> {
   const body = (await req.json().catch(() => null)) as
     | { game?: string; wager?: number; params?: Params }
     | null
@@ -397,7 +397,7 @@ Deno.serve(async (req) => {
 
   try {
     if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405)
-    if (op === 'start') return await start(req)
+    if (op === 'start') return await start(req, user)
     if (op === 'settle') return await settle(req, user)
     if (op === 'reveal') return await reveal(req, user)
     return json({ error: 'unknown operation' }, 400)
