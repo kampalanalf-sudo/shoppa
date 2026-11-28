@@ -17,7 +17,7 @@ type Props = { config: SlotConfig; id: GameId; onBack: () => void; onFair: () =>
 
 export function EngineSlot({ config, id, onBack, onFair }: Props) {
   const game = gameById(id)!
-  const { placeBet, settleBet, nextFloats, balance, toast, sound, flashLoss } = useStore()
+  const { placeBet, settleBet, nextFloats, balance, toast, sound, flashLoss, mode, playGame } = useStore()
 
   const [bet, setBet] = useState(MIN_BET)
   const [grid, setGrid] = useState<Grid | null>(null)
@@ -66,9 +66,41 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
     setGlow('none')
     setWinCells(new Set())
 
-    const floats = await nextFloats(config.reels * config.rows)
-    const g = buildGrid(config, floats)
-    const out = resolve(config, g)
+    /*
+     * A PAID spin is decided by the server: it returns the grid and the
+     * multiplier together, so the drums land on symbols that have already been
+     * paid. Free spins keep the local path — they are extra spins on a round
+     * that was already settled.
+     */
+    let out: ReturnType<typeof resolve>
+    let serverMult: number | null = null
+    if (!free && mode === 'real') {
+      const settled = await playGame(id, bet, {})
+      const rows = JSON.parse(String(settled.payload.grid ?? '[]')) as string[][]
+      // A wrong-sized grid throws later, inside an animation callback, and
+      // leaves the button on "Spinning…" for good. Check it here.
+      if (rows.length !== config.reels || rows.some((reel) => reel.length !== config.rows)) {
+        toast({ kind: 'error', title: 'Spin refused', body: 'The server returned an unexpected reel shape.' })
+        setSpinning(false)
+        return
+      }
+      const g = rows.map((reel, r) => reel.map((sym, row) => ({ id: sym, reel: r, row })))
+      out = resolve(config, g)
+      serverMult = settled.multiplier
+      // `resolve` on the server's own grid must reproduce the paid multiplier;
+      // if it ever disagrees, trust the server and say so rather than pay twice.
+      const paidMult = serverMult
+      if (Math.abs(out.totalMultiplier - paidMult) > 0.011) {
+        toast({
+          kind: 'error',
+          title: 'Payout mismatch',
+          body: `The board reads ${out.totalMultiplier}×, the server paid ${paidMult}×. The server is authoritative.`,
+        })
+      }
+    } else {
+      const floats = await nextFloats(config.reels * config.rows)
+      out = resolve(config, buildGrid(config, floats))
+    }
 
     const payout = Math.round(bet * out.totalMultiplier * 100) / 100
     const detail = out.fine > 0
@@ -152,7 +184,9 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
       // A full celebration card is already covering the win: suppress the
       // global flash so two confetti layers do not stack.
       const celebrating = out.triggered || (out.fine === 0 && out.totalMultiplier >= 8)
-      settleBet({
+      // A real-money spin was already credited by the server; settling again
+      // here would be the money printer. Only free play settles in the browser.
+      if (serverMult === null) settleBet({
         game: id,
         wager: free ? 0 : bet,
         multiplier: out.totalMultiplier,

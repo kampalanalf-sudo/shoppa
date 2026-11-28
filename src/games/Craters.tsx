@@ -32,7 +32,7 @@ type Props = { id: GameId; onBack: () => void; onFair: () => void }
 export function Craters({ id, onBack, onFair }: Props) {
   const game = gameById(id)!
   const cfg = CRATERS
-  const { placeBet, settleBet, nextFloats, balance, toast, sound, flashLoss } = useStore()
+  const { placeBet, settleBet, nextFloats, balance, toast, sound, flashLoss, mode, playGame } = useStore()
 
   const [bet, setBet] = useState(MIN_BET)
   const [grid, setGrid] = useState<Grid | null>(null)
@@ -87,8 +87,46 @@ export function Craters({ id, onBack, onFair }: Props) {
     setGlow('none')
     setWinCells(new Set())
 
-    const floats = await nextFloats(cfg.reels * cfg.rows)
-    const g = buildGrid(cfg, floats)
+    /*
+     * A PAID spin is decided by the server. Craters is the one slot with a
+     * multi-spin round, so the round's multiplier and delivery state are sent
+     * with the request and re-derived server-side — the client never names a
+     * payout. Free spins stay local: they are extra spins on a settled round.
+     */
+    let g: Grid
+    let serverMult: number | null = null
+    if (!inRound && mode === 'real') {
+      /*
+       * The server can refuse, and it can answer with something unexpected. If
+       * this throws with `spinning` already true, the button stays on
+       * "Spinning…" forever and the game looks dead — so every failure path
+       * here clears it and says what happened.
+       */
+      try {
+        const settled = await playGame(id, bet, {})
+        const rows = JSON.parse(String(settled.payload.grid ?? '[]')) as string[][]
+        /*
+         * Validate the shape before trusting it. A grid of the wrong size does
+         * not fail here — it fails inside `evaluateWays` in an animation
+         * callback, which cannot be caught, and the button stays on "Spinning…"
+         * forever. Check it where the error can still be reported.
+         */
+        if (rows.length !== cfg.reels || rows.some((reel) => reel.length !== cfg.rows)) {
+          throw new Error(
+            `the server returned a ${rows.length}×${rows[0]?.length ?? 0} grid for a ${cfg.reels}×${cfg.rows} game`,
+          )
+        }
+        g = rows.map((reel, r) => reel.map((sym, row) => ({ id: sym, reel: r, row }))) as Grid
+        serverMult = settled.multiplier
+      } catch (e) {
+        setSpinning(false)
+        toast({ kind: 'error', title: 'Spin refused', body: (e as Error).message })
+        return
+      }
+    } else {
+      const floats = await nextFloats(cfg.reels * cfg.rows)
+      g = buildGrid(cfg, floats)
+    }
 
     // The multiplier and the delivery bonus apply to the spin played *after*
     // they were awarded, which is why they are read from state that was set on
@@ -176,7 +214,8 @@ export function Craters({ id, onBack, onFair }: Props) {
 
       // settleBet credits wager × multiplier: the full return including stake.
       const celebrating = out.crates >= CRATE_TRIGGER || Boolean(tierFor(out.total))
-      settleBet({
+      // The server already paid a real-money spin.
+      if (serverMult === null) settleBet({
         game: id,
         wager: inRound ? 0 : bet,
         multiplier: out.total,

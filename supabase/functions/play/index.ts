@@ -26,6 +26,8 @@
 // needed by the client, and withholding it is what stops a modified client from
 // reading the result before deciding to "win".
 import { json, preflight, readEnv } from '../_shared/http.ts'
+// The slot maths the board draws with, so the reels and the payout cannot drift.
+import { isSlot, resolveSlotSpin, slotFloats, type SlotId } from '../_shared/slots.ts'
 import {
   SERVER_SETTLED,
   resolveBet,
@@ -200,6 +202,24 @@ async function start(req: Request, user: { id: string }): Promise<Response> {
     })
   }
 
+  /*
+   * Video slots settle on the server too.
+   *
+   * They were browser-settled, which is why the app refused them for money and
+   * labelled them "demo". The rules were always portable; only the artwork tied
+   * them to Vite. One spin, one float stream from the player's seed, and the
+   * server derives the grid and pays it — the same maths the reels use.
+   */
+  if (isSlot(game)) {
+    const started = await rpc<{ round: string; nonce: number; server_hash: string; balance: number }>(
+      'start_round',
+      { p_game: game, p_wager_px: wager, p_params: { slot: game } },
+    )
+    // Craters carries a free-spin round; its state lives on the round row and is
+    // read back at settle, never taken from the caller.
+    return json({ ...started, game, params: { slot: game } })
+  }
+
   let params: Params
   try {
     params = validateParams(game, body.params || {})
@@ -235,6 +255,36 @@ async function settle(req: Request, user: User): Promise<Response> {
   const game = round.game as GameId
   if (!SERVER_SETTLED.includes(game)) {
     return json({ error: 'that game is not settled by the server' }, 400)
+  }
+
+  if (isSlot(game)) {
+    const { seed } = await seedFor(user.id)
+    const fs = await floats(seed, round.nonce, slotFloats(game as SlotId))
+    const board = await boardOf(roundId)
+    const spin = resolveSlotSpin(game as SlotId, fs, {
+      multiplier: Number(board.multiplier ?? 1),
+      delivery: board.delivery === true,
+    })
+    try {
+      const settled = await rpc<{ payout: number; balance: number; multiplier: number }>(
+        'settle_round_server',
+        { p_round: roundId, p_multiplier: spin.multiplier, p_u: fs[0] ?? 0, p_detail: spin.detail },
+      )
+      return json({
+        round: roundId,
+        game,
+        multiplier: settled.multiplier,
+        payout: settled.payout,
+        balance: settled.balance,
+        detail: spin.detail,
+        // The reels, from the server. The board animates THIS grid; it did not
+        // choose it.
+        payload: { ...spin.extra, grid: JSON.stringify(spin.grid) },
+      })
+    } catch (e) {
+      await rpc('cancel_round', { p_round: roundId }).catch(() => null)
+      throw e
+    }
   }
 
   let params: Params

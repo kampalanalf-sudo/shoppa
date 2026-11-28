@@ -24,6 +24,7 @@ import type { GameId, Params } from '../../supabase/functions/_shared/games'
 /** Games the server settles. Kept in step with _shared/games.ts. */
 export const SERVER_SETTLED: readonly GameId[] = [
   'dice', 'limbo', 'wheel', 'plinko', 'roulette', 'crash', 'mines', 'tower',
+  'bonni', 'craters', 'chape', 'bluemountain', 'bazaar', 'boda',
 ]
 
 export const isServerSettled = (game: GameId) => SERVER_SETTLED.includes(game)

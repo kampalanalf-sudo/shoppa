@@ -1,4 +1,4 @@
-import { asset } from './games'
+import { ASSET_BASE } from './assetBase'
 
 /**
  * Bonni & Clyve — a 3×5 video slot (3 rows × 5 reels, 243 ways to win).
@@ -40,14 +40,14 @@ export type SlotSymbol = {
 }
 
 export const SYMBOLS: Record<SymbolId, SlotSymbol> = {
-  bonita: { id: 'bonita', name: 'Bonita', art: asset('/art/bonni/bonita.webp'), pay: [0.011, 0.094, 1.025], weight: 2, tier: 'high' },
-  clyve: { id: 'clyve', name: 'Clyve', art: asset('/art/bonni/clyve.webp'), pay: [0.011, 0.107, 1.175], weight: 2, tier: 'high' },
-  wild: { id: 'wild', name: 'Bribe Wild', art: asset('/art/bonni/wild.webp'), pay: [0.011, 0.095, 1.036], weight: 2, tier: 'special' },
-  diamond: { id: 'diamond', name: 'Diamond', art: asset('/art/bonni/diamond.webp'), pay: [0.011, 0.093, 1.025], weight: 4, tier: 'high' },
-  badge: { id: 'badge', name: 'Badge', art: asset('/art/bonni/badge.webp'), pay: [0.011, 0.096, 0.94], weight: 6, tier: 'mid' },
-  cash: { id: 'cash', name: 'Cash', art: asset('/art/bonni/cash.webp'), pay: [0.011, 0.118, 1.228], weight: 8, tier: 'mid' },
-  key: { id: 'key', name: 'Key', art: asset('/art/bonni/key.webp'), pay: [0.011, 0.085, 0.758], weight: 12, tier: 'mid' },
-  donut: { id: 'donut', name: 'Donut', art: asset('/art/bonni/donut.webp'), pay: [0.011, 0.053, 0.47], weight: 20, tier: 'low' },
+  bonita: { id: 'bonita', name: 'Bonita', art: `${ASSET_BASE}art/bonni/bonita.webp`, pay: [0.011, 0.094, 1.025], weight: 2, tier: 'high' },
+  clyve: { id: 'clyve', name: 'Clyve', art: `${ASSET_BASE}art/bonni/clyve.webp`, pay: [0.011, 0.107, 1.175], weight: 2, tier: 'high' },
+  wild: { id: 'wild', name: 'Bribe Wild', art: `${ASSET_BASE}art/bonni/wild.webp`, pay: [0.011, 0.095, 1.036], weight: 2, tier: 'special' },
+  diamond: { id: 'diamond', name: 'Diamond', art: `${ASSET_BASE}art/bonni/diamond.webp`, pay: [0.011, 0.093, 1.025], weight: 4, tier: 'high' },
+  badge: { id: 'badge', name: 'Badge', art: `${ASSET_BASE}art/bonni/badge.webp`, pay: [0.011, 0.096, 0.94], weight: 6, tier: 'mid' },
+  cash: { id: 'cash', name: 'Cash', art: `${ASSET_BASE}art/bonni/cash.webp`, pay: [0.011, 0.118, 1.228], weight: 8, tier: 'mid' },
+  key: { id: 'key', name: 'Key', art: `${ASSET_BASE}art/bonni/key.webp`, pay: [0.011, 0.085, 0.758], weight: 12, tier: 'mid' },
+  donut: { id: 'donut', name: 'Donut', art: `${ASSET_BASE}art/bonni/donut.webp`, pay: [0.011, 0.053, 0.47], weight: 20, tier: 'low' },
   scatter: { id: 'scatter', name: 'Scatter', weight: 2, tier: 'special' },
   siren: { id: 'siren', name: 'Chase Siren', weight: 2, tier: 'special' },
 }
