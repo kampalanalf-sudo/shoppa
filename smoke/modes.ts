@@ -1,0 +1,195 @@
+// smoke/modes.ts
+//
+// Proves the two promises that make free play safe to ship:
+//
+//   1. ONE CURRENCY. There is no PX, no peg and no conversion left in the
+//      shipping code. A missed conversion is how a screen that says "UGX 1,000"
+//      ends up moving 10,000, or the reverse.
+//
+//   2. FREE PLAY CANNOT BECOME MONEY. It has its own wallet, its own storage
+//      key, its own stats, and no path from a free credit to a withdrawal.
+//      This is checked by reading the store's own source, because the risk is a
+//      future edit adding a shortcut, not a bug at runtime.
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+
+const fails: string[] = []
+const ok = (name: string, cond: boolean, extra = '') => {
+  if (!cond) fails.push(name)
+  console.log(`${cond ? 'ok  ' : 'FAIL'} ${name} ${extra}`)
+}
+const read = (p: string) => readFileSync(p, 'utf8')
+
+// --------------------------------------------------------------- one currency --
+
+/**
+ * Every shipping source file. Tests are excluded: a test is allowed to talk
+ * about PX to assert its absence.
+ */
+function walk(dir: string, out: string[] = []): string[] {
+  for (const e of readdirSync(dir)) {
+    const full = join(dir, e)
+    if (statSync(full).isDirectory()) {
+      if (!['node_modules', 'dist', '.git', 'smoke', 'public'].includes(e)) walk(full, out)
+    } else if (/\.(ts|tsx)$/.test(e)) out.push(full)
+  }
+  return out
+}
+const sources = walk('src')
+ok('there are sources to check', sources.length > 20, `(${sources.length})`)
+
+/*
+ * A PX *identifier* may survive as a legacy database column name (`balance_px`
+ * predates this change and renaming it would touch every function and policy in
+ * the same commit). What must not survive is a PX *amount* shown to a player, or
+ * any conversion between a coin and fiat.
+ */
+const stripComments = (src: string) =>
+  src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+
+const pxLiterals = sources.filter((f) => {
+  const code = stripComments(read(f))
+  // Strip the one legitimate survivor: the migration constant, which names the
+  // rate an existing PX balance converts at. Everything else is a currency
+  // label and must be gone.
+  const withoutMigration = code
+    .replace(/PX_PER_UGX_AT_MIGRATION/g, '')
+    .replace(/px\b/g, '')
+  return /\bPX\b/.test(withoutMigration)
+})
+ok('no source still prints "PX" as a currency',
+  pxLiterals.length === 0, pxLiterals.join(', '))
+
+// The peg is allowed to appear in exactly one place: the constant that converts
+// an EXISTING PX balance into UGX during migration. A live conversion function
+// (pxToUgx/ugxToPx) is what must not exist, because that is what a screen would
+// call to render a second currency.
+// Brand copy drifts independently of code, and it is what a player actually
+// reads. "ProxiCoin" was the PX product name; it must not survive the currency.
+const coinBranding = sources.filter((f) => /ProxiCoin/.test(stripComments(read(f))))
+ok('no copy still names the ProxiCoin product', coinBranding.length === 0, coinBranding.join(', '))
+
+const pegFunctions = sources.filter((f) => /pxToUgx|ugxToPx|PROXICOIN|STARTING_PX/.test(stripComments(read(f))))
+ok('no source exports or calls a live PX conversion',
+  pegFunctions.length === 0, pegFunctions.join(', '))
+const pegUses = sources.filter((f) => (stripComments(read(f)).match(/PX_PER_UGX_AT_MIGRATION/g) ?? []).length > 0)
+ok('the migration rate is used in exactly one module', pegUses.length === 1 && pegUses[0].endsWith('store.tsx'), pegUses.join(', '))
+
+const store = read('src/lib/store.tsx')
+const currency = read('src/lib/currency.ts')
+const format = read('src/lib/format.ts')
+
+ok('the currency module declares one currency', /CURRENCY = 'UGX'/.test(currency))
+ok('money is formatted with a UGX label', /export const ugx = \(v: number\) => `UGX \$\{money\(v\)\}`/.test(format))
+ok('there is no coin formatter left', !/export const (coin|coinCompact)\b/.test(format))
+ok('the bet floor is whole shillings', /MIN_BET = 100/.test(currency))
+ok('stakes round to whole units', /Math\.round\(wager\)/.test(store))
+ok('payouts floor, never round up', /Math\.floor\(wager \* multiplier\)/.test(store))
+
+// ------------------------------------------------------------- free play ----
+
+const badge = read('src/components/ModeBadge.tsx')
+
+ok('free play has its own storage key', /FREE_PLAY_KEY = 'floatbet\.freeplay\.v1'/.test(currency))
+ok('the free wallet is a separate object in state', /free: FreePlay/.test(store))
+ok('free play has its own credits field, not the real balance', /credits: number/.test(store))
+ok('the store starts in real-money mode', /mode: 'real'/.test(store))
+
+// The games must never read `balance` directly -- they read `playBalance`, which
+// resolves the mode. A game that reads `balance` spends real money in free play.
+ok('the games get a mode-resolved balance', /playBalance: state\.mode === 'free' \? state\.free\.credits : state\.balance/.test(store))
+ok('stats are resolved per mode too', /playStats: state\.mode === 'free' \? state\.free\.stats : state\.stats/.test(store))
+ok('bet history is resolved per mode', /playBets: state\.mode === 'free' \? state\.free\.bets : state\.bets/.test(store))
+
+// A bet is charged to exactly one wallet, chosen by mode.
+ok('placeBet charges the free wallet in free play', /free: \{ \.\.\.s\.free, credits: Math\.round\(s\.free\.credits - stake\) \}/.test(store))
+ok('placeBet charges the real wallet otherwise', /balance: Math\.round\(s\.balance - stake\)/.test(store))
+ok('a refund returns to the wallet that was charged', /mode === 'free'[\s\S]{0,240}credits: Math\.round\(s\.free\.credits \+ wager\)/.test(store))
+ok('a free round does not touch real stats', /stats: nextStats\(s\.free\.stats\)/.test(store) && /stats: nextStats\(s\.stats\)/.test(store))
+
+// Deposits and withdrawals are refused in free play, in the action itself rather
+// than only by hiding the button.
+const storeSrc = stripComments(read('src/lib/store.tsx'))
+const modals = stripComments(read('src/components/Modals.tsx'))
+
+// The wallet refuses the whole money flow in free play now, which is stronger
+// than refusing one button: there is nothing to press.
+ok('the wallet refuses money flows in free play',
+  /mode === 'free' \? \(/.test(modals) && /practice only/.test(modals))
+// The welcome-bonus promotion was removed at the user's request, so the modal
+// that declined it no longer exists. The rule it protected is unchanged and
+// still rests on the deposit/withdraw guard above.
+//
+// Removed on request: the +200% deposit-match card and its modal. It also
+// called deposit(5000), so claiming it created UGX 5,000 of withdrawable money
+// from nothing -- a free-money path, not merely an advert.
+const home = read('src/pages/Home.tsx')
+for (const gone of ['+200%', 'deposit match', 'Active bonus', 'Claim now', 'Welcome bonus', 'PromoModal']) {
+  ok(`the deposit-match promotion is gone: ${gone}`, !home.includes(gone) && !read('src/components/Modals.tsx').includes(gone))
+}
+
+// ------------------------------------------------ nobody can mint money --
+// The Wallet sheet's Deposit tab called a local `deposit(amount)` that did
+// `balance += amount` and toasted "Deposit confirmed". Nothing was charged. Every
+// figure a player typed was credited, with no prompt on any phone. The Rewards
+// hub called the same function to mint promotional credit.
+//
+// The rule these assert: the only thing that may increase a balance is the
+// server, after a payment it has confirmed. There is no local creator at all.
+
+ok('the store exposes no deposit creator', !/^\s+deposit: \(/m.test(storeSrc))
+ok('the store exposes no withdraw creator', !/^\s+withdraw: \(/m.test(storeSrc))
+// A settled win may credit the balance -- that is the game paying out. What must
+// not exist is a creator that credits an amount the player typed. The only
+// `+ amount` left in the store is the crypto-exchange delta, which is a
+// ProxiCash order the server owns, not a deposit box.
+ok('no creator adds a player-typed amount',
+  !/balance: Math\.round\(s\.balance \+ (amount|amt)/.test(storeSrc))
+ok('nothing in the UI calls a local deposit', !/\bdeposit\(/.test(modals))
+ok('nothing in the UI calls a local withdraw', !/\bwithdraw\(/.test(modals))
+
+// The fake wallet furniture went with it: hardcoded addresses and a fabricated
+// payout time are the same kind of lie as a fake credit.
+ok('no hardcoded crypto address survives', !/TQ8vN5kRfLz9m2yB7xJcWq4pAhD1sEuG3K/.test(modals))
+ok('no fabricated payout time survives', !/avg 42s/.test(modals))
+ok('no default ETH withdrawal address survives', !/0x7f9A2c4B15eD8a3Ff61b0C9e2D4a5B6c7D8e9F01/.test(modals))
+
+// The Rewards hub was four hardcoded amounts collecting through the same
+// printer, and it duplicated the real server-side daily bonus.
+ok('the hardcoded rewards hub is gone', !/REWARDS\b/.test(modals))
+ok('and so is its entry in the store', !/rewardsOpen/.test(storeSrc))
+// The route moved from a modal (#topup) to a page (#deposit) so a "Float Me"
+// link can open it cold. What matters is unchanged: the wallet hands the player
+// to the real payment flow and never credits a balance itself.
+ok('the wallet sends players to the real payment flow', /#deposit/.test(modals))
+
+// The one thing that IS allowed to credit a balance is the payment webhook,
+// through the RPC the database owns.
+ok('credits come from the server RPC', /apply_gateway_result/.test(read('supabase/functions/webhooks-zengapay/index.ts')))
+
+// Marking. The requirement is that free play is CLEARLY marked.
+ok('free play renders a full-width warning strip', /variant="bar"/.test(read('src/App.tsx')))
+ok('the badge says it is not real money', /not real money/.test(badge))
+ok('the badge says it cannot be withdrawn', /cannot be withdrawn|can be withdrawn/.test(badge))
+ok('the mode switch names both modes', /Real money/.test(badge) && /Free play/.test(badge))
+ok('a free balance is never labelled as plain money', /label=\{mode === 'free' \? 'Free credits' : 'Balance'\}/.test(read('src/components/PlayBar.tsx')))
+
+// Refill exists, and only in free play.
+ok('refill is gated to free play', /if \(mode !== 'free'\) return null/.test(badge))
+ok('refill only writes the fake wallet', /free: \{ \.\.\.s\.free, credits: FREE_PLAY_REFILL \}/.test(store))
+
+// ------------------------------------------------------- legacy migration ----
+
+// Existing players held PX. The conversion rate must be the peg their screen
+// showed, or the change silently takes 99% of their balance.
+ok('existing PX converts at the advertised peg', /PX_PER_UGX_AT_MIGRATION = 100/.test(store))
+ok('legacy balances are converted, not wiped', /balance: toUgx\(old\.balance\)/.test(store))
+ok('legacy bets are converted so history still adds up', /wager: toUgx\(b\.wager\)/.test(store))
+ok('the migration is only used when there is no current wallet', /migrateLegacy\(\) \?\? defaults\(\)/.test(store))
+
+// Free play must survive a reload as its own object, or a corrupt/partial blob
+// would leave `free` undefined and the games would read a real balance.
+ok('a partial stored blob cannot lose the free wallet', /credits: Math\.max\(0, Math\.round\(Number\(parsed\.free\?\.credits \?\? FREE_PLAY_START\)\)\)/.test(store))
+
+console.log(fails.length ? `\n${fails.length} FAILED: ${fails.join(', ')}` : '\nUGX only, and free play cannot become money')
+process.exit(fails.length ? 1 : 0)

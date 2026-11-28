@@ -1,14 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../lib/auth'
-import { fetchStatus, type StatusResponse } from '../lib/payments'
+import { fetchStatus, resolveCheckoutSession, type StatusResponse } from '../lib/payments'
 import { supabase } from '../lib/supabase'
 import { money } from '../lib/format'
+import { api, ApiError, AuthExpiredError } from '../lib/api'
 import { sfx } from '../lib/sound'
 import { IconCheck, IconChevronLeft, IconShield } from '../components/Icons'
 
 type Props = {
-  /** Reference from the URL, if DGateway/our flow supplied one. */
+  /** Reference from the URL, if the flow supplied one (collect). */
   reference?: string | null
+  /** Hosted-checkout session id from the URL. Resolved server-side before the
+   *  page claims anything. */
+  sessionId?: string | null
   onHome: () => void
   onTopUpAgain: () => void
 }
@@ -21,7 +25,7 @@ type Props = {
  * If the provider has not settled yet it polls, using the same 10s floor as the
  * rest of the flow.
  */
-export function TopUpSuccess({ reference, onHome, onTopUpAgain }: Props) {
+export function TopUpSuccess({ reference, sessionId, onHome, onTopUpAgain }: Props) {
   const { wallet, refreshWallet } = useAuth()
 
   const [state, setState] = useState<'checking' | 'paid' | 'pending' | 'failed'>('checking')
@@ -31,14 +35,21 @@ export function TopUpSuccess({ reference, onHome, onTopUpAgain }: Props) {
   const [claim, setClaim] = useState('')
   const [claiming, setClaiming] = useState(false)
   const [claimMsg, setClaimMsg] = useState<string | null>(null)
+  // A hosted-checkout return carries the session id, not a transaction
+  // reference. Resolving it needs one server call; until that answers we know
+  // nothing, and "pending" is the honest state for knowing nothing.
+  const [resolved, setResolved] = useState<string | null>(null)
+  const [resolving, setResolving] = useState(false)
+  const [resolveError, setResolveError] = useState<string | null>(null)
 
   const balance = wallet?.balance_px ?? 0
 
   const check = useCallback(
     async (fresh = false) => {
-      if (!reference) return
+      const target = reference || resolved
+      if (!target) return
       try {
-        const res = await fetchStatus(reference, fresh)
+        const res = await fetchStatus(target, fresh)
         setDetail(res)
         if (res.status === 'completed') {
           setState('paid')
@@ -56,18 +67,53 @@ export function TopUpSuccess({ reference, onHome, onTopUpAgain }: Props) {
         setState((s) => (s === 'checking' ? 'pending' : s))
       }
     },
-    [reference, refreshWallet],
+    [reference, resolved, refreshWallet],
   )
+
+  // Hosted checkout: exchange the session id for a transaction reference.
+  //
+  // This used to be skipped entirely. With no `reference` in the URL the page
+  // set its state to `paid` and showed the balance -- so a cancelled or failed
+  // payment produced a green "payment received" screen, and the player had no
+  // way to tell a real credit from an unpaid session.
+  useEffect(() => {
+    if (reference || !sessionId) return
+    let cancelled = false
+    setResolving(true)
+    setState('checking')
+    void (async () => {
+      try {
+        const res = await resolveCheckoutSession(sessionId)
+        if (cancelled) return
+        setResolveError(null)
+        if (res.reference) {
+          setResolved(res.reference)
+          setState(res.status === 'completed' ? 'paid' : res.status === 'failed' ? 'failed' : 'pending')
+        } else {
+          // No transaction yet: the player has not paid. Not an error, and
+          // emphatically not a success.
+          setState('pending')
+        }
+      } catch (e) {
+        if (cancelled) return
+        // Say what actually happened; a guess here is what we are removing.
+        setResolveError((e as Error).message)
+        setState('pending')
+      } finally {
+        if (!cancelled) setResolving(false)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [reference, sessionId])
+
+  // The reference we actually poll: the one in the URL, or the one the server
+  // resolved from the checkout session.
+  const pollRef = reference || resolved
 
   // First look on mount, then poll every 10s for up to 5 minutes.
   useEffect(() => {
-    if (!reference) {
-      // No reference in the URL: the deposit may still have completed; just
-      // show the current balance rather than pretending we know its status.
-      setState('paid')
-      void refreshWallet()
-      return
-    }
+    if (!pollRef) return
+    void check()
     void check()
     const started = Date.now()
     const timer = window.setInterval(() => {
@@ -88,28 +134,20 @@ export function TopUpSuccess({ reference, onHome, onTopUpAgain }: Props) {
     setClaiming(true)
     setClaimMsg(null)
     try {
-      const { data } = (await supabase?.auth.getSession()) ?? { data: { session: null } }
-      const token = data.session?.access_token
-      if (!token) {
-        setClaimMsg('Sign in first, then paste the reference from your payment SMS.')
-        return
-      }
-      const res = await fetch('/api/topup/claim', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ reference: ref }),
-      })
-      const body = (await res.json().catch(() => ({}))) as { error?: string; px?: number }
-      if (!res.ok) {
-        setClaimMsg(body.error || 'Could not claim that reference.')
-        return
-      }
+      await api('/api/topup/claim', { method: 'POST', body: { reference: ref } })
       setClaimMsg('Top-up recovered — your balance is updated.')
       setClaim('')
       setState('paid')
       await refreshWallet()
-    } catch {
-      setClaimMsg('Could not reach the server. Try again in a moment.')
+    } catch (e) {
+      if (e instanceof AuthExpiredError) {
+        setClaimMsg('Sign in first, then paste the reference from your payment SMS.')
+      } else if (e instanceof ApiError) {
+        // The RPC's own words: already claimed, failed, still pending, unknown.
+        setClaimMsg(e.message)
+      } else {
+        setClaimMsg('Could not reach the server. Try again in a moment.')
+      }
     } finally {
       setClaiming(false)
     }
@@ -130,7 +168,7 @@ export function TopUpSuccess({ reference, onHome, onTopUpAgain }: Props) {
 
   const subtitle =
     state === 'paid'
-      ? 'Your PX is in your balance and ready to play.'
+      ? 'Your money is in your balance and ready to play.'
       : state === 'failed'
         ? 'Nothing was charged. You can try the top-up again.'
         : 'Check your phone and approve the prompt. This page updates on its own.'
@@ -174,7 +212,7 @@ export function TopUpSuccess({ reference, onHome, onTopUpAgain }: Props) {
       <div className="panel mt-3 p-3.5">
         <div className="flex items-center justify-between">
           <span className="text-[10px] font-bold uppercase tracking-[.14em] text-slate-500">New balance</span>
-          <span className="num text-[18px] font-black text-white">{money(balance)} PX</span>
+          <span className="num text-[18px] font-black text-white">UGX {money(balance)}</span>
         </div>
         <p className="mt-1 text-right text-[11px] text-neon-lime">≈ {money(Math.round(balance / 10))} UGX</p>
       </div>

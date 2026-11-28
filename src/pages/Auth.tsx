@@ -1,7 +1,9 @@
 import React, { useState } from 'react'
+import { pendingReferralCode, referralCodeFromUrl } from '../lib/auth'
 import { useAuth } from '../lib/auth'
 import { sfx } from '../lib/sound'
 import { IconShield } from '../components/Icons'
+import { Logo, Wordmark } from '../components/Chrome'
 
 type Mode = 'signin' | 'signup' | 'reset'
 
@@ -27,6 +29,15 @@ export function Auth({ onDone }: { onDone?: () => void }) {
   const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
   const [dob, setDob] = useState('')
+  /*
+   * A referral code, from a share link or from a code typed in.
+   *
+   * Pre-filled from the URL so a player who taps a friend's link does not have to
+   * copy eight characters by hand — and pre-filled into a VISIBLE field, not
+   * attached silently, because a referral is a relationship with another player
+   * and the person accepting it should see whose code it is.
+   */
+  const [refCode, setRefCode] = useState(() => referralCodeFromUrl() || pendingReferralCode())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -70,7 +81,7 @@ export function Auth({ onDone }: { onDone?: () => void }) {
       if (!passwordOk) return setError('Use at least 8 characters for your password.')
       if (!ageOk) return setError('You must be 18 or older to open an account.')
       void run(async () => {
-        await signUpEmail(email, password, username, dob)
+        await signUpEmail(email, password, username, dob, refCode || undefined)
         setNotice('Check your inbox to verify your email, then sign in.')
         setMode('signin')
       })
@@ -85,6 +96,14 @@ export function Auth({ onDone }: { onDone?: () => void }) {
   return (
     <div className="mx-auto w-full max-w-[420px] px-4 py-10">
       <div className="mb-6 text-center">
+        {/* The brand, large, on the screen every new player sees first. It was
+            absent here entirely -- the header sits above, but on a phone the
+            sign-in card is what fills the viewport, so this is the only place
+            the mark can make a first impression at a readable size. */}
+        <div className="mb-5 flex items-center justify-center gap-3.5">
+          <Logo size={64} />
+          <Wordmark size="lg" />
+        </div>
         <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.03] px-3 py-1">
           <IconShield size={12} className="text-neon-lime" />
           <span className="text-[10px] font-bold uppercase tracking-[.18em] text-slate-400">Secure sign-in</span>
@@ -94,7 +113,7 @@ export function Auth({ onDone }: { onDone?: () => void }) {
         </h1>
         <p className="mt-1 text-[12.5px] text-slate-500">
           {mode === 'signup'
-            ? 'New players get 10,000 PX. Log in daily for 15,000 more.'
+            ? 'New players get UGX 1,000 free. Log in daily for more.'
             : mode === 'reset'
               ? 'We will email you a link to set a new password.'
               : 'Sign in to play, chat and cash out.'}
@@ -193,6 +212,27 @@ export function Auth({ onDone }: { onDone?: () => void }) {
               autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
               className="field"
             />
+          </div>
+        )}
+
+        {mode === 'signup' && (
+          <div>
+            <label className="label" htmlFor="refcode">
+              <span>Referral code</span>
+              <span className="normal-case tracking-normal text-slate-500">optional</span>
+            </label>
+            <input
+              id="refcode"
+              value={refCode}
+              onChange={(e) => setRefCode(e.target.value.replace(/[^a-zA-Z0-9_]/g, '').toUpperCase().slice(0, 18))}
+              placeholder="A friend's code"
+              autoCapitalize="characters"
+              spellCheck={false}
+              className="field num"
+            />
+            <p className="mt-1 text-[10px] text-slate-500">
+              It can be added later, but only before your first deposit.
+            </p>
           </div>
         )}
 

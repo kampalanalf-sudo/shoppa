@@ -1,4 +1,6 @@
 import { renderToString } from 'react-dom/server'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import React from 'react'
 import { PlayBar } from '../src/components/PlayBar'
 import { StoreProvider } from '../src/lib/store'
@@ -6,20 +8,29 @@ import { AuthProvider } from '../src/lib/auth'
 import { Auth } from '../src/pages/Auth'
 import { Cashout } from '../src/pages/Cashout'
 import { Onboarding } from '../src/pages/Onboarding'
-import { pxToUgx, ugxToPx, PX_PER_UGX, ASSETS, quote } from '../src/lib/proxicash'
+import { Support } from '../src/pages/Support'
+import { SupportBubble } from '../src/components/SupportBubble'
+import { ASSETS, ASSET_IDS, quote } from '../src/lib/proxicash'
+import { MIN_BET, MAX_BET, FREE_PLAY_START, DAILY_BONUS_UGX } from '../src/lib/currency'
 
 const fails: string[] = []
 const ok = (name: string, cond: boolean) => { if (!cond) fails.push(name); console.log(`${cond ? 'ok  ' : 'FAIL'} ${name}`) }
 
-// --- peg maths ---
-ok('PX_PER_UGX is 100', PX_PER_UGX === 100)
-ok('100,000 PX = 1,000 UGX', pxToUgx(100000) === 1000)
-ok('1,000 UGX = 100,000 PX', ugxToPx(1000) === 100000)
-ok('round-trip holds', pxToUgx(ugxToPx(5000)) === 5000)
-ok('PX quote at 100:1', Math.round(quote('PX', 400000).gross) === 4000)
-// The daily login bonus is the number that makes the peg legible. If these two
-// drift apart, the app is promising a reward it does not pay.
-ok('a daily bonus is worth a round UGX figure', pxToUgx(15000) === 150)
+// --- one currency, no peg ---
+//
+// PX is gone. The thing worth asserting is that nothing claims to convert
+// between a coin and fiat any more: a leftover conversion is how a "UGX 1,000"
+// screen quietly shows 10,000.
+ok('there is no PX asset', !(ASSET_IDS as string[]).includes('PX'))
+ok('every asset is crypto', ASSET_IDS.every((id) => ASSETS[id].kind === 'crypto'))
+ok('no asset is pegged to the shilling', ASSET_IDS.every((id) => ASSETS[id].ugxRate > 1))
+ok('a crypto quote is in UGX', Math.round(quote('USDT', 10).gross) === Math.round(10 * ASSETS.USDT.ugxRate))
+
+// Bet bounds and the free-play float are the numbers a player sees promised.
+ok('the minimum bet is whole shillings', Number.isInteger(MIN_BET) && MIN_BET === 100)
+ok('the maximum bet is above the minimum', MAX_BET > MIN_BET)
+ok('free play starts with a usable float', FREE_PLAY_START >= MIN_BET * 100)
+ok('the daily bonus is a round UGX figure', Number.isInteger(DAILY_BONUS_UGX) && DAILY_BONUS_UGX > 0)
 
 // --- render without a backend ---
 const wrap = (n: React.ReactNode) => (
@@ -30,7 +41,47 @@ const renders: [string, React.ReactNode][] = [
   ['Auth', wrap(<Auth />)],
   ['Cashout', wrap(<Cashout onBack={() => {}} />)],
   ['Onboarding', wrap(<Onboarding onDone={() => {}} />)],
+  // Customer care. Rendered signed-out on purpose: an unauthenticated player
+  // must still get a usable screen, not a crash or a blank panel. The empty
+  // state, the disclosure that the agents are automated, and the "never share a
+  // code" warning are all in that first paint.
+  ['Support', wrap(<Support onHome={() => {}} onSignIn={() => {}} />)],
 ]
+// The screen must tell the player the agents are automated, and must warn about
+// one-time codes. Both are promises the app makes in its own words, so they are
+// checked in the rendered output rather than in the source.
+try {
+  const html = renderToString(wrap(<Support onHome={() => {}} onSignIn={() => {}} />) as any)
+  ok('Support says the agents are automated', /automated agents/i.test(html))
+  ok('Support warns never to share a one-time code', /one-time code/i.test(html))
+  // The empty state is behind `!booting`, and SSR runs no effects, so the first
+  // paint is the "Starting…" state. Asserting the suggestions here would be
+  // asserting something this render cannot produce — so the starting point is
+  // checked in the source, and the always-rendered copy above is checked here.
+  const supportSrc = readFileSync(join(process.cwd(), 'src/pages/Support.tsx'), 'utf8')
+  ok('Support offers a starting point', /What can we help with/.test(supportSrc) && /SUGGESTIONS/.test(supportSrc))
+  ok('Support shows a loading state before it has a thread', /Starting…/.test(html))
+
+  // Signed out, the floating bubble DOES render. The previous rule — hide it,
+  // because a visitor cannot enter the room — was the wrong trade: someone who
+  // cannot log in is the person most in need of help, and the Support page now
+  // offers them a way in instead of a dead composer.
+  const bubbleHtml = renderToString(wrap(<SupportBubble onOpen={() => {}} />) as any)
+  ok('SupportBubble reaches a signed-out visitor', /Help/.test(bubbleHtml))
+
+  // A signed-out visitor must be told why the composer will not send, and given
+  // the one action that fixes it. Silence there reads as a broken app.
+  ok('Support explains signing in is required to chat',
+    /Sign in to chat with the agents/.test(html))
+  // The button's label sits on its own line in the JSX, so the rendered HTML has
+  // whitespace inside the tag. Assert the label, not the exact markup.
+  ok('and offers a Sign in button', /<button[^>]*>\s*Sign in\s*<\/button>/.test(html))
+  ok('Support exposes the transcript to screen readers', /aria-live/.test(html) || /role="log"/.test(html))
+} catch (e) {
+  ok('Support renders for inspection', false)
+  console.log('   ', (e as Error).message)
+}
+
 for (const [name, el] of renders) {
   try {
     const html = renderToString(el as any)
@@ -46,8 +97,10 @@ const bar = renderToString(wrap(<PlayBar bet={1000} onBet={() => {}} onSpin={() 
 for (const label of ['Balance', 'Last win', 'Bet', 'Auto', 'Spin']) {
   ok(`PlayBar shows "${label}"`, bar.includes(label))
 }
-// The PlayBar quotes stake size in UGX at the live peg, not a hardcoded ratio.
-ok('PlayBar shows UGX conversion', /\d[\d,]* UGX/.test(bar))
+// Every amount the PlayBar prints is labelled shillings — there is no second
+// currency and no conversion left to be wrong.
+ok('PlayBar labels its amounts UGX', /UGX [\d,]/.test(bar))
+ok('PlayBar prints no PX amount', !/\bPX\b/.test(bar))
 
 // --- auth screen requirements ---
 const authHtml = renderToString(wrap(<Auth />) as any)

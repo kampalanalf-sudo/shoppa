@@ -132,7 +132,7 @@ export function CoinRain({ count = 16, seed = 21, duration = 2400 }: { count?: n
             } as React.CSSProperties
           }
         >
-          PX
+          UGX
         </span>
       ))}
     </div>
@@ -366,7 +366,7 @@ export function Celebration({
         {amount != null && (
           <p className="mt-2 text-4xl font-black leading-none text-white glow-text sm:text-5xl">
             <CountUp value={amount} duration={1100} />
-            <span className="ml-1 text-lg font-bold text-slate-400">PX</span>
+            <span className="ml-1 text-lg font-bold text-slate-400">UGX</span>
           </p>
         )}
 

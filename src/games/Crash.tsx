@@ -1,12 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../lib/store'
 import { sfx } from '../lib/sound'
-import { crashPoint } from '../lib/fair'
+// The FREE-PLAY crash distribution, from the module the server settles with, so
+// practice play shows the same curve a paid round would.
+import { crashPoint } from '../../supabase/functions/_shared/games'
 import { money, mult } from '../lib/format'
 import { gameById } from '../lib/games'
 import { BetAmount, BetButton } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
 import { IconBolt, IconFlame } from '../components/Icons'
+import { MIN_BET } from '../lib/currency'
 
 const CW = 700
 const CH = 300
@@ -19,8 +22,9 @@ type Phase = 'idle' | 'running' | 'crashed' | 'cashed'
 
 export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('crash')!
-  const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(1000)
+  const { beginRound, finishRound, balance, sound, toast, flashLoss, mode, placeBet, settleBet, nextFloats } =
+    useStore()
+  const [bet, setBet] = useState(MIN_BET)
   const [autoCash, setAutoCash] = useState(2)
   const [autoEnabled, setAutoEnabled] = useState(false)
   const [phase, setPhase] = useState<Phase>('idle')
@@ -31,8 +35,28 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
   const [payout, setPayout] = useState(0)
   const [trail, setTrail] = useState<{ t: number; m: number }[]>([])
 
+  /**
+   * Round started on the server, not yet settled.
+   *
+   * Crash is the one game where the player must commit blind: the crash point
+   * cannot be shown before the cash-out decision without making the decision
+   * trivial. So the round is opened (stake debited) and settlement is deferred
+   * to the moment the player acts — either cashing out at their multiplier or
+   * letting it bust at 0. The server draws the point only then, so the curve on
+   * screen is drawn from a value this component never knows in advance.
+   */
+  const openRef = useRef<{ round: string; nonce: number; server_hash: string } | null>(null)
   const raf = useRef<number>(0)
   const start = useRef(0)
+  /**
+   * The FREE-PLAY crash point, drawn when the player cashes out.
+   *
+   * Free play has no server, so this is the only thing standing in for it. It is
+   * drawn at cash-out for the same reason the server draws it there: the player
+   * must commit blind, or the decision is free. Without any of this, Crash had
+   * no free-play path at all and the button simply did nothing.
+   */
+  const freePoint = useRef<number | null>(null)
   const target = useRef(1)
   const cashed = useRef(false)
   const autoRef = useRef({ enabled: false, at: 2 })
@@ -45,13 +69,71 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
     (at: number) => {
       if (cashed.current) return
       cashed.current = true
-      const pay = settleBet({ game: 'crash', wager: bet, multiplier: at, detail: `Cashed out at ${mult(at)}` })
       setCashedAt(at)
-      setPayout(pay)
       setPhase('cashed')
       if (sound) sfx.cashout()
+
+      // ---- free play: draw the point NOW, exactly as the server would ----
+      if (mode === 'free') {
+        void nextFloats(1).then(([u]) => {
+          const point = crashPoint(u)
+          freePoint.current = point
+          setCrashAt(point)
+          setHistory((h) => [point, ...h].slice(0, 14))
+          const won = at >= 1 && at <= point
+          const paid = settleBet({
+            game: 'crash',
+            wager: Math.round(bet),
+            multiplier: won ? at : 0,
+            detail: won ? `Crashed at ${point}x · cashed out ${at}x` : `Crashed at ${point}x`,
+          })
+          setPayout(paid)
+          if (won) {
+            toast({ kind: 'win', title: `Cashed out ${mult(at)}`, body: `+UGX ${money(paid)} in practice credits.` })
+          } else {
+            setPhase('crashed')
+            if (sound) sfx.crash()
+            toast({
+              kind: 'error',
+              title: `It crashed at ${mult(point)}`,
+              body: 'Your cash-out came after the curve died. Nothing was paid — this was practice credits.',
+            })
+          }
+        })
+        return
+      }
+
+      const open = openRef.current
+      if (!open) return
+      openRef.current = null
+      // The server decides whether that cash-out came before the crash and pays
+      // accordingly. The number on screen is a request, not a fact.
+      finishRound('crash', open, bet, `Cashed out at ${mult(at)}`)
+        .then((settled) => {
+          // The curve's real peak, revealed only now — after the decision was
+          // already made and the round was already closed.
+          const peak = Number(settled.payload.point ?? 0)
+          if (peak > 0) {
+            setCrashAt(peak)
+            setHistory((h) => [peak, ...h].slice(0, 14))
+          }
+          setPayout(settled.payout)
+          if (settled.won) {
+            toast({ kind: 'win', title: `Cashed out ${mult(at)}`, body: `+UGX ${money(settled.payout)} paid.` })
+          } else {
+            setPhase('crashed')
+            if (sound) sfx.crash()
+            toast({
+              kind: 'error',
+              title: peak ? `It crashed at ${mult(peak)}` : 'Crashed',
+              body: 'Your cash-out came after the curve died, so nothing was paid.',
+            })
+          }
+        })
+        .catch((e: Error) => toast({ kind: 'error', title: 'Payout failed', body: e.message }))
     },
-    [settleBet, bet, sound],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [finishRound, bet, sound, toast, flashLoss, mode, settleBet, nextFloats],
   )
 
   const play = useCallback(async () => {
@@ -60,11 +142,37 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       toast({ kind: 'error', title: 'Insufficient balance', body: 'Lower your bet or top up your wallet.' })
       return
     }
-    if (!placeBet('crash', bet)) return
     sfx.place()
-    const [u] = await nextFloats(1)
-    const cp = crashPoint(u)
-    target.current = cp
+
+    if (mode === 'free') {
+      // No server row in free play: debit locally and let settle() draw the
+      // point when the player acts.
+      if (!placeBet('crash', Math.round(bet))) return
+      openRef.current = null
+      freePoint.current = null
+    } else {
+      // Opening the round debits the stake on the server. We do NOT receive the
+      // crash point: showing it would make the cash-out decision free.
+      try {
+        openRef.current = await beginRound('crash', bet, {})
+      } catch (e) {
+        toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
+        return
+      }
+    }
+    /*
+     * The curve climbs until the player acts.
+     *
+     * It deliberately has NO crash point up front. If the browser knew it, the
+     * decision to cash out would be free — and if the server told it in advance,
+     * a modified client would peek and always cash out one tick before.
+     *
+     * So the player commits blind, and the very first thing they do ends the
+     * round: cash out, and the server reveals what the curve was and pays only
+     * if they beat it. The number they were shown is the number they asked for,
+     * not the number they were given.
+     */
+    target.current = Infinity
     cashed.current = false
     setCrashAt(null)
     setCashedAt(null)
@@ -75,35 +183,26 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
     start.current = performance.now()
 
     const tick = () => {
+      if (cashed.current) return
       const t = (performance.now() - start.current) / 1000
       const cur = mAt(t)
-      if (cur >= target.current) {
-        setM(target.current)
-        setTrail((p) => [...p.slice(-400), { t: tAt(target.current), m: target.current }])
-        setCrashAt(target.current)
-        setPhase('crashed')
-        setHistory((h) => [target.current, ...h].slice(0, 14))
-        if (!cashed.current) {
-          settleBet({ game: 'crash', wager: bet, multiplier: 0, detail: `Crashed at ${mult(target.current)}` })
-          flashLoss()
-          if (sound) sfx.crash()
-        }
-        return
-      }
       setM(cur)
       setTrail((p) => [...p.slice(-400), { t, m: cur }])
-      if (autoRef.current.enabled && !cashed.current && cur >= autoRef.current.at && autoRef.current.at < target.current) {
+      // Auto cash-out is an action like any other: it ends the round and asks
+      // the server whether it was in time.
+      if (autoRef.current.enabled && cur >= autoRef.current.at) {
         settle(autoRef.current.at)
+        return
       }
       raf.current = requestAnimationFrame(tick)
     }
     raf.current = requestAnimationFrame(tick)
-  }, [phase, bet, balance, placeBet, nextFloats, settleBet, sound, toast, settle])
+  }, [phase, bet, balance, beginRound, sound, toast, settle, mode, placeBet])
 
   useEffect(() => () => cancelAnimationFrame(raf.current), [])
 
   const cashout = () => {
-    if (phase !== 'running') return
+    if (phase !== 'running' || cashed.current) return
     settle(m)
   }
 
@@ -173,11 +272,11 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
           </div>
 
           {phase === 'running' && !cashedAt ? (
-            <BetButton variant="danger" onClick={cashout} sub={`${money(potential)} PX`}>
+            <BetButton variant="danger" onClick={cashout} sub={`$UGX {money(potential)}`}>
               Cash out {mult(m)}
             </BetButton>
           ) : (
-            <BetButton onClick={() => void play()} loading={false} sub={cashedAt ? `Won ${money(payout)} PX` : 'Space to launch'}>
+            <BetButton onClick={() => void play()} loading={false} sub={cashedAt ? `Won $UGX {money(payout)}` : 'Space to launch'}>
               {phase === 'crashed' ? 'Next round' : phase === 'cashed' ? 'Play again' : 'Place bet'}
             </BetButton>
           )}
@@ -192,7 +291,7 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
             <div className="animate-popIn rounded-xl border border-neon-lime/30 bg-neon-lime/10 px-3 py-2 text-center">
               <p className="text-[10px] uppercase tracking-wider text-neon-lime/70">Cashed out</p>
               <p className="num text-xl font-black text-neon-lime">{mult(cashedAt)}</p>
-              <p className="num text-[11px] text-slate-300">+{money(payout)} PX</p>
+              <p className="num text-[11px] text-slate-300">+UGX {money(payout)}</p>
             </div>
           )}
           <div className="space-y-1.5">
@@ -231,7 +330,7 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">UGX</span>
           </div>
           {phase === 'running' && !cashedAt ? (
             <button type="button" onClick={cashout} className="btn-danger h-10 flex-1 !text-[13px]">
@@ -317,7 +416,7 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
 
       <div className="mt-2 flex items-center justify-between rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2">
         <span className="text-[11px] text-slate-500">Potential payout</span>
-        <span className="num text-[13px] font-bold text-neon-lime">{money(potential)} PX</span>
+        <span className="num text-[13px] font-bold text-neon-lime">UGX {money(potential)}</span>
       </div>
     </GameShell>
   )

@@ -13,14 +13,16 @@ import {
 import { IconBolt, IconFlame, IconTrophy } from '../components/Icons'
 import { spinPlan } from '../lib/reels'
 import { Celebration, celebrationSound, FreeSpinHud } from '../components/Celebration'
+import { MIN_BET } from '../lib/currency'
+import type { Grid as BonniGrid } from '../lib/slot'
 
 const PAY_ROWS: SymbolId[] = ['wild', 'bonita', 'clyve', 'diamond', 'badge', 'cash', 'key', 'donut']
 
 export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('bonni')!
-  const { placeBet, settleBet, nextFloats, balance, toast, sound } = useStore()
+  const { placeBet, settleBet, nextFloats, balance, toast, sound, mode, playGame } = useStore()
 
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [grid, setGrid] = useState<Grid | null>(null)
   const [spinning, setSpinning] = useState(false)
   const [outcome, setOutcome] = useState<SlotOutcome | null>(null)
@@ -75,8 +77,43 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
       setWinCells(new Set())
       setOutcome(null)
 
-      const floats = await nextFloats(REELS * ROWS)
-      const next = buildGrid(floats)
+      /*
+       * A PAID spin is decided by the server.
+       *
+       * It returns the grid and the multiplier together, so the drums land on
+       * symbols that have already been paid. Free spins keep the local path:
+       * they are extra spins on a round that was already settled, and they pay
+       * nothing that was not paid for.
+       */
+      let next: BonniGrid
+      let serverMult: number | null = null
+      if (!free && mode === 'real') {
+        /*
+         * Same trap as the engine slots: a throw after `setSpinning(true)` and
+         * before the animation callback leaves the button dead until a reload.
+         * The stake is not taken unless the server opened the round, so the
+         * honest answer is to put the button back and say why.
+         */
+        let settled: Awaited<ReturnType<typeof playGame>>
+        try {
+          settled = await playGame('bonni', stake, {})
+        } catch (e) {
+          setSpinning(false)
+          toast({ kind: 'error', title: 'Spin refused', body: (e as Error).message })
+          return
+        }
+        const rows = JSON.parse(String(settled.payload.grid ?? '[]')) as string[][]
+        if (rows.length !== REELS || rows.some((reel) => reel.length !== ROWS)) {
+          toast({ kind: 'error', title: 'Spin refused', body: 'The server returned an unexpected reel shape.' })
+          setSpinning(false)
+          return
+        }
+        next = rows.map((reel, r) => reel.map((id, row) => ({ id: id as SymbolId, reel: r, row })))
+        serverMult = settled.multiplier
+      } else {
+        const floats = await nextFloats(REELS * ROWS)
+        next = buildGrid(floats)
+      }
 
       // ONE clock for the drums and the payout. The board publishes this exact
       // plan in the same frame, so the result can never be committed before the
@@ -115,7 +152,10 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
         // If this spin raises the full celebration card, suppress the global
         // win flash: two overlapping confetti layers is noise, not excitement.
         const celebrating = res.chase || res.totalMultiplier >= 40
-        const paid = res.totalMultiplier > 0 && !free
+        // The server already paid a real-money spin; only free play settles here.
+        const paid = serverMult !== null
+          ? Math.round(stake * serverMult)
+          : res.totalMultiplier > 0 && !free
           ? settleBet({
               game: 'bonni',
               wager: stake,
@@ -393,7 +433,7 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
       <p className="mt-1 text-center text-[9.5px] text-slate-700">
         Characters are fictional · 18+ · Play responsibly
       </p>
-      <span className="sr-only">Max win {money(potential)} PX</span>
+      <span className="sr-only">Max win UGX {money(potential)}</span>
     </GameShell>
   )
 }

@@ -1,0 +1,214 @@
+// src/lib/api.ts
+//
+// One place that calls the server routes, so session trouble is handled the same
+// way everywhere.
+//
+// WHY THIS EXISTS
+//
+// The admin screens each carried their own `token()` that read
+// `supabase.auth.getSession()` and returned the access token. `getSession()`
+// reads localStorage and does NOT check expiry — an access token is valid for an
+// hour, and a tab left open overnight keeps handing back the dead one. The
+// request then reaches the function, which answers 401, and the page prints a
+// red "Can't load players" box that looks exactly like a server failure.
+//
+// So: read the token, and on a 401 ask the client for a refresh (getSession()
+// refreshes an expired token automatically when a refresh token is present) and
+// retry once. If it is still 401, the session is genuinely gone and the caller
+// gets a typed AuthExpiredError to show as "sign in again", not as a broken
+// server.
+//
+// There is no silent retry beyond that. Retrying a 401 more than once cannot
+// succeed, and retrying a POST would risk a second charge or a second credit, so
+// the retry is limited to the exact case where the first request was rejected
+// for authentication and therefore cannot have had an effect.
+import { SUPABASE_ANON_KEY, apiUrl } from './backend'
+import { supabase } from './supabase'
+
+/** The session is gone (or never existed). Distinct from "the server failed". */
+export class AuthExpiredError extends Error {
+  constructor(message = 'Your session has expired. Please sign in again.') {
+    super(message)
+    this.name = 'AuthExpiredError'
+  }
+}
+
+/** The server answered, but with an error it explained. */
+export class ApiError extends Error {
+  status: number
+  code?: string
+  constructor(message: string, status: number, code?: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+type Opts = {
+  method?: 'GET' | 'POST'
+  body?: unknown
+  params?: Record<string, string>
+}
+
+/**
+ * Call one of our server routes by its old `/api/...` path.
+ *
+ * Throws AuthExpiredError when there is no usable session, ApiError when the
+ * server explains a failure, and a plain Error only when the network itself
+ * failed.
+ */
+/**
+ * Close a round this player left open, and say whether it worked.
+ *
+ * Best effort by design: if it fails, the original refusal is still the honest
+ * answer and is what the player should see.
+ */
+async function clearStuckRound(client: NonNullable<typeof supabase>): Promise<boolean> {
+  try {
+    const { data, error } = await client.rpc('forfeit_open_round')
+    if (error) return false
+    return Boolean(data) && (data as { still_open?: boolean }).still_open === false
+  } catch {
+    return false
+  }
+}
+
+export async function api<T>(path: string, opts: Opts = {}): Promise<T> {
+  if (!supabase) throw new Error('Backend is not configured.')
+
+  const url = apiUrl(path, opts.params)
+  const method = opts.method ?? 'GET'
+
+  const send = async (token: string | null) => {
+    const headers: Record<string, string> = { apikey: SUPABASE_ANON_KEY }
+    if (token) headers.Authorization = `Bearer ${token}`
+    if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
+
+    return fetch(url, {
+      method,
+      headers,
+      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+    })
+  }
+
+  // First attempt: whatever the client currently holds.
+  const first = await supabase.auth.getSession()
+  const token = first.data.session?.access_token ?? null
+  if (!token) throw new AuthExpiredError()
+
+  let res = await send(token)
+
+  if (res.status === 401) {
+    // The token was rejected. Ask the client to refresh — getSession() does that
+    // when the access token has expired and a refresh token is still good — and
+    // try exactly once more.
+    const again = await supabase.auth.getSession()
+    const fresh = again.data.session?.access_token
+    if (fresh && fresh !== token) res = await send(fresh)
+  }
+
+  const body = (await res.json().catch(() => null)) as
+    | (T & { error?: string; message?: string; code?: string })
+    | null
+
+  if (res.status === 401) {
+    /*
+     * A 401 no longer signs the player out.
+     *
+     * It used to: `signOut()` was called here, which drops the persisted session
+     * for the whole origin. One refused bet — or, when the play function was
+     * calling the database with the wrong identity, one refused bet on EVERY
+     * game — therefore ended the session everywhere, and the player was thrown
+     * back to the sign-in screen with "not authenticated" on every route. The
+     * screen they land on looks like a login fault, not the refusal it is.
+     *
+     * The session is not ours to destroy on one failed request. If it really is
+     * dead, the next `/auth/v1/user` check (on reload, or the next request that
+     * needs it) will say so, and the auth provider handles it there. The caller
+     * gets the typed error and can say "sign in again" without logging anyone out.
+     */
+    throw new AuthExpiredError()
+  }
+
+  /*
+   * THE ONE REFUSAL WORTH RETRYING: a round the player cannot reach.
+   *
+   * `start_round` refuses a second open round ("finish your last round first").
+   * The usual cause is not cheating, it is a spin that was interrupted — a
+   * refresh, a closed tab, a dropped request on the way to settle — which leaves
+   * an open round and a debited stake behind, and from then on EVERY bet in every
+   * game is refused with a sentence about a round the player cannot see. The
+   * game looks broken.
+   *
+   * So when that exact refusal comes back, close the caller's own stuck round
+   * (`forfeit_open_round` refunds the stake), and retry the bet once. One retry,
+   * only for this message, and only when the retry is a round START — never a
+   * settle, which could pay a bet twice.
+   */
+  if (!res.ok && /finish your last round first/i.test(body?.error || body?.message || '') && opts.body) {
+    const cleared = await clearStuckRound(supabase)
+    if (cleared) {
+      const fresh = await supabase.auth.getSession()
+      const again = fresh.data.session?.access_token
+      if (again) res = await send(again)
+    }
+  }
+
+  if (!res.ok) {
+    // The platform, not our code, answers when a function fails to start. It
+    // uses `message` rather than `error`, so reading only `error` would turn the
+    // one honest explanation available into a bare "Request failed (503)".
+    // A BOOT_ERROR means the function never ran: no query was issued, so
+    // nothing downstream -- the database included -- can be the cause.
+    if (body?.code === 'BOOT_ERROR') {
+      throw new ApiError(
+        'The server function failed to start, so nothing was run. This is a deployment problem, not your data.',
+        res.status,
+        'BOOT_ERROR',
+      )
+    }
+    throw new ApiError(
+      body?.error || body?.message || `Request failed (${res.status})`,
+      res.status,
+      body?.code,
+    )
+  }
+
+  // A 200 with an HTML body means the request hit a static host that has no such
+  // route: the function is not deployed, or the path never mapped. Say that
+  // rather than returning null and letting the caller render an empty table.
+  if (body === null) {
+    throw new ApiError(
+      'The server returned something that is not JSON. The function may not be deployed yet.',
+      res.status,
+    )
+  }
+
+  return body as T
+}
+
+/**
+ * One sentence for the operator, for any failure `api()` can throw.
+ *
+ * The point is that "your session expired" and "the server broke" must never
+ * read the same on screen. An admin staring at a red box needs to know whether
+ * to sign in again or to go and look at the server.
+ */
+export function describeApiError(e: unknown, fallback = 'That request failed.'): string {
+  if (e instanceof AuthExpiredError) return e.message
+  if (e instanceof ApiError) {
+    // 401 is handled above, but a 403 means the account is real and not an admin.
+    if (e.status === 403) return 'This account is not an admin.'
+    if (e.status === 404) return 'The server route was not found. The function may not be deployed yet.'
+    // 429 is not a fault: the caller is going too fast, and the server's own
+    // sentence already says so. Returning it verbatim is the whole message.
+    if (e.status === 429) return e.message
+    return e.message
+  }
+  if (e instanceof TypeError) {
+    // fetch() rejects with TypeError when the request never happened at all.
+    return 'Could not reach the server. Check your connection.'
+  }
+  return (e as Error)?.message || fallback
+}

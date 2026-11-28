@@ -1,6 +1,45 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { Session, User } from '@supabase/supabase-js'
 import { isBackendConfigured, supabase } from './supabase'
+import { DAILY_BONUS_UGX } from './currency'
+import { forgetSessionPing, noteSession } from './session'
+
+/**
+ * Where a referral code waits between signing up and having a session.
+ *
+ * localStorage, not user metadata: `raw_user_meta_data` can be written by the
+ * client at any time after sign-up, and a referral decides who gets paid.
+ */
+export const PENDING_REFERRAL_KEY = 'floatbet.referral.pending'
+
+/**
+ * A code read from a share link: `#join?code=ABC123`, `?ref=ABC123` or
+ * `?code=ABC123`. Read once at start-up, before any navigation, and handed to
+ * the sign-up form so the player does not have to type what they just tapped.
+ */
+/** A code this browser is still holding from an earlier sign-up attempt. */
+export function pendingReferralCode(): string {
+  try {
+    return (window.localStorage.getItem(PENDING_REFERRAL_KEY) ?? '')
+      .replace(/[^a-zA-Z0-9_]/g, '').toUpperCase().slice(0, 18)
+  } catch {
+    return ''
+  }
+}
+
+export function referralCodeFromUrl(): string {
+  try {
+    const hashQ = window.location.hash.split('?')[1] || ''
+    const fromHash = new URLSearchParams(hashQ)
+    const fromSearch = new URLSearchParams(window.location.search)
+    const raw =
+      fromHash.get('code') || fromHash.get('ref') ||
+      fromSearch.get('ref') || fromSearch.get('code') || ''
+    return raw.replace(/[^a-zA-Z0-9_]/g, '').toUpperCase().slice(0, 18)
+  } catch {
+    return ''
+  }
+}
 
 export type PlayerProfile = {
   id: string
@@ -34,7 +73,7 @@ type AuthState = {
   wallet: Wallet | null
   /** true when the player is mid-onboarding (needs a username or 18+ confirmation) */
   needsOnboarding: boolean
-  signUpEmail: (email: string, password: string, username: string, dob: string) => Promise<void>
+  signUpEmail: (email: string, password: string, username: string, dob: string, referralCode?: string) => Promise<void>
   signInEmail: (email: string, password: string) => Promise<void>
   signInGoogle: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
@@ -51,6 +90,8 @@ type AuthState = {
   resendVerification: (email: string) => Promise<void>
   /** PX credited by today's login bonus, or 0 when already claimed. */
   dailyPxAwarded: number
+  /** Changes when a referral code has been claimed, so the screen can re-read. */
+  referralRefresh: number
   signOut: () => Promise<void>
   refreshWallet: () => Promise<void>
   updateProfile: (patch: Partial<Pick<PlayerProfile, 'username' | 'display_name' | 'phone' | 'age_confirmed'>>) => Promise<void>
@@ -70,24 +111,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [recoveryReady, setRecoveryReady] = useState(false)
   const [recoveryError, setRecoveryError] = useState<string | null>(null)
   const [dailyPxAwarded, setDailyPxAwarded] = useState(0)
+  // Bumped when a referral code is claimed, so the referral screen re-reads.
+  const [referralRefresh, setReferralRefresh] = useState(0)
 
   /**
-   * The daily login bonus: 15,000 PX, once per calendar day (Africa/Kampala).
+   * The daily login bonus, once per calendar day (Africa/Kampala). The amount
+   * lives in `DAILY_BONUS_UGX` and is enforced server-side, so the only number
+   * this file may show is the one the database actually returns.
    *
    * Deliberately best-effort. `claim_daily_px` raises 'already claimed today'
    * as its normal, expected outcome, so a failure here is not an error — if it
    * were, every player would see a red banner every day after the first. The
    * award is also entirely server-side: the client passes no amount, so a
    * tampered browser cannot name its own reward.
+   *
+   * WHAT IT RETURNS: the resulting balance, not the amount awarded. Reading it
+   * as the award would have shown a player their whole balance as today's
+   * bonus, so the credited amount comes from the constant the interface also
+   * promises -- and `test:migration` pins that constant to the database's.
    */
   const claimDaily = useCallback(async (uid: string) => {
     if (!supabase) return
     const { data, error } = await supabase.rpc('claim_daily_px')
     if (error || typeof data !== 'number') {
+      // Including 'already claimed today', which is the normal second visit.
       setDailyPxAwarded(0)
       return
     }
-    setDailyPxAwarded(15000)
+    // Success: the database credited the fixed daily amount.
+    setDailyPxAwarded(DAILY_BONUS_UGX)
     void uid
   }, [])
 
@@ -119,9 +171,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data.session?.user) void loadProfile(data.session.user.id)
     })
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next)
       if (next?.user) void loadProfile(next.user.id)
+      /*
+       * The security record of where this player is signing in from.
+       *
+       * `SIGNED_IN` fires on a restored session too, which is why the ping is
+       * throttled by `noteSession` rather than fired blindly: one record per
+       * sign-in and at most one every half hour. It is deliberately not awaited
+       * and cannot fail the sign-in.
+       */
+      if (next?.user && event === 'SIGNED_IN') void noteSession('sign_in')
+      if (!next?.user) forgetSessionPing()
       else {
         setProfile(null)
         setWallet(null)
@@ -218,9 +280,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const here = (hash: string) => `${window.location.pathname}${hash}`
 
+  /**
+   * Sign up, and remember a referral code for when the account exists.
+   *
+   * The code CANNOT be claimed here: sign-up may return without a session (email
+   * confirmation is on), and `claim_referral()` needs `auth.uid()`. So it is
+   * stored locally and claimed once a session exists — see the effect below —
+   * which also covers the Google sign-in path and a confirmation link opened in a
+   * different tab. It is deliberately kept in localStorage rather than sent as
+   * user metadata: metadata is attacker-writable after the fact, and a referral
+   * decides money.
+   */
   const signUpEmail = useCallback(
-    async (email: string, password: string, username: string, dob: string) => {
+    async (email: string, password: string, username: string, dob: string, referralCode?: string) => {
       if (!supabase) throw new Error('Backend is not configured.')
+      const code = (referralCode ?? '').trim().toUpperCase()
+      if (code) {
+        try { window.localStorage.setItem(PENDING_REFERRAL_KEY, code) } catch { /* private mode */ }
+      }
       const { error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -234,6 +311,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     [],
   )
+
+  /**
+   * Claim whatever referral code this browser is holding, once.
+   *
+   * A failure is silent by design EXCEPT that the code is cleared: "that code
+   * does not exist" on a player's first screen is an error about somebody else's
+   * typo, not about them, and the account is already created either way. The
+   * referral screen shows whether a code landed.
+   */
+  const claimPendingReferral = useCallback(async () => {
+    let code = ''
+    try { code = window.localStorage.getItem(PENDING_REFERRAL_KEY) ?? '' } catch { return }
+    if (!code || !supabase) return
+    try {
+      await supabase.rpc('claim_referral', { p_code: code })
+    } catch {
+      /* the reason is shown on the referral screen, not as a start-up error */
+    } finally {
+      try { window.localStorage.removeItem(PENDING_REFERRAL_KEY) } catch { /* ignore */ }
+      setReferralRefresh((n) => n + 1)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!session?.user) return
+    void claimPendingReferral()
+  }, [session?.user, claimPendingReferral])
+
+  /**
+   * Check the session against the auth server when the app comes back to life.
+   *
+   * `getSession()` reads localStorage and does not check expiry, so a tab left
+   * open overnight holds a dead token and every request answers 401 — which used
+   * to log the player out mid-session. Asking the server once on focus resolves
+   * it properly: a token that can still be refreshed is refreshed, and one that
+   * cannot is dropped HERE, on an explicit check, rather than as a side effect of
+   * a failed bet.
+   */
+  useEffect(() => {
+    const client = supabase
+    if (!client) return
+    const check = async () => {
+      const { data } = await client.auth.getUser()
+      if (!data?.user && session) await client.auth.signOut().catch(() => undefined)
+    }
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      void check()
+      // A returning tab is a returning session; the throttle decides whether it is
+      // time to append another entry.
+      if (session?.user) void noteSession('heartbeat')
+    }
+    window.addEventListener('focus', onVisible)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('focus', onVisible)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [session])
 
   const signInEmail = useCallback(async (email: string, password: string) => {
     if (!supabase) throw new Error('Backend is not configured.')
@@ -285,6 +421,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     if (!supabase) return
+    // Only ever by the player's own hand. A refused bet must not log anyone out:
+    // see the note in `api()` beside the 401 retry.
     await supabase.auth.signOut()
   }, [])
 
@@ -359,6 +497,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearRecovery,
       resendVerification,
       dailyPxAwarded,
+      referralRefresh,
       signOut,
       refreshWallet,
       updateProfile,
@@ -367,6 +506,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       ready, session, profile, wallet, needsOnboarding, signUpEmail, signInEmail, signInGoogle,
+    referralRefresh,
       resetPassword, updatePassword, recoveryReady, recoveryError, clearRecovery, resendVerification, signOut, refreshWallet, updateProfile,
       startPhoneVerification, confirmPhoneVerification, dailyPxAwarded,
     ],

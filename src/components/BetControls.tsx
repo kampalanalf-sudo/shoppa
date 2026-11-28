@@ -1,10 +1,14 @@
 import React, { useEffect, useRef } from 'react'
 import { money } from '../lib/format'
+import { CURRENCY, MAX_BET, MIN_BET } from '../lib/currency'
 import { useStore } from '../lib/store'
 import { sfx } from '../lib/sound'
 import { IconBolt } from './Icons'
 
-const CHIPS = [1000, 5000, 25000, 100000, 500000]
+// Chip ladder in real shillings. Sparse enough to cover everyday stakes
+// (UGX 500 is a coffee) without offering a button larger than a typical
+// first deposit.
+const CHIPS = [500, 1000, 5000, 25000, 100000]
 
 type Props = {
   value: number
@@ -17,8 +21,8 @@ type Props = {
 }
 
 export function BetAmount({ value, onChange, disabled, allowHalf = true, allowDouble = true, label = 'Bet amount' }: Props) {
-  const { balance, balanceHidden } = useStore()
-  const maxBudget = 10000000
+  const { balanceHidden, mode, playBalance } = useStore()
+  const maxBudget = MAX_BET
 
   const step = (delta: number) => {
     sfx.click()
@@ -35,7 +39,11 @@ export function BetAmount({ value, onChange, disabled, allowHalf = true, allowDo
       <div className="label">
         <span>{label}</span>
         <span className="normal-case tracking-normal text-slate-500">
-          Balance <span className="num text-slate-300">{balanceHidden ? '••••' : money(balance)}</span>
+          {mode === 'free' ? 'Free credits' : 'Balance'}{' '}
+          <span className={`num ${mode === 'free' ? 'text-amber-200' : 'text-slate-300'}`}>
+            {balanceHidden ? '••••' : money(playBalance)}
+          </span>
+          {mode === 'free' && <span className="ml-1 text-[9px] font-bold uppercase text-amber-300/80">fake</span>}
         </span>
       </div>
       <div className="flex items-stretch gap-1.5 rounded-xl border border-white/10 bg-ink-900/80 p-1.5 transition focus-within:border-neon-lime/50">
@@ -58,7 +66,7 @@ export function BetAmount({ value, onChange, disabled, allowHalf = true, allowDo
             aria-label={label}
             className="num w-full bg-transparent px-1 text-center text-lg font-bold text-white placeholder:text-slate-600 focus:outline-none"
           />
-          <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[11px] font-bold text-neon-lime/70">PX</span>
+          <span className="pointer-events-none absolute right-0 top-1/2 -translate-y-1/2 text-[11px] font-bold text-neon-lime/70">{CURRENCY}</span>
         </div>
         <button
           type="button"
@@ -70,6 +78,11 @@ export function BetAmount({ value, onChange, disabled, allowHalf = true, allowDo
           {allowDouble ? '2×' : '+'}
         </button>
       </div>
+      {value > 0 && value < MIN_BET && (
+        <p className="mt-1 text-[10px] font-bold text-rose-300">
+          Minimum bet is {CURRENCY} {money(MIN_BET)}.
+        </p>
+      )}
       <div className="mt-2 grid grid-cols-5 gap-1.5">
         {CHIPS.map((c) => (
           <button

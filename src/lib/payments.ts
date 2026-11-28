@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import { supabase } from './supabase'
+import { api } from './api'
 
 /**
- * Client helpers for the /api payment routes.
+ * Client helpers for the payment routes.
  *
  * The browser never talks to DGateway and never sees the API key: it calls our
- * own server routes, which hold the key.
+ * own server routes, which hold the key. Those routes are Supabase Edge
+ * Functions (`pay?op=...`); `apiUrl()` maps the old `/api/...` names onto them.
  */
 
 export type PaymentState = 'idle' | 'pending' | 'completed' | 'failed' | 'timeout' | 'error'
@@ -18,22 +19,8 @@ export type CollectResponse = {
   message: string
 }
 
-async function authHeaders(): Promise<Record<string, string>> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-  if (supabase) {
-    const { data } = await supabase.auth.getSession()
-    const token = data.session?.access_token
-    if (token) headers.Authorization = `Bearer ${token}`
-  }
-  return headers
-}
-
-async function post<T>(path: string, body: unknown): Promise<T> {
-  const res = await fetch(path, { method: 'POST', headers: await authHeaders(), body: JSON.stringify(body) })
-  const json = (await res.json().catch(() => null)) as (T & { error?: string }) | null
-  if (!res.ok) throw new Error(json?.error || `Request failed (${res.status})`)
-  return json as T
-}
+const post = <T,>(path: string, body: unknown): Promise<T> =>
+  api<T>(path, { method: 'POST', body })
 
 /** Start a top-up. Opens a mobile-money prompt on the payer's phone. */
 export function collect(input: {
@@ -69,15 +56,36 @@ export type StatusResponse = {
 
 /** One status read through our server proxy. */
 export async function fetchStatus(reference: string, fresh = false): Promise<StatusResponse> {
-  const qs = new URLSearchParams({ reference, ...(fresh ? { fresh: '1' } : {}) })
-  const res = await fetch(`/api/status?${qs}`, { headers: await authHeaders() })
-  const json = (await res.json().catch(() => null)) as (StatusResponse & { error?: string }) | null
-  if (!res.ok) throw new Error(json?.error || `Request failed (${res.status})`)
-  return json as StatusResponse
+  return api<StatusResponse>('/api/status', {
+    params: { reference, ...(fresh ? { fresh: '1' } : {}) },
+  })
 }
 
 const POLL_MS = 10_000
 const GIVE_UP_MS = 5 * 60 * 1000
+
+/** The server's answer for a hosted-checkout session. */
+export type SessionResolution = {
+  sessionId: string
+  /** The provider says the session itself was processed. Evidence, not a claim. */
+  paid: boolean
+  /** The transaction reference behind it, once one exists. */
+  reference: string | null
+  status: 'pending' | 'completed' | 'failed'
+  rawStatus?: string
+  amount?: number | null
+}
+
+/**
+ * Exchange a hosted-checkout session id for its transaction.
+ *
+ * The id in the return URL is only a placeholder the player could type, so it
+ * is resolved on the server (signed-in, using our own gateway credentials)
+ * before the success page asserts anything about payment.
+ */
+export function resolveCheckoutSession(sessionId: string): Promise<SessionResolution> {
+  return api<SessionResolution>('/api/session', { params: { session: sessionId } })
+}
 
 /**
  * Polls /api/status every 10 seconds until the payment is terminal, and gives
@@ -164,35 +172,29 @@ export function usePaymentPoll(reference: string | null) {
   }
 }
 
-// ---------------------------------------------------------------- store mode --
+// ------------------------------------------------------------- hosted mode --
 
 /**
- * Hosted-store checkout. The buyer pays on DGateway's own page, so this is a
- * plain navigation — the browser only follows a link, which is why it also
- * works on GitHub Pages where /api routes do not exist.
+ * Hosted checkout, ZENGAPAY's own payment page.
  *
- * Safe to call with no reference: the return trip cannot carry our order_id,
- * which is exactly why the browser return is cosmetic and the webhook is the
- * only thing that credits.
+ * Unlike the old DGateway storefront this is not a static per-merchant URL:
+ * the server creates a session and returns its one-time URL, so nothing about
+ * the merchant is baked into the bundle and the API token never reaches the
+ * browser.
+ *
+ * Returns null when the server cannot create a session, and the caller falls
+ * back to the in-app mobile-money prompt.
  */
-export function storeUrl(ugx: number): string | null {
-  const base = (import.meta.env.VITE_DGATEWAY_STORE_URL as string | undefined)?.trim()
-  if (!base || base === 'off') return null
-  try {
-    const url = new URL(base)
-    if (Number.isInteger(ugx) && ugx > 0) url.searchParams.set('amount', String(ugx))
-    return url.toString()
-  } catch {
-    return null
-  }
+export async function startHostedCheckout(ugx: number): Promise<string | null> {
+  if (!Number.isInteger(ugx) || ugx <= 0) return null
+  const res = await api<{ url?: string }>('/api/pay?op=checkout', {
+    method: 'POST',
+    body: { amount: ugx, currency: 'UGX' },
+  })
+  return res.url ?? null
 }
 
-export function storeEnabled(): boolean {
-  const base = (import.meta.env.VITE_DGATEWAY_STORE_URL as string | undefined)?.trim()
-  return Boolean(base && base !== 'off')
-}
-
-/** The URL we tell DGateway to send the buyer back to. Cosmetic only. */
+/** Where the player lands after paying. Cosmetic only — the webhook credits. */
 export function successReturnUrl(): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
   return `${origin}/#topup-success`

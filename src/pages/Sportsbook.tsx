@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { sfx } from '../lib/sound'
 import { artFor } from '../lib/fixtureArt'
-import { coin, money } from '../lib/format'
+import { money, ugx } from '../lib/format'
 import {
   DEFAULT_MAX_STAKE_PX, SPORT_LABEL, fmtOdds, isPriceStale, loadBoard, loadSlips, placeBet,
   potentialPayout, startsIn, stakeUgx,
@@ -21,7 +21,7 @@ import {
  * card and tapping one price.
  *
  * Money rules that are not stylistic:
- *  - the stake box is whole PX only, and it cannot exceed the wallet balance
+ *  - the stake box is whole shillings only, and it cannot exceed the wallet balance
  *    (the server checks again under a row lock; this is just the honest UI)
  *  - the price shown and the price paid are the same `odds_x100` the server
  *    snapshotted; the client never sends a multiplier
@@ -47,6 +47,9 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
   const [busy, setBusy] = useState(false)
   const [flash, setFlash] = useState<string | null>(null)
 
+  // The server wallet column is still named `balance_px` from the PX era. It is
+  // read as a shilling amount now — migrations/0014 renames no data but removes
+  // the peg, so the number IS the UGX balance.
   const balance = wallet?.balance_px ?? 0
 
   const refresh = useCallback(async () => {
@@ -99,7 +102,7 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
     try {
       await placeBet(picked.selection.id, stakeNum)
       sfx.win()
-      setFlash(`Bet placed — ${coin(stakeNum)} at ${fmtOdds(picked.selection.odds_x100)}`)
+      setFlash(`Bet placed — ${ugx(stakeNum)} at ${fmtOdds(picked.selection.odds_x100)}`)
       setPicked(null)
       setStake('')
       await refreshWallet()
@@ -130,7 +133,7 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
         </div>
         <div className="min-w-0">
           <h1 className="text-[20px] font-black leading-tight text-white">Sports</h1>
-          <p className="text-[11.5px] text-slate-500">Pre-match · Uganda and abroad · PX stakes</p>
+          <p className="text-[11.5px] text-slate-500">Pre-match · Uganda and abroad · UGX stakes</p>
         </div>
         <div className="ml-auto flex items-center gap-2">
           <button
@@ -143,8 +146,8 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
             <IconRefresh size={16} />
           </button>
           <span className="chip !border-white/[0.07] normal-case tracking-normal">
-            <span className="grid h-4 w-4 place-items-center rounded-full bg-gradient-to-br from-neon-lime to-neon-green text-[7px] font-black text-ink-950">PX</span>
-            <span className="num font-bold text-white">{money(balance)}</span>
+            <span className="grid h-4 w-4 place-items-center rounded-full bg-gradient-to-br from-neon-lime to-neon-green text-[7px] font-black text-ink-950">U</span>
+            <span className="num font-bold text-white">UGX {money(balance)}</span>
           </span>
         </div>
       </div>
@@ -269,10 +272,13 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
           )}
 
           <div className="grid gap-2.5">
-            {shown.map((f) => (
+            {shown.map((f, i) => (
               <FixtureCard
                 key={f.id}
                 fixture={f}
+                // The first two cards are what the page opens on; the rest can
+                // wait for the scroll.
+                eager={i < 2}
                 markets={marketsFor(f.id)}
                 onPick={(selection, market) => {
                   sfx.click()
@@ -317,7 +323,7 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
               </div>
             </div>
 
-            <label className="label" htmlFor="stake">Stake (PX)</label>
+            <label className="label" htmlFor="stake">Stake (UGX)</label>
             <input
               id="stake"
               inputMode="numeric"
@@ -349,24 +355,24 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
             <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-white/[0.07] bg-white/[0.02] p-2.5">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[.14em] text-slate-500">Potential return</p>
-                <p className="num text-[15px] font-black text-white">{money(potential)} PX</p>
+                <p className="num text-[15px] font-black text-white">UGX {money(potential)}</p>
                 <p className="text-[10.5px] text-slate-500">≈ UGX {money(stakeUgx(potential))}</p>
               </div>
               <div className="text-right">
                 <p className="text-[10px] font-bold uppercase tracking-[.14em] text-slate-500">Balance after</p>
-                <p className="num text-[15px] font-black text-slate-300">{money(Math.max(0, balance - stakeNum))} PX</p>
-                <p className="text-[10.5px] text-slate-500">100 PX = 1 UGX</p>
+                <p className="num text-[15px] font-black text-slate-300">UGX {money(Math.max(0, balance - stakeNum))}</p>
+                <p className="text-[10.5px] text-slate-500">Stakes and payouts are in shillings.</p>
               </div>
             </div>
 
             {overBalance && (
               <p className="mt-2 text-[11px] font-semibold text-rose-300">
-                That is more than your balance of {coin(balance)}.
+                That is more than your balance of {ugx(balance)}.
               </p>
             )}
             {overMax && (
               <p className="mt-2 text-[11px] font-semibold text-rose-300">
-                The most you can stake on this market is {coin(maxStake)}.
+                The most you can stake on this market is {ugx(maxStake)}.
               </p>
             )}
             {stalePrice && (
@@ -381,7 +387,7 @@ export function Sportsbook({ onBack }: { onBack: () => void }) {
                 Cancel
               </button>
               <button type="button" onClick={() => void confirm()} disabled={!canPlace} className="btn-primary flex-[1.6] !py-3 !text-[13px]">
-                {busy ? 'Placing…' : `Bet ${stakeNum ? money(stakeNum) : ''} PX`}
+                {busy ? 'Placing…' : `Bet UGX ${stakeNum ? money(stakeNum) : ''}`}
               </button>
             </div>
 
@@ -410,35 +416,45 @@ function SportPill({ active, onClick, children }: { active: boolean; onClick: ()
 }
 
 function FixtureCard({
-  fixture, markets, onPick,
+  fixture, markets, onPick, eager,
 }: {
   fixture: Fixture
   markets: Market[]
   onPick: (s: Selection, m: Market) => void
+  /** Above the fold: load the banner immediately instead of on scroll. */
+  eager?: boolean
 }) {
   const [openAll, setOpenAll] = useState(false)
   const primary = markets[0]
   const rest = markets.slice(1)
   const countdown = startsIn(fixture.starts_at)
   // Only the featured fixtures have art; the rest render exactly as before.
-  const art = artFor(fixture.home_team, fixture.away_team)
+  const art = artFor(fixture.home_team, fixture.away_team, fixture.sport)
 
   return (
     <div className="overflow-hidden rounded-2xl border border-white/[0.07] bg-white/[0.02]">
       {art && (
         // The banner is decorative: the fixture name below is the accessible
         // label, so alt stays empty rather than repeating it to a screen
-        // reader. The gradient keeps the odds readable where the image runs
-        // bright behind the market row.
-        <div className="relative h-[104px] w-full overflow-hidden sm:h-[124px]">
+        // reader.
+        //
+        // The gradient is bottom-weighted and deliberately weak at the top.
+        // An earlier version ran a full-height overlay at 25% opacity, which
+        // washed the brightest part of the image toward the card colour and
+        // made the art look like it had failed to load. It now only firms up
+        // the last few pixels above the fixture row, where the odds sit.
+        <div className="relative h-[112px] w-full overflow-hidden sm:h-[132px]">
           <img
             src={art}
             alt=""
-            loading="lazy"
+            // Above-the-fold cards must not wait for a scroll event. The board
+            // shows ~40 fixtures; the first two are what the page opens on.
+            loading={eager ? 'eager' : 'lazy'}
+            fetchPriority={eager ? 'high' : 'auto'}
             decoding="async"
             className="h-full w-full object-cover object-center"
           />
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0a0f1c] via-[#0a0f1c]/25 to-transparent" />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-[#0a0f1c] via-[#0a0f1c]/55 to-transparent" />
         </div>
       )}
       <div className="flex items-center gap-2 border-b border-white/[0.05] px-3 py-2">
@@ -560,13 +576,13 @@ function SlipCard({ slip, fixtures }: { slip: Slip; fixtures: Fixture[] }) {
       <div className="mt-1.5 flex items-end justify-between gap-2">
         <div className="min-w-0">
           <p className="num text-[11px] text-slate-500">
-            {coin(slip.stake_px)} @ {fmtOdds(slip.odds_x100)}
+            {ugx(slip.stake_px)} @ {fmtOdds(slip.odds_x100)}
           </p>
           {slip.status === 'won' && (
-            <p className="num text-[12px] font-black text-emerald-300">+{coin(slip.payout_px)}</p>
+            <p className="num text-[12px] font-black text-emerald-300">+{ugx(slip.payout_px)}</p>
           )}
           {slip.status === 'open' && (
-            <p className="num text-[11px] text-slate-500">returns {coin(slip.potential_px)}</p>
+            <p className="num text-[11px] text-slate-500">returns {ugx(slip.potential_px)}</p>
           )}
           {slip.status === 'void' && (
             <p className="num text-[11px] text-slate-500">stake returned</p>

@@ -65,7 +65,7 @@ ok('the top-up reference is still read from the raw hash',
 
 // --------------------------------------------------------------- secrets ====
 ok('no server secret is exposed to the browser bundle',
-  !/import\.meta\.env\.(VITE_)?(DGATEWAY_API_KEY|SUPABASE_SERVICE_ROLE_KEY)/.test(
+  !/import\.meta\.env\.(VITE_)?(ZENGAPAY_API_TOKEN|SUPABASE_SERVICE_ROLE_KEY)/.test(
     read('src/lib/supabase.ts') + read('src/lib/auth.tsx')))
 // The pipeline that published the live site had no VITE_ vars, so the bundle it
 // shipped contained no Supabase client at all and sign-in did not exist. The

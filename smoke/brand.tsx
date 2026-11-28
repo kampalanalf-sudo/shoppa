@@ -94,12 +94,21 @@ ok('Bet is green', /text-neon-lime">Bet/.test(mark))
 ok('GAMING is tracked out and recedes', mark.includes('tracking-[.28em]') && mark.includes('text-slate-400'))
 ok('the wordmark can drop GAMING when space is tight',
   !renderToString(<Wordmark showGaming={false} />).includes('Gaming'))
-ok('the wordmark scales', renderToString(<Wordmark size="lg" />).includes('text-[22px]'))
+ok('the wordmark scales', renderToString(<Wordmark size="lg" />).includes('text-[28px]'))
+// The brand was previously the same size as the nav labels beside it, which made
+// it read as one more menu item. These are the sizes a player actually sees.
+ok('the header wordmark is larger than a nav label',
+  renderToString(<Wordmark size="sm" />).includes('text-[19px]'))
+ok('the auth lockup uses the largest step', renderToString(<Wordmark size="lg" />).includes('text-[28px]'))
 
 // ============================================================= wiring ====
 const chrome = read('src/components/Chrome.tsx')
 ok('the header puts the die to the LEFT of the wordmark',
-  /<Logo size=\{\d+\} \/>\s*<span className="block">\s*<Wordmark/.test(chrome))
+  /<Logo size=\{\d+\}[^/]*\/>\s*<span className="block">\s*<Wordmark/.test(chrome))
+// The mark got bigger, so the bar had to grow with it: a 54px die in a 62px bar
+// reads as cramped, not prominent.
+ok('the header bar grew to fit the larger mark', /h-\[74px\]/.test(chrome))
+ok('the header mark is at least 46px', /<Logo size=\{(4[6-9]|[5-9]\d)\}/.test(chrome))
 // The lockup is a die PLUS a wordmark, on a phone too. The old header hid the
 // wordmark below `sm`, which left the bar as a bare icon.
 ok('the wordmark is visible at every width', !/hidden sm:block">\s*<Wordmark/.test(chrome))
@@ -108,7 +117,8 @@ ok('the header is pinned (sticky, not scrolled away)',
 ok('the die gets its depth from CSS, not a filter chain',
   read('src/index.css').includes('.fb-die-spin') &&
   read('src/index.css').includes('perspective: 220px'))
-ok('the footer uses the same lockup', chrome.includes('<Logo size={32} />') && chrome.includes('<Wordmark size="sm" />'))
+ok('the footer uses the same lockup at a larger size',
+  /<Logo size=\{46\} \/>/.test(chrome) && /<Wordmark size="md" \/>/.test(chrome))
 ok('the header no longer hand-rolls the wordmark',
   !chrome.includes('Float<span className="text-neon-lime">Bet</span>'))
 

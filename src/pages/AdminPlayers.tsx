@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 import { money } from '../lib/format'
+import { api, describeApiError } from '../lib/api'
 import { IconChevronLeft, IconShield, IconSearch, IconClock } from '../components/Icons'
 
 /**
@@ -39,6 +40,26 @@ type Totals = {
   claims_today: number
 }
 
+type SessionEntry = {
+  event: 'sign_in' | 'heartbeat'
+  at: string
+  ip: string | null
+  country: string | null
+  region: string | null
+  city: string | null
+  lat: number | null
+  lng: number | null
+  accuracy_m: number | null
+  source: string | null
+  agent: string | null
+}
+
+type SessionLog = {
+  user: string | null
+  entries: SessionEntry[]
+  shared_ip_accounts: { ip: string; accounts: number; names: string[] }[]
+}
+
 type Detail = {
   profile: Row & { phone: string | null; phone_verified: boolean | null; date_of_birth: string | null }
   wallet: { balance_px: number; wagered_px: number; won_px: number; cashed_out_px: number } | null
@@ -55,11 +76,6 @@ const SORTS = [
   { id: 'risk', label: 'Worth a look' },
   { id: 'oldest', label: 'Oldest' },
 ] as const
-
-async function token(): Promise<string | null> {
-  const { data } = (await supabase?.auth.getSession()) ?? { data: { session: null } }
-  return data.session?.access_token ?? null
-}
 
 const ago = (iso: string): string => {
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000)
@@ -94,36 +110,29 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
   const [openId, setOpenId] = useState<string | null>(null)
   const [detail, setDetail] = useState<Detail | null>(null)
   const [detailBusy, setDetailBusy] = useState(false)
+  // Player-level controls. Every one of these hits /api/admin/actions, which
+  // re-checks the admin flag server-side -- this state is UI only.
+  const [actBusy, setActBusy] = useState(false)
+  const [actNote, setActNote] = useState<{ kind: 'ok' | 'bad'; text: string } | null>(null)
+  const [sessions, setSessions] = useState<SessionLog | null>(null)
+  const [sessionsBusy, setSessionsBusy] = useState(false)
+  const [adjustOpen, setAdjustOpen] = useState(false)
+  const [adjustPx, setAdjustPx] = useState('')
+  const [adjustReason, setAdjustReason] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const t = await token()
-      if (!t) {
-        setError('Please sign in again.')
-        return
-      }
-      const qs = new URLSearchParams({ sort, limit: '100' })
-      if (query.trim().length >= 3) qs.set('q', query.trim())
-      const res = await fetch(`/api/admin/players?${qs}`, {
-        headers: { Authorization: `Bearer ${t}` },
-      })
-      const body = (await res.json().catch(() => ({}))) as {
-        rows?: Row[]
-        totals?: Totals
-        error?: string
-      }
-      if (!res.ok) {
-        setError(res.status === 403 ? 'This account is not an admin.' : body.error || 'Could not load players.')
-        setRows([])
-        setTotals(null)
-        return
-      }
+      const params: Record<string, string> = { sort, limit: '100' }
+      if (query.trim().length >= 3) params.q = query.trim()
+      const body = await api<{ rows?: Row[]; totals?: Totals }>('/api/admin/players', { params })
       setRows(body.rows ?? [])
       setTotals(body.totals ?? null)
-    } catch {
-      setError('Could not reach the server.')
+    } catch (e) {
+      setRows([])
+      setTotals(null)
+      setError(describeApiError(e, 'Could not load players.'))
     } finally {
       setLoading(false)
     }
@@ -136,22 +145,49 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
   const openPlayer = useCallback(async (id: string) => {
     setOpenId(id)
     setDetail(null)
+    setSessions(null)
     setDetailBusy(true)
+    setSessionsBusy(true)
     try {
-      const t = await token()
-      if (!t) return
-      const res = await fetch(`/api/admin/players?id=${encodeURIComponent(id)}`, {
-        headers: { Authorization: `Bearer ${t}` },
-      })
-      const body = (await res.json().catch(() => ({}))) as Detail & { error?: string }
-      if (res.ok) setDetail(body)
-      else setError(body.error || 'Could not load that player.')
-    } catch {
-      setError('Could not reach the server.')
+      setDetail(await api<Detail>('/api/admin/players', { params: { id } }))
+    } catch (e) {
+      setError(describeApiError(e, 'Could not load that player.'))
     } finally {
       setDetailBusy(false)
     }
+    /*
+     * Separate request, and deliberately not awaited with the profile: the
+     * security record is the one thing that must still render when something
+     * else on this page fails, and it is the one an operator may look at alone.
+     */
+    try {
+      setSessions(await api<SessionLog>('/api/admin/sessions', { params: { id } }))
+    } catch {
+      setSessions({ user: null, entries: [], shared_ip_accounts: [] })
+    } finally {
+      setSessionsBusy(false)
+    }
   }, [])
+
+  const runAction = useCallback(
+    async (payload: Record<string, unknown>) => {
+      setActBusy(true)
+      setActNote(null)
+      try {
+        await api('/api/admin/actions', { method: 'POST', body: payload })
+        setActNote({ kind: 'ok', text: 'Done.' })
+        setAdjustOpen(false)
+        setAdjustPx('')
+        setAdjustReason('')
+        if (openId) await openPlayer(openId)
+      } catch (e) {
+        setActNote({ kind: 'bad', text: describeApiError(e, 'That action failed.') })
+      } finally {
+        setActBusy(false)
+      }
+    },
+    [openId, openPlayer],
+  )
 
   const flagged = useMemo(() => rows.filter((r) => r.risk >= 20 && !r.suspended).length, [rows])
 
@@ -205,9 +241,9 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
 
             <div className="mb-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
               {[
-                { k: 'Balance', v: `${money(detail.wallet?.balance_px ?? 0)} PX` },
-                { k: 'Wagered', v: `${money(detail.wallet?.wagered_px ?? 0)} PX` },
-                { k: 'Cashed out', v: `${money(detail.wallet?.cashed_out_px ?? 0)} PX` },
+                { k: 'Balance', v: `UGX ${money(detail.wallet?.balance_px ?? 0)}` },
+                { k: 'Wagered', v: `UGX ${money(detail.wallet?.wagered_px ?? 0)}` },
+                { k: 'Cashed out', v: `UGX ${money(detail.wallet?.cashed_out_px ?? 0)}` },
                 { k: 'Daily claims', v: String(detail.daily_claims) },
               ].map((s) => (
                 <div key={s.k} className="panel px-2.5 py-2">
@@ -239,6 +275,165 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
                   {detail.profile.is_admin && <span className="ml-1.5 text-violet-300">· admin</span>}
                 </dd>
               </dl>
+            </div>
+
+            {/* ------------------------------------------------ controls --- */}
+            <div className="panel mb-2 px-3 py-2.5">
+              <p className="text-[12px] font-bold text-white">Controls</p>
+              <p className="mb-2 text-[9.5px] leading-relaxed text-slate-500">
+                Every action is recorded against your account. Balance changes also write a ledger row.
+              </p>
+
+              {actNote && (
+                <p
+                  className={`mb-2 rounded-lg border px-2 py-1.5 text-[10.5px] ${
+                    actNote.kind === 'ok'
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200'
+                      : 'border-rose-500/30 bg-rose-500/10 text-rose-200'
+                  }`}
+                >
+                  {actNote.text}
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setAdjustOpen((v) => !v)}
+                  className="btn-ghost !py-1.5 !text-[10.5px]"
+                >
+                  Adjust balance
+                </button>
+                <button
+                  type="button"
+                  disabled={actBusy}
+                  onClick={() =>
+                    void runAction({
+                      action: detail.profile.suspended ? 'unsuspend' : 'suspend',
+                      userId: detail.profile.id,
+                      reason: 'set from the players screen',
+                    })
+                  }
+                  className="btn-ghost !py-1.5 !text-[10.5px] disabled:opacity-40"
+                >
+                  {detail.profile.suspended ? 'Un-suspend' : 'Suspend'}
+                </button>
+                <button
+                  type="button"
+                  disabled={actBusy}
+                  onClick={() =>
+                    void runAction({
+                      action: detail.profile.is_admin ? 'revoke_admin' : 'grant_admin',
+                      userId: detail.profile.id,
+                    })
+                  }
+                  className="btn-ghost !py-1.5 !text-[10.5px] disabled:opacity-40"
+                >
+                  {detail.profile.is_admin ? 'Revoke admin' : 'Make admin'}
+                </button>
+              </div>
+
+              {adjustOpen && (
+                <div className="mt-2 rounded-lg border border-white/10 bg-black/20 p-2">
+                  <p className="text-[10.5px] text-slate-300">
+                    Credit or debit this wallet. A negative number takes UGX away.
+                  </p>
+                  <div className="mt-1.5 flex gap-1.5">
+                    <input
+                      value={adjustPx}
+                      onChange={(e) => setAdjustPx(e.target.value)}
+                      inputMode="numeric"
+                      placeholder="UGX, e.g. 5000 or -5000"
+                      className="field !py-1.5 !text-[11px]"
+                    />
+                  </div>
+                  <input
+                    value={adjustReason}
+                    onChange={(e) => setAdjustReason(e.target.value)}
+                    placeholder="Reason (required, at least 8 characters)"
+                    className="field mt-1.5 !py-1.5 !text-[11px]"
+                  />
+                  <button
+                    type="button"
+                    disabled={actBusy || adjustReason.trim().length < 8 || !Number.isFinite(Number(adjustPx)) || Number(adjustPx) === 0}
+                    onClick={() =>
+                      void runAction({
+                        action: 'adjust',
+                        userId: detail.profile.id,
+                        deltaPx: Math.trunc(Number(adjustPx)),
+                        reason: adjustReason.trim(),
+                      })
+                    }
+                    className="btn-primary mt-1.5 w-full !py-1.5 !text-[10.5px] disabled:opacity-40"
+                  >
+                    {actBusy ? 'Applying…' : 'Apply adjustment'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* ------------------------------------------ sign-in record --- */}
+            <div className="panel mb-2 overflow-hidden">
+              <div className="border-b border-white/[0.06] px-3 py-2">
+                <p className="text-[12px] font-bold text-white">Where they signed in from</p>
+                <p className="text-[9.5px] leading-relaxed text-slate-500">
+                  Address and country come from the connection and cannot be set by the app.
+                  Coordinates are what the device claimed, kept to about a kilometre and
+                  <span className="text-amber-400/90"> unverified</span>.
+                </p>
+              </div>
+
+              {sessionsBusy && <p className="px-3 py-4 text-center text-[11px] text-slate-500">Loading…</p>}
+
+              {!sessionsBusy && sessions && sessions.shared_ip_accounts.length > 0 && (
+                <div className="border-b border-amber-500/20 bg-amber-500/[0.07] px-3 py-2">
+                  <p className="text-[10.5px] font-bold text-amber-200">Shared address</p>
+                  {sessions.shared_ip_accounts.map((s) => (
+                    <p key={s.ip} className="text-[10px] text-amber-200/80">
+                      <span className="num">{s.ip}</span> — also used by{' '}
+                      {s.names.filter((n) => n !== sessions.user).join(', ') || `${s.accounts} accounts`}
+                    </p>
+                  ))}
+                  <p className="mt-0.5 text-[9.5px] text-amber-200/60">
+                    One address can be a household, a café or a shared phone. Worth a look, not a verdict.
+                  </p>
+                </div>
+              )}
+
+              {!sessionsBusy && sessions && sessions.entries.length === 0 && (
+                <p className="px-3 py-5 text-center text-[11px] text-slate-500">
+                  Nothing recorded yet. Entries start at the next sign-in.
+                </p>
+              )}
+
+              <div className="divide-y divide-white/[0.04]">
+                {(sessions?.entries ?? []).map((e, i) => (
+                  <div key={`${e.at}-${i}`} className="px-3 py-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-[52px] shrink-0 text-[9.5px] font-bold ${e.event === 'sign_in' ? 'text-sky-300' : 'text-slate-500'}`}>
+                        {e.event === 'sign_in' ? 'sign-in' : 'active'}
+                      </span>
+                      <span className="num shrink-0 text-[10.5px] text-slate-300">{e.ip || 'address unknown'}</span>
+                      <span className="min-w-0 flex-1 truncate text-[10px] text-slate-400">
+                        {[e.city, e.region, e.country].filter(Boolean).join(', ') || '—'}
+                      </span>
+                      <span className="w-[52px] shrink-0 text-right text-[9.5px] text-slate-600">{ago(e.at)}</span>
+                    </div>
+                    {(e.lat !== null || e.lng !== null) && (
+                      <p className="num mt-0.5 pl-[60px] text-[9.5px] text-slate-600">
+                        {e.lat !== null ? e.lat.toFixed(2) : '—'}, {e.lng !== null ? e.lng.toFixed(2) : '—'}
+                        {e.accuracy_m ? ` · ±${Math.round(e.accuracy_m)}m claimed` : ''}
+                        {e.source ? ` · ${e.source}` : ''} · unverified
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <p className="border-t border-white/[0.06] px-3 py-1.5 text-[9px] leading-relaxed text-slate-600">
+                Recorded at sign-in and at most every 30 minutes. Addresses older than
+                180 days are blanked. Not used for bets, payouts or limits.
+              </p>
             </div>
 
             <div className="panel mb-2 overflow-hidden">
@@ -280,7 +475,7 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
                   <div key={c.id} className="flex items-center gap-2 px-3 py-1.5">
                     <span className="text-[10px] uppercase text-slate-400">{c.kind}</span>
                     <span className="num text-[11px] font-bold text-white">{money(c.ugx)} UGX</span>
-                    <span className="num text-[10px] text-slate-500">({money(c.amount_px)} PX)</span>
+                    <span className="num text-[10px] text-slate-500">(UGX {money(c.amount_px)})</span>
                     <span className={`ml-auto text-[10px] font-bold ${c.status === 'paid' ? 'text-emerald-300' : c.status === 'failed' ? 'text-rose-300' : 'text-amber-300'}`}>
                       {c.status}
                     </span>
@@ -325,8 +520,8 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
         <div className="mb-2 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
           {[
             { k: 'Players', v: String(totals.players) },
-            { k: 'PX in wallets', v: money(totals.px_in_circulation) },
-            { k: 'PX wagered', v: money(totals.px_wagered) },
+            { k: 'UGX in wallets', v: money(totals.px_in_circulation) },
+            { k: 'UGX wagered', v: money(totals.px_wagered) },
             { k: 'Claimed today', v: String(totals.claims_today) },
           ].map((s) => (
             <div key={s.k} className="panel px-2.5 py-2">
@@ -339,7 +534,7 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
 
       {flagged > 0 && (
         <p className="mb-2 rounded-lg border border-amber-400/30 bg-amber-400/10 px-2.5 py-2 text-[11px] text-amber-200">
-          {flagged} account{flagged > 1 ? 's' : ''} received PX without much wagering behind
+          {flagged} account{flagged > 1 ? 's' : ''} received credit without much wagering behind
           {flagged > 1 ? ' them' : ' it'} — sorted under “Worth a look”. A signal, not a verdict.
         </p>
       )}
@@ -416,7 +611,7 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
               </p>
             </div>
             <div className="shrink-0 text-right">
-              <p className="num text-[11.5px] font-bold text-white">{money(r.balance_px)} PX</p>
+              <p className="num text-[11.5px] font-bold text-white">UGX {money(r.balance_px)}</p>
               <p className="num text-[9.5px] text-slate-500">wagered {money(r.wagered_px)}</p>
             </div>
           </button>

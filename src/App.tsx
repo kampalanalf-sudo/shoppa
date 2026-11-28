@@ -4,8 +4,9 @@ import { AuthProvider, useAuth } from './lib/auth'
 import { setSoundEnabled } from './lib/sound'
 import { Header, Footer, BottomBar, ChatDock, Toasts, WinFlash } from './components/Chrome'
 import { InstallPrompt } from './components/InstallPrompt'
+import { FreePlayBadge, ModeSwitch } from './components/ModeBadge'
 import { StudioIdent } from './components/StudioIdent'
-import { SearchModal, WalletModal, FairModal, HistoryModal, RewardsModal } from './components/Modals'
+import { SearchModal, WalletModal, FairModal, HistoryModal } from './components/Modals'
 import { Home } from './pages/Home'
 import { ProxiCash } from './pages/ProxiCash'
 import { Auth } from './pages/Auth'
@@ -14,12 +15,19 @@ import { SetPassword } from './pages/SetPassword'
 import { Sportsbook } from './pages/Sportsbook'
 import { Cashout } from './pages/Cashout'
 import { ChatRoom } from './components/ChatRoom'
-import { TopUpPanel } from './components/TopUpPanel'
+import { Deposit } from './pages/Deposit'
+import { Float } from './pages/Float'
+import { FloatMe } from './pages/FloatMe'
+import { Referral } from './pages/Referral'
 import { TopUpSuccess } from './pages/TopUpSuccess'
 import { AdminParked } from './pages/AdminParked'
 import { AdminPlayers } from './pages/AdminPlayers'
+import { Support } from './pages/Support'
+import { SupportBubble } from './components/SupportBubble'
+import { AdminConsole } from './pages/AdminConsole'
 import { BonniClyve } from './games/BonniClyve'
 import { EngineSlot } from './games/EngineSlot'
+import { Craters } from './games/Craters'
 import { CHAPE, BLUE_MOUNTAIN } from './lib/slots/games'
 import { BAZAAR, BODA } from './lib/slots/games2'
 import { Plinko } from './games/Plinko'
@@ -30,6 +38,7 @@ import { Limbo } from './games/Limbo'
 import { Wheel } from './games/Wheel'
 import { Tower } from './games/Tower'
 import { Roulette } from './games/Roulette'
+import { Privacy } from './pages/Privacy'
 import type { GameId } from './lib/types'
 
 type View =
@@ -40,18 +49,43 @@ type View =
   | { name: 'auth' }
   | { name: 'set-password' }
   | { name: 'sportsbook' }
-  | { name: 'topup-success'; reference: string | null }
+  | { name: 'support' }
+  | { name: 'privacy' }
+  | { name: 'deposit' }
+  | { name: 'float' }
+  | { name: 'float-me'; code: string }
+  | { name: 'referral' }
+  | { name: 'topup-success'; reference: string | null; sessionId: string | null }
   | { name: 'admin-parked' }
   | { name: 'admin-players' }
+  | { name: 'admin-console' }
 
 function Shell() {
-  const { sound, setFairOpen, setWalletOpen, hydrated } = useStore()
+  const { sound, setFairOpen, setWalletOpen, hydrated, mode: playMode } = useStore()
   const { configured, ready, user, needsOnboarding } = useAuth()
   const [onboarded, setOnboarded] = useState(false)
   const [view, setView] = useState<View>({ name: 'home' })
   const [search, setSearch] = useState(false)
   const [roomOpen, setRoomOpen] = useState(false)
-  const [topUpOpen, setTopUpOpen] = useState(false)
+  // The deposit screen is a page, not a modal. A modal cannot be linked to, and
+  // a "Float Me" link has to open the sponsor's deposit page directly.
+  const openDeposit = useCallback(() => {
+    setView({ name: 'deposit' })
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+    try { window.history.replaceState(null, '', '#deposit') } catch { /* noop */ }
+  }, [])
+
+  const openReferral = useCallback(() => {
+    setView({ name: 'referral' })
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+    try { window.history.replaceState(null, '', '#referral') } catch { /* noop */ }
+  }, [])
+
+  const openFloat = useCallback(() => {
+    setView({ name: 'float' })
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+    try { window.history.replaceState(null, '', '#float') } catch { /* noop */ }
+  }, [])
 
   useEffect(() => setSoundEnabled(sound), [sound])
 
@@ -82,8 +116,34 @@ function Shell() {
       const h = raw.split(/[?&]/)[0].replace(/\/$/, '')
       if (h === 'proxicash') { setView({ name: 'proxicash' }); return }
       if (h === 'cashout') { setView({ name: 'cashout' }); return }
+      // Deposit: the number is the account's own, so this needs a session.
+      if (h === 'deposit' || h === 'topup') { setView({ name: 'deposit' }); return }
+      if (h === 'float' || h === 'credit') { setView({ name: 'float' }); return }
+      if (h === 'referral' || h === 'invite') { setView({ name: 'referral' }); return }
+      /*
+       * A shared invite link: `#join?code=ABC123`.
+       *
+       * It goes to SIGN-UP, not to the referral page — the person holding the link
+       * does not have an account yet, which is the whole point. The code stays in
+       * the URL so the form can pre-fill it (src/pages/Auth.tsx reads the hash),
+       * and it is still there after a reload.
+       */
+      if (h === 'join' || h === 'signup') { setView({ name: 'auth' }); return }
+      /*
+       * "Float Me": the PUBLIC sponsor page.
+       *
+       * It must render before the signed-in guard below, because the person who
+       * pays for a friend's deposit usually has no account. The code is in the
+       * query string, so the link can be opened cold from WhatsApp.
+       */
+      if (h === 'float-me') {
+        const qs = new URLSearchParams(raw.split('?')[1] || '')
+        setView({ name: 'float-me', code: qs.get('code') || '' })
+        return
+      }
       // Sports needs an account: a slip is attached to a wallet.
       if (h === 'sports' || h === 'sportsbook') { setView({ name: 'sportsbook' }); return }
+      if (h === 'support' || h === 'help' || h === 'care') { setView({ name: 'support' }); return }
       if (h === 'auth') { setView({ name: 'auth' }); return }
       // Recovery link landing. Supabase sends the browser back here with a
       // session already established; without this route the reset link was a
@@ -91,10 +151,20 @@ function Shell() {
       if (h === 'reset-password') { setView({ name: 'set-password' }); return }
       if (h === 'verified') { setView({ name: 'auth' }); return }
       if (h === 'admin/parked') { setView({ name: 'admin-parked' }); return }
-      if (h === 'admin/players' || h === 'admin') { setView({ name: 'admin-players' }); return }
+      if (h === 'admin/players') { setView({ name: 'admin-players' }); return }
+      // 'admin' lands on the console: health first, because the most common
+      // question an operator has is 'is anything broken right now'.
+      if (h === 'admin' || h === 'admin/console') { setView({ name: 'admin-console' }); return }
       if (h.startsWith('topup-success')) {
-        const ref = new URLSearchParams(raw.split('?')[1] || '').get('reference')
-        setView({ name: 'topup-success', reference: ref })
+        const qs = new URLSearchParams(raw.split('?')[1] || '')
+        // Two different rails land here. A mobile-money collect carries a
+        // transaction `reference`; a hosted checkout carries a `session` id that
+        // has to be resolved before the page can say anything about payment.
+        setView({
+          name: 'topup-success',
+          reference: qs.get('reference'),
+          sessionId: qs.get('session'),
+        })
         return
       }
       if (h && h !== 'home') {
@@ -127,13 +197,22 @@ function Shell() {
     try { window.history.replaceState(null, '', '#sports') } catch { /* noop */ }
   }, [])
 
-  const openSuccess = useCallback((reference: string | null) => {
-    setView({ name: 'topup-success', reference })
-    try {
-      window.history.replaceState(
-        null, '', reference ? `#topup-success?reference=${encodeURIComponent(reference)}` : '#topup-success',
-      )
-    } catch { /* noop */ }
+  /**
+   * Take the player to support.
+   *
+   * One definition, because this is reached from the floating button, the footer
+   * link and anything else that wants it. Drifting copies of "go to support" is
+   * how the Sports link ended up dead.
+   *
+   * It MUST live here, with the other hooks. The first attempt at this sat just
+   * above the JSX, below four early returns for the loading, signed-out and
+   * onboarding paths — so the signed-in page called 17 hooks and the signed-out
+   * page 16. React throws "Rendered more hooks than during the previous render"
+   * the moment a player signs in, and the page goes blank.
+   */
+  const openSupport = useCallback(() => {
+    setView({ name: 'support' })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }, [])
 
   const openProxiCash = useCallback(() => {
@@ -180,6 +259,15 @@ function Shell() {
       )
     }
     if (!user) {
+      // The sponsor page is the one screen that must work without an account.
+      if (view.name === 'float-me') {
+        return (
+          <>
+            <FloatMe code={view.code} onHome={home} />
+            <Toasts />
+          </>
+        )
+      }
       return (
         <>
           <Header view="home" onNavigate={() => {}} onSearch={() => {}} />
@@ -220,11 +308,18 @@ function Shell() {
                 : v === 'cashout'
                   ? openCashout()
                   : v === 'topup'
-                    ? setTopUpOpen(true)
-                    : home()
+                    ? openDeposit()
+                    : v === 'referral'
+                      ? openReferral()
+                      : home()
         }
         onSearch={() => setSearch(true)}
       />
+
+      {/* Free play is announced as a full-width strip above the page, not just
+          a chip on the balance: a player who opens a game directly has to be
+          told the money is fake before they stake anything. */}
+      {playMode === 'free' && <FreePlayBadge variant="bar" />}
 
       <main>
         {current === 'bonni' && <BonniClyve {...shared} />}
@@ -232,6 +327,9 @@ function Shell() {
         {current === 'bluemountain' && <EngineSlot config={BLUE_MOUNTAIN} id="bluemountain" {...shared} />}
         {current === 'bazaar' && <EngineSlot config={BAZAAR} id="bazaar" {...shared} />}
         {current === 'boda' && <EngineSlot config={BODA} id="boda" {...shared} />}
+        {/* 4x3 with a real round: crates add spins and raise a multiplier,
+            which is round state the generic engine does not model. */}
+        {current === 'craters' && <Craters id="craters" {...shared} />}
         {current === 'plinko' && <Plinko {...shared} />}
         {current === 'crash' && <Crash {...shared} />}
         {current === 'mines' && <Mines {...shared} />}
@@ -242,23 +340,42 @@ function Shell() {
         {current === 'roulette' && <Roulette {...shared} />}
         {isProxiCash && <ProxiCash onBack={home} />}
         {view.name === 'cashout' && <Cashout onBack={home} />}
+        {view.name === 'deposit' && <Deposit onBack={home} onOpenFloat={openFloat} />}
+        {view.name === 'float' && <Float onBack={home} onDeposit={openDeposit} />}
+        {view.name === 'float-me' && <FloatMe code={view.code} onHome={home} />}
+        {view.name === 'referral' && <Referral onBack={home} />}
         {view.name === 'auth' && <Auth onDone={home} />}
         {view.name === 'set-password' && <SetPassword onDone={home} />}
         {view.name === 'sportsbook' && <Sportsbook onBack={home} />}
+        {view.name === 'support' && <Support onHome={home} onSignIn={() => setView({ name: 'auth' })} />}
+        {view.name === 'privacy' && <Privacy onBack={home} />}
         {/* Placeholder kept so the grid does not shift while loading. */}
         {view.name === 'admin-parked' && <AdminParked onHome={home} />}
         {view.name === 'admin-players' && <AdminPlayers onHome={home} />}
+        {view.name === 'admin-console' && <AdminConsole onHome={home} />}
         {view.name === 'topup-success' && (
           <TopUpSuccess
             reference={view.reference}
+            sessionId={view.sessionId}
             onHome={home}
-            onTopUpAgain={() => { home(); setTopUpOpen(true) }}
+            onTopUpAgain={() => { home(); openDeposit() }}
           />
         )}
-        {!current && !isProxiCash && view.name !== 'sportsbook' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} onSports={openSportsbook} />}
+        {!current && !isProxiCash && view.name !== 'sportsbook' && view.name !== 'support' && view.name !== 'privacy'
+          && view.name !== 'deposit' && view.name !== 'float' && view.name !== 'float-me'
+          && view.name !== 'referral' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} onSports={openSportsbook} />}
       </main>
 
-      <Footer />
+      {/* On every page a player can reach, including sign-in: someone who
+          cannot get into their account is exactly the person who needs help,
+          and requiring a login to ask for one is a closed loop. Only the two
+          screens that ARE support, and the admin console, hide it. */}
+      <SupportBubble
+        hidden={view.name === 'support' || view.name === 'admin-console' || view.name === 'admin-players' || view.name === 'admin-parked'}
+        onOpen={() => openSupport()}
+      />
+
+      <Footer onSupport={() => openSupport()} onPrivacy={() => setView({ name: 'privacy' })} />
       <div className="h-16 md:hidden" />
       <BottomBar
         view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : view.name === 'sportsbook' ? 'sportsbook' : 'home'}
@@ -275,25 +392,18 @@ function Shell() {
                 : v === 'cashout'
                   ? openCashout()
                   : v === 'topup'
-                    ? setTopUpOpen(true)
+                    ? openDeposit()
                     : home()
         }
       />
       <ChatDock onOpenRoom={() => setRoomOpen(true)} />
       {roomOpen && <ChatRoom onClose={() => setRoomOpen(false)} />}
-      {topUpOpen && (
-        <TopUpPanel
-          onClose={() => setTopUpOpen(false)}
-          onStarted={(ref) => { setTopUpOpen(false); openSuccess(ref) }}
-        />
-      )}
       <WinFlash />
       <InstallPrompt />
       <Toasts />
       <WalletModal />
       <FairModal />
       <HistoryModal />
-      <RewardsModal />
       <SearchModal open={search} onClose={() => setSearch(false)} onPick={(id) => play(id as GameId)} />
 
       {/* mobile sticky wallet CTA. Hidden while a game is open: every game
@@ -306,7 +416,7 @@ function Shell() {
           className="fixed bottom-20 right-4 z-30 grid h-12 w-12 place-items-center rounded-full bg-gradient-to-br from-neon-lime to-neon-green text-ink-950 shadow-glow md:hidden"
           aria-label="Open wallet"
         >
-          <span className="text-[10px] font-black leading-none">PX</span>
+          <span className="text-[9px] font-black leading-none">UGX</span>
         </button>
       )}
     </div>

@@ -1,12 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "api/**/*.ts": { "maxDuration": 30 }
-  },
-  "crons": [
+  "$comment": "This deployment is a static SPA only. The app ships from .github/workflows/deploy-pages.yml and every server route is a Supabase Edge Function (.github/workflows/deploy-functions.yml); the browser talks to those at an absolute URL, not through /api here. The old api/ tree — a second, parallel copy of the payment and admin logic — was deleted with the ZENGAPAY migration, so there are no Serverless Functions to declare, no rewrites to map, and no crons. Settlement is driven by feed-settle on a scheduler.",
+  "cleanUrls": true,
+  "rewrites": [
     {
-      "path": "/api/feed/settle",
-      "schedule": "25 3 * * *"
+      "source": "/((?!assets/|art/|icons/|.*\\.[a-zA-Z0-9]+$).*)",
+      "destination": "/index.html"
     }
   ]
 }

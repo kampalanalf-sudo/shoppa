@@ -5,11 +5,26 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Branch-based deployment: the build output is pushed to `gh-pages`, which does
-# not require the Pages API (that needs an admin token). Once Pages is pointed at
-# the `gh-pages` branch in Settings → Pages, every push to main redeploys.
+# DEPLOYS TWICE, ON PURPOSE, BECAUSE THE REPO IS IN A MIXED STATE.
+#
+# GitHub Pages has two deploy modes: "deploy from a branch" (a push to the branch
+# builds it) and "GitHub Actions" (a workflow using the Pages API publishes it).
+# This repo is configured as BOTH at once: the Pages API reports
+# build_type "workflow" with source.branch "gh-pages".
+#
+# The consequence was a six-hour-old build being served on floatbet.space. This
+# workflow pushed to gh-pages, which was correct under the branch mode, but under
+# workflow mode nothing consumes that branch — so the site never moved, and
+# every "the deploy succeeded" report was true and meaningless.
+#
+# So this job now publishes BOTH ways: the official Pages action (which is what
+# workflow mode reads) and the branch push (which is what branch mode reads). One
+# of them is always the one in use. Once Pages is confirmed to be on
+# "GitHub Actions" in Settings → Pages, the branch push can go.
 permissions:
   contents: write
+  pages: write
+  id-token: write
 
 concurrency:
   group: pages
@@ -23,7 +38,12 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          # 22, not 20: @supabase/supabase-js v2 needs a WebSocket
+          # implementation, which Node only grew in 22. On 20, `createClient()`
+          # throws before it ever reaches the network — so every smoke test that
+          # imports a bundle constructing a client failed in CI while passing
+          # locally on 22. android.yml already pins 22.
+          node-version: 22
           cache: npm
 
       - name: Install dependencies
@@ -32,6 +52,116 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      # tsc cannot see a conditional hook: it is valid TypeScript that throws at
+      # runtime. One shipped on 2026-11-24 and blanked the site the moment a
+      # player signed in, because the signed-in path called one hook more than
+      # the signed-out path that had rendered before it. This catches that
+      # specific class of bug before it reaches the domain.
+      - name: Lint (React hook order)
+        run: npm run lint
+
+      # Renders the real app SIGNED IN on every route, in a live DOM, and fails
+      # if any of them paints nothing. The blank-screen bug of 2026-11-24 was
+      # invisible to every other check here: tsc and lint see no problem once
+      # the hook is hoisted, and the other smoke tests only render signed out.
+      - name: Render the app signed in
+        run: npm run test:signedin
+
+      # The app's server routes are Supabase Edge Functions now, not files in
+      # this deployment. A call to a function nobody deployed returns Supabase's
+      # HTML 404, which `res.json().catch(...)` turns into null — so the failure
+      # shows up as an empty admin table or a spinner, not as an error. This
+      # verifies every /api path the bundle can request resolves to a function
+      # directory that exists, and that the shared-module imports resolve.
+      - name: Verify edge-function routes
+        run: npm run test:edge
+
+      # Every page must go through api(), which refreshes an expired token once
+      # instead of sending a dead one. A page that reads the raw access token
+      # brings back an error that reads as a server failure.
+      - name: Verify the API client
+        run: npm run test:api
+
+      # Phone normalisation, amount validation, status mapping and the webhook
+      # signed-string, against the real shared module. ZENGAPAY's rule is the
+      # opposite of the old provider's (no leading 0, no plus), and signing the
+      # wrong string means no top-up is ever credited.
+      - name: Verify the ZENGAPAY client
+        run: npm run test:zp
+
+      # Deposits and Float. Two products where a wrong number is a player's money:
+      # borrowed credit must not be withdrawable, a deposit code must pay the
+      # REQUESTER, and the deposit page must charge the account's own number
+      # rather than a field somebody can retype.
+      - name: Verify the deposit and Float rules
+        run: npm run test:float
+
+      # Float sessions. "Reduce the RTP to 65% for float sessions" is a claim
+      # about money, and the three plausible implementations give 64.35%, 99% and
+      # 65%. Measured per game, per outcome.
+      - name: Verify the player session record
+        run: npm run test:sessions
+
+      - name: Verify the float-session RTP
+        run: npm run test:floatrtp
+
+      # Spins. Five ways a game stops working: a button left disabled by a
+      # refused round, a lost round locking the account out of every bet, and a
+      # wheel that pays one slice and stops on another.
+      - name: Verify the spin and stuck-round rules
+        run: npm run test:spins
+
+      # Referrals. The promise is a share of PROFIT on a referred player's first
+      # five deposits -- a shape that is easy to get subtly wrong in a way that
+      # either pays twice or pays on turnover. Checked against the SQL.
+      - name: Verify the referral rules
+        run: npm run test:referral
+
+      - name: Verify the deploy topology
+        run: npm run test:deploy
+
+      # One currency, and free play that cannot become money. Both are promises
+      # a player relies on and neither is visible to tsc: a leftover PX
+      # conversion, or a free-play win reaching a real balance, compiles cleanly.
+      - name: Verify UGX-only and free-play separation
+        run: npm run test:modes
+
+      # Can this deployment take money? The live site once refused every deposit
+      # with "Mobile money is not configured" while the admin health screen
+      # reported all-healthy, and the hosted-checkout return URL used a key the
+      # router did not read, so the success page claimed "paid" without evidence.
+      # This asserts the config verdict, the health check and the return URL
+      # agree — all three are silent failures otherwise.
+      - name: Verify deposits are configured and honestly reported
+        run: npm run test:readiness
+
+      # The peg bug: 0002/0003/0004 still multiplied a UGX top-up by 10 after
+      # 0009 moved the displayed peg, so every top-up credited a tenth of what
+      # was paid. This asserts no money multiplier survives in any money path.
+      - name: Verify no currency conversion in the money paths
+        run: npm run test:migration
+
+      # The arcade went down because apiUrl joined a bare route with "&" and
+      # every server-settled game requested a path that does not exist. This
+      # opens all fourteen titles as a signed-in player and presses Play on each.
+      - name: Start every game and read what happens
+        run: npm run test:games
+
+      # Mines and Tower hide a board in the browser; Crash drew its own crash
+      # point. This runs the flattened `play` bundle — the exact file the deploy
+      # uploads — against a stub of PostgREST, and tries to read the board out of
+      # the start response, name its own payout, and cash out twice.
+      - name: Verify the board games cannot be read or paid from the client
+        run: npm run test:board
+
+      # Starts a real HTTP server that answers as ZENGAPAY, sends the real
+      # bundled function at it, and prints the request that goes over the wire.
+      # It is the only check that proves the endpoint, the auth header, the
+      # msisdn format and the webhook signature together — and it asserts that a
+      # webhook signed over the raw body (the natural mistake) is rejected.
+      - name: Verify the ZENGAPAY wire format
+        run: npm run test:wire
+
       # Auth is compiled in at BUILD time: if these two are missing the bundle
       # ships without a Supabase client at all and the live site silently runs
       # local-only — no sign-up, no wallet, no cashout — with nothing on screen
@@ -39,11 +169,24 @@ jobs:
       # data. The service_role key must never appear here.
       - name: Build
         env:
-          # "/<repo>/" for project pages, "/" for user/org pages
-          BASE_PATH: ${{ format('/{0}/', github.event.repository.name) }}
+          # "/" because this app is served from the ROOT of floatbet.space via
+          # public/CNAME. It used to be "/<repo>/" for a project-pages URL, but
+          # every asset in public/ — the manifest's /icons/*, its start_url "/",
+          # the service-worker scope and the art paths — was written root-relative.
+          # Under the /shoppa/ subpath those all resolved to the wrong origin
+          # path: the icons 404'd and install-to-homescreen was broken, while the
+          # page itself still rendered, so it was easy to miss.
+          #
+          # If you ever go back to a project-pages URL, this must go back to
+          # format('/{0}/', ...) AND public/manifest.webmanifest has to be made
+          # relative, or the PWA breaks again.
+          BASE_PATH: '/'
           VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL || 'https://dtroufrfavmjldtlprpn.supabase.co' }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY }}
-          VITE_DGATEWAY_STORE_URL: 'off'
+          # Hosted checkout is created server-side now; no browser-side URL.
+          # No VITE_API_BASE: the function origin is derived from
+          # VITE_SUPABASE_URL in src/lib/backend.ts, so there is one fewer value
+          # that can be wrong at build time.
         run: |
           if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
             echo "::warning title=Auth disabled::VITE_SUPABASE_ANON_KEY is not set, so this build has no sign-in. Add it in Settings -> Secrets and variables -> Actions."
@@ -59,7 +202,21 @@ jobs:
         run: |
           cp dist/index.html dist/404.html
           touch dist/.nojekyll
+          # Without this the custom domain is dropped on every deploy and
+          # floatbet.space starts serving GitHub's 404. Fail loudly instead.
+          if [ ! -s dist/CNAME ]; then
+            echo "::error title=CNAME missing::public/CNAME did not reach dist/, so the custom domain would be dropped."
+            exit 1
+          fi
+          echo "publishing for $(cat dist/CNAME)"
+          # A root-relative build must not ship assets under a subpath.
+          if grep -q '/shoppa/assets/' dist/index.html; then
+            echo "::error title=Wrong base path::dist/index.html references /shoppa/assets, but this deploy serves from the domain root."
+            exit 1
+          fi
 
+      # ---- Path 2: the branch push. This is what "deploy from a branch" reads.
+      #     Kept so the site keeps updating if Pages is still on branch mode.
       - name: Publish to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -68,3 +225,33 @@ jobs:
           publish_branch: gh-pages
           commit_message: 'Deploy ${{ github.sha }} to GitHub Pages'
           force_orphan: true
+
+      # ---- Path 1: the Pages deployment. This is what build_type "workflow"
+      #     reads, and the reason the domain was serving a stale build.
+      #     configure-pages with enablement:false does not change the site's
+      #     configuration; it only resolves the base path.
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload the built site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./dist
+
+  # The Pages deployment itself. Separate job because the action needs its own
+  # environment, and because a failure here must be visible as "Pages did not
+  # publish", not buried in the build log.
+  deploy-pages:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    # NO environment here, deliberately. This repo's `github-pages` environment
+    # has a branch policy allowing only `gh-pages`, and this job runs from `main`,
+    # so declaring the environment would block the deploy with a policy error.
+    # The Pages API needs the job to be in an environment only when one gates it;
+    # publishing works without it. If you later want the deployment URL in the
+    # run summary, add `main` to Settings → Environments → github-pages →
+    # Deployment branches, then re-add `environment: github-pages` here.
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

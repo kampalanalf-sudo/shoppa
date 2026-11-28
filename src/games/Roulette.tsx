@@ -5,6 +5,7 @@ import { money, mult } from '../lib/format'
 import { gameById } from '../lib/games'
 import { BetAmount, BetButton } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
+import { MIN_BET } from '../lib/currency'
 
 const RED = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36])
 const WHEEL = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26]
@@ -19,8 +20,8 @@ const PAYOUTS: Record<BetKind, number> = {
 
 export function Roulette({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('roulette')!
-  const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(1000)
+  const { playGame, balance, sound, toast, flashLoss } = useStore()
+  const [bet, setBet] = useState(MIN_BET)
   const [bets, setBets] = useState<Placed[]>([])
   const [spinning, setSpinning] = useState(false)
   const [angle, setAngle] = useState(0)
@@ -56,13 +57,23 @@ export function Roulette({ onBack, onFair }: { onBack: () => void; onFair: () =>
       toast({ kind: 'error', title: 'Insufficient balance', body: 'Reduce your stakes to continue.' })
       return
     }
-    if (!placeBet('roulette', totalStake)) return
     sfx.place()
     setSpinning(true)
     setResult(null)
-    const [u] = await nextFloats(1)
-    const idx = Math.min(WHEEL.length - 1, Math.floor(u * WHEEL.length))
-    const n = WHEEL[idx]
+    // The slip is the bet. The server draws the number and prices every leg of
+    // it, so the browser cannot decide which number came up.
+    let settled: Awaited<ReturnType<typeof playGame>>
+    try {
+      settled = await playGame('roulette', totalStake, {
+        bets: bets.map((b) => ({ kind: b.kind, n: b.n, amount: b.amount })),
+      } as never)
+    } catch (e) {
+      setSpinning(false)
+      toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
+      return
+    }
+    const idx = Number(settled.payload.index ?? 0)
+    const n = Number(settled.payload.number ?? 0)
     const slot = 360 / WHEEL.length
     const targetCenter = idx * slot + slot / 2
     const turns = 5 + Math.floor(Math.random() * 2)
@@ -76,37 +87,18 @@ export function Roulette({ onBack, onFair }: { onBack: () => void; onFair: () =>
       setSpinning(false)
       setResult(n)
       setHistory((h) => [n, ...h].slice(0, 12))
-      let payout = 0
-      for (const b of bets) {
-        const won =
-          (b.kind === 'straight' && b.n === n) ||
-          (b.kind === 'red' && colorOf(n) === 'red') ||
-          (b.kind === 'black' && colorOf(n) === 'black') ||
-          (b.kind === 'odd' && n !== 0 && n % 2 === 1) ||
-          (b.kind === 'even' && n !== 0 && n % 2 === 0) ||
-          (b.kind === 'low' && n >= 1 && n <= 18) ||
-          (b.kind === 'high' && n >= 19 && n <= 36) ||
-          (b.kind === 'dozen1' && n >= 1 && n <= 12) ||
-          (b.kind === 'dozen2' && n >= 13 && n <= 24) ||
-          (b.kind === 'dozen3' && n >= 25 && n <= 36)
-        if (won) payout += b.amount * PAYOUTS[b.kind]
-      }
-      const multiplier = totalStake ? Math.round((payout / totalStake) * 100) / 100 : 0
-      const paid = settleBet({
-        game: 'roulette',
-        wager: totalStake,
-        multiplier,
-        detail: `Ball landed on ${n} ${colorOf(n)} · ${bets.length} bet${bets.length > 1 ? 's' : ''}`,
-      })
+      // Already settled and paid by the server against these exact legs.
+      const payout = settled.payout
+      const paid = settled.payout
       if (payout === 0) flashLoss()
       if (sound) {
         if (payout > 0) sfx.win()
         else sfx.lose()
       }
-      if (payout > totalStake * 3) toast({ kind: 'win', title: `Straight up ${n}!`, body: `+${money(paid)} PX from ${bets.length} bets.` })
+      if (payout > totalStake * 3) toast({ kind: 'win', title: `Straight up ${n}!`, body: `+$UGX {money(paid)} from ${bets.length} bets.` })
       setBets([])
     }, 4800)
-  }, [spinning, bets, totalStake, balance, placeBet, nextFloats, angle, settleBet, sound, toast])
+  }, [spinning, bets, totalStake, balance, playGame, angle, sound, toast, flashLoss])
 
   const feltBtn = (label: React.ReactNode, kind: BetKind, n: number | undefined, accent: string, active: boolean, extra = '') => (
     <button
@@ -136,9 +128,9 @@ export function Roulette({ onBack, onFair }: { onBack: () => void; onFair: () =>
           <BetAmount value={bet} onChange={setBet} disabled={spinning} label="Chip value" />
           <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2">
             <span className="text-[11px] text-slate-500">Total stake</span>
-            <span className="num text-[14px] font-bold text-white">{money(totalStake)} PX</span>
+            <span className="num text-[14px] font-bold text-white">UGX {money(totalStake)}</span>
           </div>
-          <BetButton onClick={() => void spin()} loading={spinning} disabled={!bets.length} sub={bets.length ? `${bets.length} bets · up to ${money(totalPotential)} PX` : 'Place bets on the felt'}>
+          <BetButton onClick={() => void spin()} loading={spinning} disabled={!bets.length} sub={bets.length ? `${bets.length} bets · up to $UGX {money(totalPotential)}` : 'Place bets on the felt'}>
             {spinning ? 'Spinning…' : 'Spin'}
           </BetButton>
           <button type="button" onClick={clear} disabled={!bets.length || spinning} className="btn-ghost w-full !py-2 !text-[12px]">

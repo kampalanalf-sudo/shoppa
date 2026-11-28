@@ -3,7 +3,7 @@ import { useAuth } from '../lib/auth'
 import { supabase } from '../lib/supabase'
 import { disburse, usePaymentPoll } from '../lib/payments'
 import { money } from '../lib/format'
-import { pxToUgx, railForPhone, validPhone } from '../lib/proxicash'
+import { railForPhone, validPhone } from '../lib/proxicash'
 import { sfx } from '../lib/sound'
 import { IconChevronLeft, IconShield, IconCheck } from '../components/Icons'
 
@@ -19,7 +19,8 @@ type Row = {
   failure_reason: string | null
 }
 
-const MIN_PX = 10000
+/** Smallest withdrawal, in shillings. Was 10,000 PX, which was the 1,000 UGX floor. */
+const MIN_CASHOUT = 1000
 const CRYPTO = ['USDT', 'USDC', 'BTC'] as const
 
 const STATUS_TONE: Record<string, string> = {
@@ -35,7 +36,7 @@ export function Cashout({ onBack }: { onBack: () => void }) {
   const balance = wallet?.balance_px ?? 0
 
   const [tab, setTab] = useState<'momo' | 'crypto'>('momo')
-  const [amount, setAmount] = useState(MIN_PX)
+  const [amount, setAmount] = useState(MIN_CASHOUT)
   const [phone, setPhone] = useState(profile?.phone ?? '')
   const [asset, setAsset] = useState<(typeof CRYPTO)[number]>('USDT')
   const [address, setAddress] = useState('')
@@ -46,7 +47,9 @@ export function Cashout({ onBack }: { onBack: () => void }) {
   const [reference, setReference] = useState<string | null>(null)
   const poll = usePaymentPoll(reference)
 
-  const ugx = useMemo(() => pxToUgx(amount), [amount])
+  // Amounts are already shillings: request_cashout takes UGX and the row's
+  // `amount_px` column holds that same number.
+  const ugxAmount = useMemo(() => Math.round(amount), [amount])
   const rail = useMemo(() => railForPhone(phone), [phone])
 
   const loadedRows = useCallback(async () => {
@@ -70,7 +73,7 @@ export function Cashout({ onBack }: { onBack: () => void }) {
     if (!supabase) return
     setError(null)
     setNotice(null)
-    if (amount < MIN_PX) return setError(`Minimum cashout is ${money(MIN_PX)} PX (1,000 UGX).`)
+    if (amount < MIN_CASHOUT) return setError(`Minimum cashout is UGX ${money(MIN_CASHOUT)}.`)
     if (amount > balance) return setError('That is more than your balance.')
     if (tab === 'momo') {
       if (!validPhone(phone)) return setError('Enter a valid Ugandan mobile money number.')
@@ -80,8 +83,10 @@ export function Cashout({ onBack }: { onBack: () => void }) {
     }
 
     setBusy(true)
+    // The id of the hold this attempt created, if any. Needed in `catch`.
+    let held: string | null = null
     try {
-      // 1. move PX out of the spendable balance into a hold
+      // 1. move the money out of the spendable balance into a hold
       const { data, error: rpcErr } = await supabase.rpc('request_cashout', {
         p_kind: tab,
         p_amount_px: Math.round(amount),
@@ -91,13 +96,14 @@ export function Cashout({ onBack }: { onBack: () => void }) {
         p_address: tab === 'crypto' ? address.trim() : null,
       })
       if (rpcErr) throw new Error(rpcErr.message)
+      held = String(data)
 
       // 2. move the money. Mobile money goes through our server route, which
-      //    holds the DGateway key; crypto stays on the ProxiCash desk.
+      //    holds the ZENGAPAY token; crypto stays on the ProxiCash desk.
       let res: { message?: string; reference?: string }
       if (tab === 'momo') {
         res = await disburse({
-          amount: Math.round(ugx),
+          amount: Math.round(ugxAmount),
           currency: 'UGX',
           phone: phone.trim(),
           description: `FloatBet payout ${String(data).slice(0, 8)}`,
@@ -115,7 +121,28 @@ export function Cashout({ onBack }: { onBack: () => void }) {
       sfx.win()
       setNotice(res.message || 'Payout submitted.')
     } catch (e) {
-      setError((e as Error).message)
+      // The hold was taken before the provider was asked. If the provider then
+      // refused, that money is sitting in a `requested` cashout that no payout
+      // will ever arrive for — the player's balance is short and there is
+      // nothing on screen to explain it. Put it back and say so.
+      //
+      // This is exactly what an un-whitelisted IP produces: request_cashout
+      // succeeds, the transfer 403s, and the balance drops by the amount with
+      // no payout. Refunding keeps a configuration fault from costing a player
+      // money. A cashout the provider *accepted* is untouched — that one is
+      // `pending_provider` and settles normally.
+      let refunded = false
+      if (held) {
+        const { error: cancelErr } = await supabase.rpc('cancel_cashout', { p_cashout: held })
+        refunded = !cancelErr
+        if (cancelErr) console.error('could not release cashout hold', cancelErr.message)
+      }
+      const reason = (e as Error).message
+      setError(
+        refunded
+          ? `${reason} Nothing was paid out and your balance has been restored.`
+          : reason,
+      )
       await refreshWallet()
       await loadedRows()
     } finally {
@@ -123,7 +150,11 @@ export function Cashout({ onBack }: { onBack: () => void }) {
     }
   }
 
-  const gated = !profile?.age_confirmed || !profile?.phone_verified
+  // Only the 18+ confirmation is a gate now. The account-age wait and the phone
+  // verification were removed at the owner's request, so telling a player to
+  // verify their phone here would send them to a screen that no longer unblocks
+  // anything.
+  const gated = !profile?.age_confirmed
 
   return (
     <div className="mx-auto w-full max-w-[900px] px-3 pb-24 pt-4 sm:px-5">
@@ -133,7 +164,7 @@ export function Cashout({ onBack }: { onBack: () => void }) {
         </button>
         <div>
           <h1 className="text-[17px] font-bold text-white">Cash out</h1>
-          <p className="text-[10.5px] text-slate-500">PX converts to UGX or crypto only through ProxiCash</p>
+          <p className="text-[10.5px] text-slate-500">Balance is in UGX and pays out to mobile money or crypto</p>
         </div>
       </div>
 
@@ -142,15 +173,13 @@ export function Cashout({ onBack }: { onBack: () => void }) {
           {/* balance */}
           <div className="mb-3 rounded-xl border border-neon-lime/25 bg-neon-lime/[0.07] px-3 py-2.5">
             <p className="text-[9.5px] font-bold uppercase tracking-[.16em] text-slate-500">Available to cash out</p>
-            <p className="num text-[22px] font-black leading-tight text-white">{money(balance)} PX</p>
-            <p className="text-[11px] text-neon-lime">≈ {money(pxToUgx(balance))} UGX at 10 PX / UGX</p>
+            <p className="num text-[22px] font-black leading-tight text-white">UGX {money(balance)}</p>
+            <p className="text-[11px] text-neon-lime">Paid out to your mobile money wallet.</p>
           </div>
 
           {gated && (
             <div className="mb-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-[11.5px] text-amber-200">
-              {!profile?.age_confirmed
-                ? 'Confirm you are 18 or older before cashing out.'
-                : 'Verify your phone number in Settings before cashing out.'}
+              Confirm you are 18 or older before cashing out.
             </div>
           )}
 
@@ -189,7 +218,7 @@ export function Cashout({ onBack }: { onBack: () => void }) {
           </div>
           <div className="mb-3 flex items-center justify-between text-[10.5px]">
             <span className="text-slate-500">You receive</span>
-            <span className="num font-bold text-white">≈ {money(ugx)} UGX</span>
+            <span className="num font-bold text-white">{money(ugxAmount)} UGX</span>
           </div>
 
           {tab === 'momo' ? (
@@ -250,7 +279,7 @@ export function Cashout({ onBack }: { onBack: () => void }) {
           )}
           {poll.state === 'failed' && (
             <div className="mb-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-2.5 py-2 text-[11.5px] text-rose-200">
-              Payout failed — the PX has been returned to your balance.
+              Payout failed — the amount has been returned to your balance.
             </div>
           )}
           {notice && (
@@ -262,16 +291,16 @@ export function Cashout({ onBack }: { onBack: () => void }) {
           <button
             type="button"
             onClick={() => void submit()}
-            disabled={busy || gated || amount < MIN_PX || amount > balance}
+            disabled={busy || gated || amount < MIN_CASHOUT || amount > balance}
             className="btn-primary w-full !py-3 !text-[13px]"
           >
-            {busy ? 'Submitting…' : `Cash out ${money(ugx)} UGX`}
+            {busy ? 'Submitting…' : `Cash out ${money(ugxAmount)} UGX`}
           </button>
 
           <p className="mt-2 flex items-start gap-1.5 text-[9.5px] leading-relaxed text-slate-600">
             <IconShield size={11} className="mt-0.5 shrink-0 text-emerald-500" />
-            Payouts are checked before release. A rejected payout returns the PX to your balance.
-            Minimum {money(MIN_PX)} PX.
+            Payouts are checked before release. A rejected payout returns the amount to your balance.
+            Minimum UGX {money(MIN_CASHOUT)}.
           </p>
         </div>
 
@@ -293,7 +322,7 @@ export function Cashout({ onBack }: { onBack: () => void }) {
                     </span>
                   </div>
                   <p className="text-[10px] text-slate-500">
-                    {r.kind === 'momo' ? `${r.phone ?? ''}` : `${r.asset} payout`} · {money(r.amount_px)} PX ·{' '}
+                    {r.kind === 'momo' ? `${r.phone ?? ''}` : `${r.asset} payout`} · UGX {money(r.amount_px)} ·{' '}
                     {new Date(r.created_at).toLocaleDateString()}
                   </p>
                   {r.failure_reason && <p className="text-[9.5px] text-rose-300">{r.failure_reason}</p>}

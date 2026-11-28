@@ -11,14 +11,15 @@ import { PlayBar } from '../components/PlayBar'
 import { buildGrid, resolve, type Grid, type SlotConfig, type SlotOutcome } from '../lib/slots/engine'
 import { spinPlan } from '../lib/reels'
 import { Celebration, celebrationSound, FreeSpinHud } from '../components/Celebration'
+import { MIN_BET } from '../lib/currency'
 
 type Props = { config: SlotConfig; id: GameId; onBack: () => void; onFair: () => void }
 
 export function EngineSlot({ config, id, onBack, onFair }: Props) {
   const game = gameById(id)!
-  const { placeBet, settleBet, nextFloats, balance, toast, sound, flashLoss } = useStore()
+  const { placeBet, settleBet, nextFloats, balance, toast, sound, flashLoss, mode, playGame } = useStore()
 
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [grid, setGrid] = useState<Grid | null>(null)
   const [spinning, setSpinning] = useState(false)
   const [outcome, setOutcome] = useState<SlotOutcome | null>(null)
@@ -65,9 +66,58 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
     setGlow('none')
     setWinCells(new Set())
 
-    const floats = await nextFloats(config.reels * config.rows)
-    const g = buildGrid(config, floats)
-    const out = resolve(config, g)
+    /*
+     * A PAID spin is decided by the server: it returns the grid and the
+     * multiplier together, so the drums land on symbols that have already been
+     * paid. Free spins keep the local path — they are extra spins on a round
+     * that was already settled.
+     */
+    let out: ReturnType<typeof resolve>
+    let serverMult: number | null = null
+    if (!free && mode === 'real') {
+      /*
+       * A refusal here used to leave the button on "Spinning…" for good.
+       *
+       * `setSpinning(true)` has already run and the only code that clears it is
+       * the animation callback further down — so any throw between the two (no
+       * session, the server declining the stake, an open round elsewhere, a
+       * dropped request) disabled the button and the game until a reload. The
+       * player saw a spin that never happened and could not try again. The other
+       * arcade games have always wrapped this step; these two did not.
+       */
+      let settled: Awaited<ReturnType<typeof playGame>>
+      try {
+        settled = await playGame(id, bet, {})
+      } catch (e) {
+        setSpinning(false)
+        toast({ kind: 'error', title: 'Spin refused', body: (e as Error).message })
+        return
+      }
+      const rows = JSON.parse(String(settled.payload.grid ?? '[]')) as string[][]
+      // A wrong-sized grid throws later, inside an animation callback, and
+      // leaves the button on "Spinning…" for good. Check it here.
+      if (rows.length !== config.reels || rows.some((reel) => reel.length !== config.rows)) {
+        toast({ kind: 'error', title: 'Spin refused', body: 'The server returned an unexpected reel shape.' })
+        setSpinning(false)
+        return
+      }
+      const g = rows.map((reel, r) => reel.map((sym, row) => ({ id: sym, reel: r, row })))
+      out = resolve(config, g)
+      serverMult = settled.multiplier
+      // `resolve` on the server's own grid must reproduce the paid multiplier;
+      // if it ever disagrees, trust the server and say so rather than pay twice.
+      const paidMult = serverMult
+      if (Math.abs(out.totalMultiplier - paidMult) > 0.011) {
+        toast({
+          kind: 'error',
+          title: 'Payout mismatch',
+          body: `The board reads ${out.totalMultiplier}×, the server paid ${paidMult}×. The server is authoritative.`,
+        })
+      }
+    } else {
+      const floats = await nextFloats(config.reels * config.rows)
+      out = resolve(config, buildGrid(config, floats))
+    }
 
     const payout = Math.round(bet * out.totalMultiplier * 100) / 100
     const detail = out.fine > 0
@@ -111,7 +161,7 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
         toast({
           kind: 'error',
           title: 'Faith appeared',
-          body: `${out.omenCount} witch symbols — fined ${out.fine}× (${money(bet * out.fine)} PX).`,
+          body: `${out.omenCount} witch symbols — fined ${out.fine}× ($UGX {money(bet * out.fine)}).`,
         })
       } else if (out.triggered) {
         setGlow('free')
@@ -151,7 +201,9 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
       // A full celebration card is already covering the win: suppress the
       // global flash so two confetti layers do not stack.
       const celebrating = out.triggered || (out.fine === 0 && out.totalMultiplier >= 8)
-      settleBet({
+      // A real-money spin was already credited by the server; settling again
+      // here would be the money printer. Only free play settles in the browser.
+      if (serverMult === null) settleBet({
         game: id,
         wager: free ? 0 : bet,
         multiplier: out.totalMultiplier,
@@ -294,9 +346,9 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
         >
           <p className="text-[11.5px] font-bold">
             {outcome.fine > 0
-              ? `Faith fined you ${outcome.fine}× — ${money(bet * outcome.fine)} PX`
+              ? `Faith fined you ${outcome.fine}× — $UGX {money(bet * outcome.fine)}`
               : outcome.totalMultiplier > 0
-                ? `You won ${money(bet * outcome.totalMultiplier)} PX · ${outcome.totalMultiplier}×`
+                ? `You won $UGX {money(bet * outcome.totalMultiplier)} · ${outcome.totalMultiplier}×`
                 : 'No win this spin'}
           </p>
         </div>
@@ -305,7 +357,21 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
       {/* feature strips */}
       <div className="mx-auto mt-3 grid max-w-[760px] grid-cols-2 gap-2">
         <div className="flex items-center gap-2.5 rounded-xl border border-white/[0.07] bg-gradient-to-r from-neon-lime/[0.10] to-transparent p-2.5">
-          <span className="text-[18px]">{config.symbols.find((s) => s.id === config.wild)?.glyph ?? '📦'}</span>
+          {/* The Wild is the face of the game — show the face. */}
+          {(() => {
+            const wild = config.symbols.find((s) => s.id === config.wild)
+            return wild?.art ? (
+              <img
+                src={wild.art}
+                alt=""
+                width={30}
+                height={30}
+                className="h-[30px] w-[30px] shrink-0 rounded-md object-cover ring-1 ring-neon-lime/30"
+              />
+            ) : (
+              <span className="text-[18px]">{wild?.glyph ?? '📦'}</span>
+            )
+          })()}
           <div className="min-w-0">
             <p className="truncate text-[11.5px] font-bold text-white">
               {config.symbols.find((s) => s.id === config.wild)?.name ?? 'Wild'}
@@ -346,7 +412,22 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
           {payRows.map((s) => (
             <div key={s.id} className="flex items-center justify-between gap-2 text-[10.5px]">
               <span className="flex min-w-0 items-center gap-1.5">
-                <span className="text-[13px]">{s.glyph}</span>
+                {/* The portrait, not the emoji. This paytable is the one place a
+                    player can see what each character looks like; showing a
+                    glyph here meant the art was only ever visible mid-spin. */}
+                {s.art ? (
+                  <img
+                    src={s.art}
+                    alt=""
+                    width={22}
+                    height={22}
+                    loading="lazy"
+                    decoding="async"
+                    className="h-[22px] w-[22px] shrink-0 rounded-[5px] object-cover ring-1 ring-white/10"
+                  />
+                ) : (
+                  <span className="w-[22px] shrink-0 text-center text-[13px]">{s.glyph}</span>
+                )}
                 <span className="truncate text-slate-400">{s.name.replace(/ \(.*\)/, '')}</span>
               </span>
               <span className="num shrink-0 text-slate-300">

@@ -8,6 +8,22 @@ export const asset = (path: string) => `${import.meta.env.BASE_URL}${path.replac
 
 export const GAMES: GameMeta[] = [
   {
+    id: 'craters',
+    name: 'Craters',
+    tagline: '4×3 ways · crates, bottles & delivery runs',
+    art: asset('/art/craters/crate.webp'),
+    accent: '#3ad7ff',
+    accentSoft: 'rgba(58,215,255,.16)',
+    // Measured, not chosen: 4 seeds x 1,000,000 paid rounds, mean 96.22%
+    // (sd 0.14pp), with both features played out. See npm run test:craters.
+    rtp: '96.2%',
+    maxWin: '5,000×',
+    players: 12740,
+    category: 'Slots',
+    hot: true,
+    isNew: true,
+  },
+  {
     id: 'bonni',
     name: 'Bonni & Clyve',
     tagline: '3×5 ways slot · 243 ways to win',
@@ -179,11 +195,12 @@ export const GAMES: GameMeta[] = [
 
 export const gameById = (id: string) => GAMES.find((g) => g.id === id)
 
+/** Demo rows for the win ticker. Amounts are whole shillings, like a real win. */
 export const LIVE_WINS = [
-  { user: 'Nakato_UG', game: 'Lift Off', mult: 842.19, amount: 8421.9 },
+  { user: 'Nakato_UG', game: 'Lift Off', mult: 842.19, amount: 8422 },
   { user: 'zeroCool', game: 'Float Plinko', mult: 1000, amount: 5000 },
   { user: 'KampalaKid', game: 'Deep Mines', mult: 64.5, amount: 3225 },
-  { user: 'moon_vault', game: 'High Limbo', mult: 155.02, amount: 1550.2 },
+  { user: 'moon_vault', game: 'High Limbo', mult: 155.02, amount: 1550 },
   { user: 'Achieng', game: 'Sky Tower', mult: 44.1, amount: 2205 },
   { user: 'betKing_256', game: 'Fortune Wheel', mult: 50, amount: 1250 },
   { user: 'slyfox', game: 'Precision Dice', mult: 24.75, amount: 990 },

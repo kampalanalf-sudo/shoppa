@@ -20,7 +20,9 @@ import { simulate, resolve, buildGrid, countSymbol } from '../src/lib/slots/engi
 import { SYMBOLS, SYMBOL_POOL, buildGrid as bonniGrid, resolve as bonniResolve } from '../src/lib/slot'
 import { Header, Footer, WinFlash, Toasts, ChatDock, BottomBar } from '../src/components/Chrome'
 import { AuthProvider } from '../src/lib/auth'
-import { WalletModal, FairModal, HistoryModal, SearchModal, RewardsModal } from '../src/components/Modals'
+import { readFileSync, existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { WalletModal, FairModal, HistoryModal, SearchModal } from '../src/components/Modals'
 
 const noop = () => {}
 const games: [string, any][] = [
@@ -59,7 +61,6 @@ run('Modal:wallet', <WalletModal forceOpen />)
 run('Modal:fair', <FairModal forceOpen />)
 run('Modal:history', <HistoryModal forceOpen />)
 run('Modal:search', <SearchModal open onClose={noop} onPick={noop} />)
-run('Modal:rewards', <RewardsModal forceOpen />)
 
 // invariants
 const check = (name: string, cond: boolean, extra = '') => {
@@ -103,6 +104,36 @@ for (const [id, cfg] of engineGames) {
     return g.length === cfg.reels && g.every((c) => c.length === cfg.rows)
   })())
 }
+/**
+ * Every portrait a slot names must exist on disk and be a real image.
+ *
+ * A missing or misspelled art path is silent: the <img> renders as a broken
+ * box inside a reel and the game still pays out, so nothing fails and nobody
+ * notices until a player screenshots it. This walks the configs instead of a
+ * hand-kept list, so a new symbol is covered the moment it is added.
+ */
+const artProblems: string[] = []
+for (const [id, cfg] of engineGames) {
+  for (const sym of cfg.symbols) {
+    if (!sym.art) continue
+    // `asset()` prefixes BASE_URL, which is '' in the test environment, so the
+    // value is the public path: /art/bluemountain/jkaz.webp
+    const rel = String(sym.art).replace(/^\/+/, '')
+    const file = join(process.cwd(), 'public', rel)
+    if (!existsSync(file)) {
+      artProblems.push(`${id}/${sym.id}: missing ${rel}`)
+      continue
+    }
+    const buf = readFileSync(file)
+    // WEBP container, and the portrait tiles are all square 512s.
+    if (buf.subarray(0, 4).toString() !== 'RIFF' || buf.subarray(8, 12).toString() !== 'WEBP') {
+      artProblems.push(`${id}/${sym.id}: ${rel} is not a webp`)
+    }
+    if (buf.length < 8_000) artProblems.push(`${id}/${sym.id}: ${rel} is ${buf.length} bytes — suspiciously small`)
+  }
+}
+check('every slot portrait exists and is a real webp', artProblems.length === 0, artProblems.join('; '))
+
 // Build a grid of a fixed shape from a per-cell id function
 const mk = (cfg: any, fn: (reel: number, row: number) => string) =>
   Array.from({ length: cfg.reels }, (_, r) =>

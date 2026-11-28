@@ -7,11 +7,12 @@ import { gameById } from '../lib/games'
 import { BetAmount, BetButton } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
 import { IconFlame } from '../components/Icons'
+import { MIN_BET } from '../lib/currency'
 
 export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('limbo')!
-  const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(1000)
+  const { playGame, balance, sound, toast, flashLoss, payoutRate } = useStore()
+  const [bet, setBet] = useState(MIN_BET)
   const [target, setTarget] = useState(2)
   const [running, setRunning] = useState(false)
   const [display, setDisplay] = useState(1)
@@ -19,7 +20,16 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
   const [history, setHistory] = useState<number[]>([3.42, 1.04, 22.1, 1.55, 6.02, 1.12, 1.88])
   const raf = useRef(0)
 
-  const potential = Math.round(bet * target * 100) / 100
+  /*
+   * What a cleared target PAYS.
+   *
+   * The server caps the winning multiplier at the session rate while a float is
+   * outstanding, so a 3.00x target pays 1.95x. The target the player chooses is
+   * still the target (and still decides the odds of winning); only the figure on
+   * the button changes, so it cannot promise a return that will not be made.
+   */
+  const paidTarget = payoutRate < 1 ? Math.min(target, Math.round(payoutRate * 100) / 100) : target
+  const potential = Math.round(bet * paidTarget * 100) / 100
   const winChance = 99 / target
 
   const play = useCallback(async () => {
@@ -29,12 +39,20 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       toast({ kind: 'error', title: 'Insufficient balance', body: 'Lower your bet to continue.' })
       return
     }
-    if (!placeBet('limbo', bet)) return
     sfx.place()
     setRunning(true)
     setResult(null)
-    const [u] = await nextFloats(1)
-    const point = limboPoint(u)
+    // The target is the bet; the multiplier paid is the target only if the
+    // server's own point clears it. The browser no longer sees the point first.
+    let settled: Awaited<ReturnType<typeof playGame>>
+    try {
+      settled = await playGame('limbo', bet, { target })
+    } catch (e) {
+      setRunning(false)
+      toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
+      return
+    }
+    const point = Number(settled.payload.point ?? 1)
     const t0 = performance.now()
     const dur = 780
     const anim = () => {
@@ -50,13 +68,8 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
         setRunning(false)
         setResult(point)
         setHistory((h) => [point, ...h].slice(0, 18))
-        const won = point >= target
-        const payout = settleBet({
-          game: 'limbo',
-          wager: bet,
-          multiplier: won ? target : 0,
-          detail: `${mult(point)} result · target ${mult(target)}`,
-        })
+        const won = settled.won
+        const payout = settled.payout
         if (!won) flashLoss()
         if (sound) {
           if (won) {
@@ -64,11 +77,11 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
             else sfx.win()
           } else sfx.lose()
         }
-        if (won) toast({ kind: 'win', title: `Hit ${mult(point)}`, body: `+${money(payout)} PX won.` })
+        if (won) toast({ kind: 'win', title: `Hit ${mult(point)}`, body: `+$UGX {money(payout)} won.` })
       }
     }
     raf.current = requestAnimationFrame(anim)
-  }, [running, bet, balance, placeBet, nextFloats, target, settleBet, sound, toast])
+  }, [running, bet, balance, playGame, target, sound, toast])
 
   useEffect(() => () => cancelAnimationFrame(raf.current), [])
 
@@ -141,7 +154,7 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">UGX</span>
           </div>
           <button type="button" onClick={() => void play()} disabled={running} className="btn-primary h-10 flex-1 !text-[13px]">
             {running ? 'Rolling…' : `Roll ${mult(target)}`}

@@ -27,6 +27,36 @@ const missing = icons
 ok('manifest: every declared icon file exists', missing.length === 0, missing.join(', '))
 
 // --------------------------------------------------------- service worker ---
+// ---- update delivery -------------------------------------------------------
+//
+// A cached shell is cache-first and the document is network-first, so a deploy
+// lands on a fresh load. What it cannot do is reach an app that is already open:
+// nothing re-reads the document, so without an announcement the device stays on
+// its old build forever. That announcement was missing — `pwa.ts` listened for
+// an UPDATED message that no worker ever sent, so the installed "Update
+// available — Reload now" sheet could not appear.
+ok('sw: announces UPDATED when an update installs', /postMessage\(\{ type: 'UPDATED' \}\)/.test(sw))
+ok('sw: announces on install only when it is an update, not a first install',
+  /firstInstall = !self\.registration\.active/.test(sw))
+ok('sw: announces again once it takes control (activate)', (() => {
+  const at = sw.indexOf("addEventListener('activate'")
+  return at > -1 && sw.slice(at).includes("postMessage({ type: 'UPDATED' })")
+})())
+ok('sw: takes over immediately, so an update cannot sit waiting', /skipWaiting\(\)/.test(sw))
+
+const pwaSrc = readFileSync('src/lib/pwa.ts', 'utf8')
+ok('pwa: listens for the UPDATED message', pwaSrc.includes("e.data?.type === 'UPDATED'"))
+ok('pwa: re-checks for an update when the app returns to the foreground',
+  /visibilitychange/.test(pwaSrc) && /reg\.update\(\)/.test(pwaSrc))
+ok('pwa: reloads when the new worker takes control', /controllerchange/.test(pwaSrc))
+ok('pwa: applyUpdate does not reload before the worker activates', (() => {
+  const at = pwaSrc.indexOf('export function applyUpdate')
+  const body = pwaSrc.slice(at, at + 900)
+  // The unconditional reload used to sit right after postMessage, racing the
+  // activation. It must now be behind the `waiting` check.
+  return body.indexOf('reg.waiting') > -1 && body.indexOf('postMessage') > body.indexOf('reg.waiting')
+})())
+
 ok('sw: refuses non-GET outright', /request\.method !== 'GET'\) return/.test(sw))
 ok('sw: refuses any request carrying an Authorization header',
   /request\.headers\.has\('Authorization'\)\) return/.test(sw))
@@ -41,11 +71,15 @@ ok('sw: found the never-cache list', patterns.length >= 4, `found ${patterns.len
 
 const isNever = (u: string) => patterns.some((re) => re.test(u))
 
+// These are the URLs the app actually requests now: every /api path resolves to
+// a Supabase Edge Function (src/lib/backend.ts), so a payment call is a
+// cross-origin request to supabase.co and must never be served from cache.
 const mustNever = [
-  ['the collect route', 'https://shoppa-sigma.vercel.app/api/collect'],
-  ['the store webhook', 'https://shoppa-sigma.vercel.app/api/webhooks/dgateway-store'],
-  ['the admin queue', 'https://shoppa-sigma.vercel.app/api/admin/parked'],
-  ['the claim route', 'https://shoppa-sigma.vercel.app/api/topup/claim'],
+  ['the collect function', 'https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/pay?op=collect'],
+  ['the checkout function', 'https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/pay?op=checkout'],
+  ['the status function', 'https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/pay?op=status&reference=x'],
+  ['the webhook', 'https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/webhooks-zengapay'],
+  ['the admin queue', 'https://dtroufrfavmjldtlprpn.supabase.co/functions/v1/admin-ops?op=parked'],
   ['supabase REST', 'https://dtroufrfavmjldtlprpn.supabase.co/rest/v1/wallets'],
   ['supabase auth', 'https://dtroufrfavmjldtlprpn.supabase.co/auth/v1/token'],
   ['supabase realtime', 'wss://dtroufrfavmjldtlprpn.supabase.co/realtime/v1/websocket'],
@@ -61,7 +95,24 @@ ok('sw: still caches the manifest', !isNever('https://shoppa-sigma.vercel.app/ma
 
 ok('sw: deletes caches from older versions on activate', /k !== SHELL_CACHE && k !== ASSET_CACHE/.test(sw))
 ok('sw: offline fallback says it cannot take payments', /Payments are never made offline/.test(sw))
-ok('sw: hashed assets are cache-first', /isAsset\(url\)/.test(sw) && /caches\.match\(request\)/.test(sw))
+ok('sw: content-addressed build assets are cache-first',
+  /isImmutable\(url\)/.test(sw) && /caches\.match\(request\)/.test(sw))
+
+// Art is NOT content-addressed: /art/bluemountain/jkaz.webp keeps its name when
+// the portrait is redrawn. Caching it cache-first pinned every returning player
+// to the old picture forever, which is why a repainted character showed no
+// change at all. The rule is now about the directory, not the extension.
+// The old rule judged immutability by extension ("anything .webp is a build
+// asset"), which is what pinned players to old art. It must judge by directory.
+ok('sw: immutability is decided by directory, not file extension', !/const isAsset/.test(sw))
+ok('sw: immutability means /assets/ or /icons/ only',
+  /pathname\.startsWith\('\/assets\/'\)/.test(sw) && /pathname\.startsWith\('\/icons\/'\)/.test(sw))
+ok('sw: unhashed media is network-first so a redraw appears',
+  /isMedia\(url\)/.test(sw) && /fetch\(request\)[\s\S]{0,200}caches\.open\(ASSET_CACHE\)/.test(sw))
+ok('sw: unhashed media still has an offline fallback',
+  /caches\.match\(request\)[\s\S]{0,80}Response\.error\(\)/.test(sw))
+// A version bump is the only way to evict what older workers cached.
+ok('sw: version was bumped past v3 to evict stale art', /const VERSION = 'v4'/.test(sw))
 ok('sw: HTML is network-first so deploys land', /request\.mode === 'navigate'/.test(sw))
 
 // --------------------------------------------------------------- the shell --
@@ -83,12 +134,47 @@ ok('pwa: never auto-reloads on update (explicit user action only)',
 // `shoppa-ten.vercel.app`, which belongs to someone else's project, and then
 // pointed at a Vercel project called `proxicore-visor` that was actually this
 // app under a misleading name. Both cost real time. Pin the truth here.
-const SITE = 'shoppa-sigma.vercel.app'
+// floatbet.space is the production domain (public/CNAME, and the Pages deploy).
+// This constant used to be shoppa-sigma.vercel.app, the Vercel fallback host --
+// so the suite demanded every document cite the fallback as the production URL
+// while the custom domain was the one players actually used.
+const SITE = 'floatbet.space'
 const docs = ['docs/GO-LIVE.md', 'docs/PAYMENTS.md', 'docs/PRODUCTION.md', '.env.example']
   .map((f) => readFileSync(f, 'utf8'))
 const cfg = readFileSync('capacitor.config.ts', 'utf8')
+// ---- custom domain wiring -------------------------------------------------
+// floatbet.space is served by GitHub Pages, so two things have to be true or
+// the domain breaks in ways that look like an app bug: the CNAME has to ship
+// inside dist/, and the build has to be root-relative because the manifest and
+// the service worker use absolute paths.
+const cname = readFileSync('public/CNAME', 'utf8').trim()
+ok('public/CNAME names the production domain', cname === 'floatbet.space', cname)
+ok('public/CNAME is a single line', cname.split('\n').length === 1)
+
+const pagesFlow = readFileSync('.github/workflows/deploy-pages.yml', 'utf8')
+ok('the Pages build uses a root base path', /BASE_PATH: '\/'/.test(pagesFlow))
+ok('the Pages build does not use the /shoppa/ subpath',
+  !/BASE_PATH: \$\{\{ format\('\/\{0\}\/'/.test(pagesFlow))
+ok('the workflow fails if the CNAME does not reach dist/', /dist\/CNAME/.test(pagesFlow))
+ok('the workflow fails on a subpath build', /shoppa\/assets/.test(pagesFlow))
+
+// The manifest's paths are absolute, so they only resolve under a root deploy.
+// If the base path and the manifest ever disagree the PWA 404s its own icons.
+const manifestJson = JSON.parse(readFileSync('public/manifest.webmanifest', 'utf8'))
+ok('the manifest is root-relative',
+  manifestJson.start_url.startsWith('/') && manifestJson.scope === '/')
+ok('the manifest icons are root-relative',
+  manifestJson.icons.every((i: { src: string }) => i.src.startsWith('/')))
+ok('the service worker scope follows the build base',
+  readFileSync('src/lib/pwa.ts', 'utf8').includes('scope: import.meta.env.BASE_URL'))
+
 ok('the production URL is the project domain, not a borrowed one',
-  docs.every((d) => d.includes(SITE)) && cfg.includes(SITE))
+  docs.every((d) => d.includes(SITE)))
+// capacitor.config.ts keeps the Vercel hostname on purpose. That value keys the
+// Android WebView's storage origin, so changing it would silently reset every
+// installed player's local wallet. It must still be a host this project owns.
+ok('the Android shell points at a host this project owns',
+  /hostname: '(?:shoppa-sigma\.vercel\.app|floatbet\.space)'/.test(cfg))
 // shoppa-ten was never ours. Allow it only in prose explaining that fact.
 // Allow the mention only where it is being explained as a mistake. The prose
 // wraps, so scan by paragraph rather than by line.

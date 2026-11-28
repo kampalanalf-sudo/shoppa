@@ -42,7 +42,6 @@ fi
 
 SUPABASE_URL="https://dtroufrfavmjldtlprpn.supabase.co"
 ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImR0cm91ZnJmYXZtamxkdGxwcnBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUwNDQyMTAsImV4cCI6MjExMDYyMDIxMH0.LIafhBin2Uy_tx4OWDtRu-DZ6fca3atMz9Ht-XUmf2s"
-STORE_URL="https://dgatewayadmin.desispay.com/store/shop/floatbet?products"
 
 # add <name> <value> <targets...>
 add() {
@@ -55,26 +54,24 @@ add() {
 }
 
 echo "Setting public + non-secret values..."
-add APP_URL                 "https://shoppa-sigma.vercel.app"  production preview
-add DGATEWAY_API_URL        "https://dgatewayapi.desispay.com" production preview
-add DGATEWAY_STORE_SLUG     "floatbet"                       production preview
-add SUPABASE_URL            "$SUPABASE_URL"                  production preview
-add VITE_SUPABASE_URL       "$SUPABASE_URL"                  production preview
-add VITE_SUPABASE_ANON_KEY  "$ANON_KEY"                      production preview
-add VITE_DGATEWAY_STORE_URL "$STORE_URL"                     production preview
+add APP_URL                 "https://shoppa-sigma.vercel.app"   production preview
+add ZENGAPAY_API_URL        "https://api.zengapay.com/v1"     production preview
+add SUPABASE_URL            "$SUPABASE_URL"                    production preview
+add VITE_SUPABASE_URL       "$SUPABASE_URL"                    production preview
+add VITE_SUPABASE_ANON_KEY  "$ANON_KEY"                        production preview
 
 echo
 echo "Now the secrets. Input is hidden and nothing is echoed back."
-read -r -s -p "DGATEWAY_API_KEY (dgw_live_...): " DG_KEY; echo
-read -r -s -p "DGATEWAY_WEBHOOK_SECRET: "       DG_WH;  echo
+read -r -s -p "ZENGAPAY_API_TOKEN (ZPYPUBK-...): " ZP_TOKEN; echo
+read -r -s -p "ZENGAPAY_WEBHOOK_SECRET (Secret Hash): " ZP_WH; echo
 
-if [ -z "${DG_KEY}" ] || [ -z "${DG_WH}" ]; then
+if [ -z "${ZP_TOKEN}" ] || [ -z "${ZP_WH}" ]; then
   echo "Both secrets are required. Nothing secret was set; re-run when you have them." >&2
   exit 1
 fi
 
-add DGATEWAY_API_KEY        "$DG_KEY" production preview
-add DGATEWAY_WEBHOOK_SECRET "$DG_WH"  production preview
+add ZENGAPAY_API_TOKEN      "$ZP_TOKEN" production preview
+add ZENGAPAY_WEBHOOK_SECRET "$ZP_WH"   production preview
 
 echo
 echo "Also set these by hand in the Vercel dashboard (sensitive):"

@@ -3,6 +3,8 @@ import { GAMES, LIVE_WINS } from '../lib/games'
 import { compact, money, mult, shortHash, timeAgo } from '../lib/format'
 import type { GameId } from '../lib/types'
 import { useStore } from '../lib/store'
+import { ModeSwitch } from './ModeBadge'
+import { DAILY_BONUS_UGX } from '../lib/currency'
 import {
   IconBolt, IconChat, IconCheck, IconChevronDown, IconClose, IconCopy, IconEye, IconEyeOff, IconGift,
   IconHistory, IconHome, IconLive, IconMenu, IconMuted, IconSearch, IconShield, IconSpade, IconTrophy,
@@ -22,6 +24,8 @@ type NavView =
   | 'sportsbook'
   | 'auth'
   | 'topup'
+  | 'float'
+  | 'referral'
 
 type HeaderProps = {
   view: NavView
@@ -30,7 +34,7 @@ type HeaderProps = {
 }
 
 export function Header({ view, onNavigate, onSearch }: HeaderProps) {
-  const { balance, balanceHidden, toggleBalanceHidden, setWalletOpen, setHistoryOpen, setFairOpen, setRewardsOpen, sound, toggleSound, username, bets, toast } = useStore()
+  const { balanceHidden, toggleBalanceHidden, setWalletOpen, setHistoryOpen, setFairOpen, sound, toggleSound, username, bets, toast, mode, playBalance } = useStore()
   // The account menu needs the real identity, not the local store's handle: the
   // store starts empty on a fresh device even when the player is signed in.
   const { user, profile, configured, signOut, dailyPxAwarded } = useAuth()
@@ -52,14 +56,21 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
 
   return (
     <header className="fb-header sticky top-0 z-40 border-b border-white/[0.06] glass">
-      <div className="mx-auto flex h-[62px] max-w-[1500px] items-center gap-2 px-3 sm:gap-4 sm:px-5">
+      {/* 74px, not 62px: the mark got bigger and a bigger mark in a bar that did
+          not grow reads as cramped rather than prominent. Nine of those pixels
+          go to the logo, the rest to the air around it. */}
+      <div className="mx-auto flex h-[74px] max-w-[1500px] items-center gap-2 px-3 sm:gap-4 sm:px-5">
         <button
           type="button"
           onClick={() => onNavigate('home')}
-          className="group flex shrink-0 items-center gap-2.5"
+          className="group flex shrink-0 items-center gap-3 sm:gap-3.5"
           aria-label="FloatBet Gaming home"
         >
-          <Logo size={32} />
+          {/* The die is the brand, so it is sized where it actually reads. On a
+              phone it stays 46px -- big enough to be unmistakable, small enough
+              to leave the wordmark room on a 360px screen. */}
+          <Logo size={46} className="sm:!hidden" />
+          <Logo size={54} className="!hidden sm:!block" />
           <span className="block">
             <Wordmark size="sm" className="!gap-1.5 sm:!gap-2" />
           </span>
@@ -73,7 +84,6 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
           <NavItem active={view === 'sportsbook'} onClick={() => onNavigate('sportsbook')} icon={<IconBall size={17} />}>Sports</NavItem>
           <NavItem active={view === 'proxicash'} onClick={() => onNavigate('proxicash')} icon={<IconBolt size={17} />}>ProxiCash</NavItem>
           <NavItem onClick={() => setFairOpen(true)} icon={<IconShield size={17} />}>Fairness</NavItem>
-          <NavItem onClick={() => setRewardsOpen(true)} icon={<IconGift size={17} />}>Rewards</NavItem>
           <NavItem onClick={() => setHistoryOpen(true)} icon={<IconTrophy size={17} />}>Leaderboard</NavItem>
         </nav>
 
@@ -98,15 +108,6 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
           </button>
           <button
             type="button"
-            onClick={() => setRewardsOpen(true)}
-            aria-label="Rewards and bonuses"
-            className="relative grid h-9 w-9 place-items-center rounded-full text-slate-400 transition hover:bg-white/5 hover:text-gold"
-          >
-            <IconGift size={18} />
-            <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-rose-400 ring-2 ring-ink-900" />
-          </button>
-          <button
-            type="button"
             onClick={() => setFairOpen(true)}
             className="hidden h-9 items-center gap-1.5 rounded-full border border-white/[0.07] bg-white/[0.03] px-3 text-[11.5px] font-semibold text-slate-300 transition hover:border-neon-lime/40 hover:text-white xl:flex"
           >
@@ -123,8 +124,16 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
               onClick={() => setWalletOpen(true)}
               className="flex items-center gap-1.5 pl-3 pr-2.5 text-[13px] font-bold text-white transition hover:bg-white/[0.06]"
             >
-              <span className="grid h-5 w-5 place-items-center rounded-full bg-gradient-to-br from-neon-lime to-neon-green text-[9px] font-black text-ink-950">PX</span>
-              <span className="num">{balanceHidden ? '••••••' : money(balance)}</span>
+              <span
+                className={`grid h-5 w-5 place-items-center rounded-full text-[8px] font-black text-ink-950 ${
+                  mode === 'free' ? 'bg-amber-400' : 'bg-gradient-to-br from-neon-lime to-neon-green'
+                }`}
+              >
+                {mode === 'free' ? 'F' : 'U'}
+              </span>
+              <span className={`num ${mode === 'free' ? 'text-amber-200' : ''}`}>
+                {balanceHidden ? '••••••' : `UGX ${money(playBalance)}`}
+              </span>
             </button>
             <button
               type="button"
@@ -134,12 +143,19 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
             >
               {balanceHidden ? <IconEyeOff size={14} /> : <IconEye size={14} />}
             </button>
+            {/*
+              * Deposit, always one press away.
+              *
+              * It used to be reachable only through the wallet sheet, which is a
+              * balance readout — a player looking for "add money" had to guess
+              * that the balance itself was the button.
+              */}
             <button
               type="button"
-              onClick={() => setWalletOpen(true)}
+              onClick={() => onNavigate('topup')}
               className="flex items-center gap-1 bg-gradient-to-b from-neon-green to-[#8fdc1f] px-3 text-[12.5px] font-extrabold text-ink-950 transition hover:brightness-105"
             >
-              <IconWallet size={15} /> <span className="hidden sm:inline">Wallet</span>
+              <IconBolt size={15} /> <span className="hidden sm:inline">Deposit</span>
             </button>
           </div>
 
@@ -150,7 +166,7 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
               aria-label="Account menu"
               className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-neon-violet/80 to-neon-cyan/70 text-[12px] font-black text-ink-950 ring-2 ring-white/10 transition hover:ring-neon-lime/60"
             >
-              {(handle || email || 'PX').slice(0, 2).toUpperCase()}
+              {(handle || email || 'FB').slice(0, 2).toUpperCase()}
             </button>
             {accountOpen && (
               <div className="absolute right-0 top-11 w-64 animate-popIn overflow-hidden rounded-2xl border border-white/10 bg-ink-850 p-1.5 shadow-pop">
@@ -162,24 +178,44 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
                   <p className="truncate text-sm font-semibold text-white">{handle || 'Player'}</p>
                   {email && <p className="truncate text-[11px] text-slate-400">{email}</p>}
                   <p className="num mt-0.5 text-[11px] text-slate-500">
-                    {money(balance)} PX <span className="text-slate-600">· 100 PX = 1 UGX</span>
+                    {mode === 'free' ? (
+                      <>
+                        <span className="text-amber-200">UGX {money(playBalance)}</span>{' '}
+                        <span className="text-amber-200/60">· free play, not real money</span>
+                      </>
+                    ) : (
+                      <>UGX {money(playBalance)} <span className="text-slate-600">· real balance</span></>
+                    )}
                   </p>
+                  <div className="mt-1.5">
+                    <ModeSwitch compact />
+                  </div>
                   {/* The daily bonus is the reason to come back, so it belongs
                       where the balance is, not buried in a notification. */}
-                  <p className="mt-0.5 text-[10.5px] text-emerald-400/80">
-                    {dailyPxAwarded > 0
-                      ? `+${money(dailyPxAwarded)} PX daily bonus credited`
-                      : '15,000 PX daily bonus · already claimed today'}
-                  </p>
+                  {mode === 'real' && (
+                    <p className="mt-0.5 text-[10.5px] text-emerald-400/80">
+                      {dailyPxAwarded > 0
+                        ? `+UGX ${money(dailyPxAwarded)} daily bonus credited`
+                        : `UGX ${money(DAILY_BONUS_UGX)} daily bonus · already claimed today`}
+                    </p>
+                  )}
                 </div>
                 <MenuItem icon={<IconHistory size={15} />} onClick={() => { setHistoryOpen(true); setAccountOpen(false) }}>Bet history</MenuItem>
+                {/* Float is a credit line, so it belongs with the money items and
+                    not in a promo slot: a player should be able to find the terms
+                    again after they have borrowed. */}
+                <MenuItem icon={<IconBolt size={15} />} onClick={() => { setAccountOpen(false); onNavigate('float') }}>
+                  Float — borrow credit
+                </MenuItem>
+                <MenuItem icon={<IconGift size={15} />} onClick={() => { setAccountOpen(false); onNavigate('referral') }}>
+                  Refer a friend
+                </MenuItem>
                 {configured && (
                   <MenuItem icon={<IconUser size={15} />} onClick={() => { setAccountOpen(false); onNavigate('sportsbook') }}>
                     Sports book
                   </MenuItem>
                 )}
                 <MenuItem icon={<IconShield size={15} />} onClick={() => { setFairOpen(true); setAccountOpen(false) }}>Provably fair</MenuItem>
-                <MenuItem icon={<IconGift size={15} />} onClick={() => { setRewardsOpen(true); setAccountOpen(false) }}>Rewards &amp; bonuses</MenuItem>
                 <MenuItem icon={<IconTrophy size={15} />} onClick={() => { setHistoryOpen(true); setAccountOpen(false) }}>Rank &amp; leaderboard</MenuItem>
 
                 {/* Admin-only entries. is_admin comes from the database via
@@ -191,6 +227,12 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
                     <div className="divider my-1" />
                     <p className="px-3 pt-1 pb-0.5 text-[9.5px] font-bold uppercase tracking-[.16em] text-violet-400/70">Admin</p>
                     <MenuItem
+                      icon={<IconGamepad size={15} />}
+                      onClick={() => { setAccountOpen(false); window.location.hash = 'admin/console' }}
+                    >
+                      Console
+                    </MenuItem>
+                    <MenuItem
                       icon={<IconUser size={15} />}
                       onClick={() => { setAccountOpen(false); window.location.hash = 'admin/players' }}
                     >
@@ -201,6 +243,12 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
                       onClick={() => { setAccountOpen(false); window.location.hash = 'admin/parked' }}
                     >
                       Parked payments
+                    </MenuItem>
+                    <MenuItem
+                      icon={<IconHistory size={15} />}
+                      onClick={() => { setAccountOpen(false); window.location.hash = 'admin/console' }}
+                    >
+                      Audit log
                     </MenuItem>
                   </>
                 )}
@@ -433,10 +481,13 @@ export function Wordmark({
   showGaming?: boolean
   className?: string
 }) {
+  // Each step up is deliberate. The wordmark is the thing a player reads before
+  // they read anything else, and it was previously the same size as the nav
+  // labels beside it -- which made the brand look like one more menu item.
   const scale = {
-    sm: { word: 'text-[15px] sm:text-[16px]', gaming: 'text-[7.5px] sm:text-[8.5px] tracking-[.24em] sm:tracking-[.26em]' },
-    md: { word: 'text-[17px]', gaming: 'text-[9.5px] tracking-[.28em]' },
-    lg: { word: 'text-[22px]', gaming: 'text-[11px] tracking-[.3em]' },
+    sm: { word: 'text-[19px] sm:text-[22px]', gaming: 'text-[8.5px] sm:text-[10px] tracking-[.24em] sm:tracking-[.26em]' },
+    md: { word: 'text-[22px] sm:text-[26px]', gaming: 'text-[10.5px] sm:text-[11.5px] tracking-[.28em]' },
+    lg: { word: 'text-[28px] sm:text-[34px]', gaming: 'text-[12px] sm:text-[13px] tracking-[.3em]' },
   }[size]
 
   return (
@@ -473,7 +524,7 @@ export function WinTicker() {
             </span>
             <span className="text-[11px] text-slate-400">{w.user}</span>
             <span className="text-[11px] text-slate-600">won</span>
-            <span className="num text-[11px] font-bold text-white">{money(w.amount)} PX</span>
+            <span className="num text-[11px] font-bold text-white">UGX {money(w.amount)}</span>
             <span className="num rounded bg-neon-lime/15 px-1.5 py-0.5 text-[10px] font-bold text-neon-lime">{mult(w.mult)}</span>
             <span className="hidden text-[11px] text-slate-600 sm:inline">on {w.game}</span>
           </div>
@@ -540,7 +591,7 @@ export function ChatDock({ onOpenRoom }: { onOpenRoom?: () => void } = {}) {
                 <span className="ml-1 text-slate-400">{m.msg}</span>
                 {m.attached && (
                   <div className="mt-1 flex items-center gap-2 rounded-lg border border-white/[0.07] bg-white/[0.03] px-2 py-1.5 text-[10.5px] text-slate-400">
-                    <IconCheck size={12} className="text-emerald-400" /> Withdrawal completed · 4,210 PX
+                    <IconCheck size={12} className="text-emerald-400" /> Withdrawal completed · UGX 4,210
                   </div>
                 )}
               </div>
@@ -573,21 +624,35 @@ export function ChatDock({ onOpenRoom }: { onOpenRoom?: () => void } = {}) {
 
 /* ------------------------------------------------------------------ Footer */
 
-export function Footer() {
+export function Footer({
+  onSupport,
+  onPrivacy,
+}: { onSupport?: () => void; onPrivacy?: () => void } = {}) {
+  // Every support link points at the agents. They previously rendered as plain
+  // buttons that did nothing, which on a betting site is worse than not offering
+  // them: "Contact Us" that ignores a click reads as a company with nobody home.
   const cols = [
     { title: 'Casino', items: ['Originals', 'Slots', 'Live Casino', 'Table Games', 'Instant Win', 'Bonus Buy'] },
     { title: 'Support', items: ['Help Center', 'Live Chat', 'Responsible Gaming', 'Self Exclusion', 'Contact Us'] },
     { title: 'Company', items: ['About FloatBet', 'VIP Club', 'Affiliates', 'Careers', 'Press Kit'] },
     { title: 'Legal', items: ['Terms of Service', 'Privacy Policy', 'AML Policy', 'Provably Fair', 'Licenses'] },
   ]
+  const TO_SUPPORT = new Set(['Help Center', 'Live Chat', 'Responsible Gaming', 'Self Exclusion', 'Contact Us'])
+  // The privacy page is real, so the link must be: it is the disclosure behind the
+  // session records, and a legal link that does nothing undercuts the disclosure.
+  const onItem = (item: string) => {
+    if (item === 'Privacy Policy') return onPrivacy
+    if (TO_SUPPORT.has(item) && onSupport) return onSupport
+    return undefined
+  }
   return (
     <footer className="mt-16 border-t border-white/[0.06] bg-ink-950/80">
       <div className="mx-auto max-w-[1500px] px-5 py-12">
         <div className="grid gap-10 lg:grid-cols-[1.3fr_repeat(4,1fr)]">
           <div>
-            <div className="flex items-center gap-2.5">
-              <Logo size={32} />
-              <Wordmark size="sm" />
+            <div className="flex items-center gap-3">
+              <Logo size={46} />
+              <Wordmark size="md" />
             </div>
             <p className="mt-3 max-w-xs text-[12.5px] leading-relaxed text-slate-500">
               Provably fair crypto casino. 8 original games, instant settlement and the fastest withdrawals in the industry.
@@ -607,7 +672,13 @@ export function Footer() {
               <ul className="space-y-2">
                 {c.items.map((i) => (
                   <li key={i}>
-                    <button type="button" className="text-[12.5px] text-slate-500 transition hover:text-white">{i}</button>
+                    <button
+                      type="button"
+                      onClick={onItem(i)}
+                      className="text-[12.5px] text-slate-500 transition hover:text-white"
+                    >
+                      {i}
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -616,7 +687,7 @@ export function Footer() {
         </div>
         <div className="divider my-8" />
         <div className="flex flex-col items-start justify-between gap-3 text-[11.5px] text-slate-600 sm:flex-row sm:items-center">
-          <p>© 2026 FloatBet Gaming. 18+ · Play responsibly. PX is cashed out only via ProxiCash.</p>
+          <p>© 2026 FloatBet Gaming. 18+ · Play responsibly. Balances are in UGX and cash out to mobile money.</p>
           <p className="flex items-center gap-2">
             <span className="num">{shortHash('a91f3c7d2e')}</span> · v1.4.2
           </p>
@@ -629,12 +700,12 @@ export function Footer() {
 /* ------------------------------------------------------------------ Bottom bar (mobile) */
 
 export function BottomBar({ view, onNavigate }: { view: NavView; onNavigate: HeaderProps['onNavigate'] }) {
-  const { setWalletOpen, setHistoryOpen, setRewardsOpen } = useStore()
+  const { setWalletOpen, setHistoryOpen } = useStore()
   const items: { label: string; icon: React.ReactNode; onClick: () => void; active?: boolean }[] = [
     { label: 'Home', icon: <IconHome size={19} />, onClick: () => onNavigate('home'), active: view === 'home' },
     { label: 'Wallet', icon: <IconWallet size={19} />, onClick: () => setWalletOpen(true) },
     { label: 'Top up', icon: <IconBolt size={19} />, onClick: () => onNavigate('topup'), active: view === 'topup' },
-    { label: 'Sports', icon: <IconBall size={19} />, onClick: () => onNavigate('sportsbook'), active: view === 'sportsbook' },
+    { label: 'Float', icon: <IconBolt size={19} />, onClick: () => onNavigate('float'), active: view === 'float' },
     { label: 'Cash out', icon: <IconWallet size={19} />, onClick: () => onNavigate('cashout'), active: view === 'cashout' },
   ]
   return (
@@ -690,7 +761,7 @@ export function WinFlash() {
           {big ? 'Huge win' : 'Big win'}
         </p>
         <p className="num mt-1 text-4xl font-black text-white glow-text">
-          +<CountUp value={winFlash} duration={1100} /> PX
+          +<CountUp value={winFlash} duration={1100} /> UGX
         </p>
       </div>
     </div>

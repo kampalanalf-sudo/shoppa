@@ -67,12 +67,12 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
       <div className="mb-4 text-center">
         <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-neon-lime/30 bg-neon-lime/10 px-3 py-1">
           <span className="text-[10px] font-black uppercase tracking-[.16em] text-neon-lime">
-            {money(wallet?.balance_px ?? 0)} PX granted
+            UGX {money(wallet?.balance_px ?? 0)} granted
           </span>
         </div>
         <h1 className="text-[22px] font-black text-white">Finish setting up</h1>
         <p className="mt-1 text-[12px] text-slate-500">
-          Two quick steps before you can play and cash out.
+          Your handle and 18+ confirmation. The phone is optional.
         </p>
       </div>
 
@@ -110,7 +110,7 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
       {/* step 2 */}
       <div className="panel p-3.5">
         <p className="mb-2 text-[10px] font-bold uppercase tracking-[.16em] text-slate-500">
-          2 · Verify your phone <span className="normal-case text-slate-600">(needed to cash out)</span>
+          2 · Add your phone <span className="normal-case text-slate-600">(optional — you type the payout number when you cash out)</span>
         </p>
         {stage === 'done' ? (
           <p className="flex items-center gap-1.5 text-[12px] font-bold text-emerald-300">
@@ -146,7 +146,8 @@ export function Onboarding({ onDone }: { onDone: () => void }) {
         )}
         <p className="flex items-start gap-1.5 text-[9.5px] leading-relaxed text-slate-600">
           <IconShield size={11} className="mt-0.5 shrink-0" />
-          We never show your number publicly. It is only used for payout and account recovery.
+          We never show your number publicly. It is only used for account recovery — cashing out
+          does not require a verified phone, you enter the MoMo number on the cashout screen.
         </p>
       </div>
 

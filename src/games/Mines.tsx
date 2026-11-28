@@ -1,38 +1,57 @@
-import React, { useCallback, useMemo, useState } from 'react'
+import React, { useCallback, useMemo, useRef, useState } from 'react'
 import { useStore } from '../lib/store'
 import { sfx } from '../lib/sound'
 import { combination } from '../lib/fair'
+import { revealCell, startBoardRound, type Reveal } from '../lib/play'
+import { MINE_GRID, mineLayout, minesMultiplier } from '../../supabase/functions/_shared/games'
 import { money, mult } from '../lib/format'
 import { gameById } from '../lib/games'
 import { BetAmount, BetButton } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
 import { IconDiamond } from '../components/Icons'
+import { MIN_BET } from '../lib/currency'
 
-const GRID = 25
-const houseEdge = 0.99
+const GRID = MINE_GRID
 
 /**
- * Standard mines payout: 0.99 / P(surviving n picks)
- * P = Π (safeRemaining / tilesRemaining) — matches C(25-mines, picks) / C(25, picks).
+ * The payout table, from the module the SERVER settles with.
+ *
+ * It used to be a local copy. A copy is a table that can drift, and drift here
+ * means the board shows one multiplier while the server pays another — the bug
+ * the wheel shipped on its first pass.
  */
-const multiplierFor = (mines: number, picks: number) => {
-  if (picks <= 0) return 1
-  let p = 1
-  for (let i = 0; i < picks; i++) p *= (GRID - mines - i) / (GRID - i)
-  if (p <= 0) return 0
-  return Math.max(1, Math.round((houseEdge / p) * 100) / 100)
-}
+const multiplierFor = minesMultiplier
 
 export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('mines')!
-  const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(1000)
+  const { balance, sound, toast, flashLoss, finishRound, syncBalance, mode, placeBet, settleBet, nextFloats, payoutRate } =
+    useStore()
+  const [bet, setBet] = useState(MIN_BET)
   const [mines, setMines] = useState(3)
   const [active, setActive] = useState(false)
-  const [mineSet, setMineSet] = useState<Set<number>>(new Set())
+  /**
+   * The open round and what the SERVER has confirmed.
+   *
+   * There is deliberately no local minefield: the layout stays on the server, so
+   * `busted` and `gems` are the only truth this component holds. Before this,
+   * the whole board was built in the browser from floats it had generated, which
+   * is why a modified client could walk it.
+   */
+  const openRef = useRef<{ round: string; nonce: number; server_hash: string } | null>(null)
   const [revealed, setRevealed] = useState<number[]>([])
   const [busted, setBusted] = useState<number[] | null>(null)
   const [busy, setBusy] = useState(false)
+  /**
+   * The FREE-PLAY board.
+   *
+   * Free play has no server row, so the minefield is drawn here from the same
+   * floats and the same `mineLayout` the server uses — the rules match, only the
+   * money is missing. Without this, switching to free play (which the demo
+   * notice offers) left Mines with no way to start a round at all: `start()`
+   * called the server, the server rightly refused, and the game looked broken.
+   */
+  const [, setFreeBoard] = useState<number[] | null>(null)
+  const freeRef = useRef<{ layout: number[]; picks: number[] } | null>(null)
 
   const picks = revealed.length
   const currentMult = useMemo(() => multiplierFor(mines, picks), [mines, picks])
@@ -45,44 +64,115 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       toast({ kind: 'error', title: 'Insufficient balance', body: 'Lower your bet to continue.' })
       return
     }
-    if (!placeBet('mines', bet)) return
-    sfx.place()
     setBusy(true)
-    // consume one float per shuffle step from the HMAC stream (unbiased Fisher–Yates)
-    const raw = await nextFloats(GRID)
-    const positions = Array.from({ length: GRID }, (_, i) => i)
-    for (let i = positions.length - 1; i > 0; i--) {
-      const j = Math.min(i, Math.floor(raw[i] * (i + 1)))
-      ;[positions[i], positions[j]] = [positions[j], positions[i]]
+    try {
+      if (mode === 'free') {
+        // Practice credits only: debit locally, draw the board locally, and the
+        // same reveal rules decide the rest.
+        if (!placeBet('mines', Math.round(bet))) return
+        const floats = await nextFloats(MINE_GRID)
+        freeRef.current = { layout: mineLayout(floats, mines), picks: [] }
+        openRef.current = null
+        setFreeBoard(freeRef.current.layout)
+        sfx.place()
+        setRevealed([])
+        setBusted(null)
+        setActive(true)
+        return
+      }
+      const started = await startBoardRound('mines', Math.round(bet), { mines })
+      openRef.current = { round: String(started.round), nonce: started.nonce, server_hash: started.server_hash }
+      sfx.place()
+      setRevealed([])
+      setBusted(null)
+      setActive(true)
+    } catch (e) {
+      toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
+    } finally {
+      setBusy(false)
     }
-    setMineSet(new Set(positions.slice(0, mines)))
-    setRevealed([])
-    setBusted(null)
-    setActive(true)
-    setBusy(false)
-  }, [bet, balance, placeBet, nextFloats, mines, toast])
+  }, [bet, balance, mines, toast, mode, placeBet, nextFloats])
 
-  const pick = (i: number) => {
+  const pick = async (i: number) => {
     if (!active || revealed.includes(i) || busted) return
-    if (mineSet.has(i)) {
-      setBusted([i])
-      setActive(false)
-      settleBet({ game: 'mines', wager: bet, multiplier: 0, detail: `${mines} mines · hit a mine on pick ${picks + 1}` })
-      flashLoss()
-      if (sound) sfx.bomb()
+
+    // ---- free play: the board is here, and the rules are the same --------
+    if (mode === 'free') {
+      const free = freeRef.current
+      if (!free) return
+      if (free.layout.includes(i)) {
+        setBusted(free.layout)
+        setActive(false)
+        freeRef.current = null
+        settleBet({ game: 'mines', wager: Math.round(bet), multiplier: 0, detail: 'Hit a mine' })
+        flashLoss()
+        if (sound) sfx.bomb()
+        return
+      }
+      free.picks = [...free.picks, i]
+      setRevealed(free.picks)
+      if (sound) sfx.gem()
       return
     }
-    setRevealed((r) => [...r, i])
-    if (sound) sfx.gem()
+
+    const open = openRef.current
+    if (!open) return
+    try {
+      const res: Reveal = await revealCell(open.round, i)
+      if (res.busted) {
+        setBusted(res.mines_at ?? [i])
+        setActive(false)
+        openRef.current = null
+        syncBalance()
+        flashLoss()
+        if (sound) sfx.bomb()
+        return
+      }
+      setRevealed(res.picks ?? [])
+      if (sound) sfx.gem()
+    } catch (e) {
+      toast({ kind: 'error', title: 'That pick failed', body: (e as Error).message })
+    }
   }
 
-  const cashout = () => {
+  const cashout = async () => {
     if (!active || !picks) return
-    const pay = settleBet({ game: 'mines', wager: bet, multiplier: currentMult, detail: `${mines} mines · ${picks} gems` })
-    setActive(false)
-    setBusted(null)
-    if (sound) (currentMult >= 5 ? sfx.bigwin : sfx.cashout)()
-    toast({ kind: 'win', title: `Cashed out ${mult(currentMult)}`, body: `+${money(pay)} PX secured.` })
+
+    if (mode === 'free') {
+      const free = freeRef.current
+      if (!free) return
+      const m = multiplierFor(mines, free.picks.length)
+      const paid = settleBet({
+        game: 'mines',
+        wager: Math.round(bet),
+        multiplier: m,
+        detail: `${mines} mines · ${free.picks.length} gems`,
+      })
+      freeRef.current = null
+      setActive(false)
+      setBusted(null)
+      if (sound) (m >= 5 ? sfx.bigwin : sfx.cashout)()
+      toast({
+        kind: 'win',
+        title: `Cashed out ${mult(m)}`,
+        body: `+UGX ${money(paid)} in practice credits. Not withdrawable.`,
+      })
+      return
+    }
+
+    const open = openRef.current
+    if (!open) return
+    try {
+      const res = await revealCell(open.round, 0, true)
+      openRef.current = null
+      setActive(false)
+      setBusted(null)
+      syncBalance()
+      if (sound) (currentMult >= 5 ? sfx.bigwin : sfx.cashout)()
+      toast({ kind: 'win', title: `Cashed out ${mult(res.multiplier ?? currentMult)}`, body: `+UGX ${money(res.payout ?? 0)} secured.` })
+    } catch (e) {
+      toast({ kind: 'error', title: 'Cash-out failed', body: (e as Error).message })
+    }
   }
 
   const reset = () => {
@@ -119,7 +209,7 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
           </div>
 
           {active ? (
-            <BetButton onClick={cashout} disabled={!picks} sub={`${money(potential)} PX`}>
+            <BetButton onClick={cashout} disabled={!picks} sub={`$UGX {money(potential)}`}>
               Cash out {mult(currentMult)}
             </BetButton>
           ) : (
@@ -143,12 +233,12 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
 
           <div className="space-y-1.5">
             <PayoutRow label="Grid" value="5 × 5" />
-            <PayoutRow label="House edge" value="1.0%" />
+            <PayoutRow label="House edge" value={payoutRate < 1 ? `${((1 - 0.99 * payoutRate) * 100).toFixed(1)}%` : "1.0%"} />
             <PayoutRow label="Next multiplier" value={mult(nextMult)} highlight />
           </div>
           {picks > 0 && active && (
             <p className="text-center text-[10.5px] text-slate-500">
-              Potential win <span className="num font-bold text-neon-lime">{money(potential)} PX</span>
+              Potential win <span className="num font-bold text-neon-lime">UGX {money(potential)}</span>
             </p>
           )}
         </div>
@@ -163,7 +253,7 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">UGX</span>
           </div>
           {active ? (
             <button type="button" onClick={cashout} disabled={!picks} className="btn-danger h-10 flex-1 !text-[13px]">
@@ -180,7 +270,9 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       <div className="mx-auto grid max-w-[520px] grid-cols-5 gap-1.5 sm:gap-2.5" style={{ perspective: "900px" }}>
         {Array.from({ length: GRID }, (_, i) => {
           const shown = revealed.includes(i)
-          const revealedMine = !active && mineSet.has(i) && !shown
+          // After a bust the server sends the full layout, because the round is
+          // already closed and the reveal can no longer help anyone.
+          const revealedMine = !active && (busted ?? []).includes(i) && !shown
           return (
             <div
               key={i}

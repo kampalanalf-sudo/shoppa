@@ -6,6 +6,7 @@ import { gameById } from '../lib/games'
 import { BetAmount, BetButton, useHotkey } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
 import { IconShield } from '../components/Icons'
+import { MIN_BET } from '../lib/currency'
 
 /**
  * Paytables are generated so that Σ P(bucket) × multiplier = 99% for every
@@ -49,17 +50,40 @@ export const tableRtp = (t: number[]) =>
   t.reduce((acc, m, k) => acc + (binom(t.length - 1, k) / 2 ** (t.length - 1)) * m, 0)
 
 type Risk = keyof typeof TABLES
-type Ball = { id: number; path: number[]; bucket: number; mult: number; wager: number }
+type Ball = {
+  id: number
+  path: number[]
+  bucket: number
+  mult: number
+  wager: number
+  /** What the server already paid for this ball. Landing only renders it. */
+  settled: { payout: number; won: boolean }
+}
+
+/**
+ * The visual path, rebuilt from the bucket the server chose.
+ *
+ * The servers' bucket is the number of right-hand steps, so any path with that
+ * many rights lands on the paid bucket. Shuffling the rights deterministically
+ * keeps the ball's route varied without ever disagreeing with the payout.
+ */
+const roulettePath = (payload: Record<string, number | string>, rows: number): number[] => {
+  const rights = Math.max(0, Math.min(rows, Number(payload.index ?? 0)))
+  const path = Array.from({ length: rows }, (_, i) => (i < rights ? 1 : 0))
+  // rotate by the bucket so successive balls do not all lean the same way
+  const shift = rights % Math.max(1, rows)
+  return [...path.slice(shift), ...path.slice(0, shift)]
+}
 
 const W = 620
 const H = 330
 
 export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('plinko')!
-  const { placeBet, settleBet, nextFloats, balance, sound, flashLoss } = useStore()
+  const { playGame, balance, sound, toast, flashLoss, payoutRate } = useStore()
   const [risk, setRisk] = useState<Risk>('medium')
   const [rows, setRows] = useState(12)
-  const [bet, setBet] = useState(1000)
+  const [bet, setBet] = useState(MIN_BET)
   const [balls, setBalls] = useState<Ball[]>([])
   const [auto, setAuto] = useState(false)
   const [last, setLast] = useState<{ mult: number; payout: number } | null>(null)
@@ -84,23 +108,21 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
     if (bet > balance) {
       return
     }
-    if (!placeBet('plinko', bet)) return
     sfx.place()
-    const [u] = await nextFloats(1)
-    // derive a Bernoulli path from the float's bits for visual variety
-    const path: number[] = []
-    let bits = u
-    for (let i = 0; i < rows; i++) {
-      bits = bits * 2
-      path.push(bits >= 1 ? 1 : 0)
-      if (bits >= 1) bits -= 1
+    // The server picks the bucket. The path drawn below is the binary
+    // expansion of the float it publishes, so the ball lands where it was paid.
+    let settled: Awaited<ReturnType<typeof playGame>>
+    try {
+      settled = await playGame('plinko', bet, { rows, risk })
+    } catch (e) {
+      toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
+      return
     }
-    const total = path.reduce((a, b) => a + b, 0)
-    // Rejection-free unbiased mapping: the path sum is the bucket index.
-    const bucket = Math.max(0, Math.min(table.length - 1, total))
+    const bucket = Number(settled.payload.index ?? 0)
+    const path = roulettePath(settled.payload, rows)
     const id = ++idRef.current
-    setBalls((b) => [...b.slice(-40), { id, path, bucket, mult: table[bucket], wager: bet }])
-  }, [bet, balance, placeBet, nextFloats, rows, table])
+    setBalls((b) => [...b.slice(-40), { id, path, bucket, mult: settled.multiplier, wager: bet, settled }])
+  }, [bet, balance, playGame, rows, risk, toast, table])
 
   // resolve a ball once it lands (kept out of the state updater so React's
   // double-invocation in dev can never settle the same ball twice)
@@ -114,12 +136,9 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
       const ball = ballsRef.current.find((b) => b.id === ballId)
       if (!ball) return
       landedRef.current.add(ballId)
-      const payout = settleBet({
-        game: 'plinko',
-        wager: ball.wager,
-        multiplier: ball.mult,
-        detail: `${rows} rows · ${TABLES[risk].label} risk · ${mult(ball.mult)}`,
-      })
+      // Already settled by the server when the ball was dropped: paying here
+      // again would be a second credit for one bet.
+      const payout = ball.settled.payout
       setLast({ mult: ball.mult, payout })
       if (sound) {
         if (ball.mult >= 1) sfx.win()
@@ -130,7 +149,7 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
       }
       setBalls((prev) => prev.filter((b) => b.id !== ballId))
     },
-    [settleBet, rows, risk, sound, flashLoss],
+    [rows, sound, flashLoss],
   )
 
   useHotkey(drop)
@@ -206,11 +225,14 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
             <div className={`animate-popIn rounded-xl border px-3 py-2 text-center ${last.mult >= 1 ? 'border-neon-lime/30 bg-neon-lime/10' : 'border-white/[0.07] bg-white/[0.02]'}`}>
               <p className="text-[10px] uppercase tracking-wider text-slate-500">Last drop</p>
               <p className={`num text-lg font-black ${last.mult >= 1 ? 'text-neon-lime' : 'text-slate-400'}`}>{mult(last.mult)}</p>
-              <p className="num text-[11px] text-slate-400">{money(last.payout)} PX</p>
+              <p className="num text-[11px] text-slate-400">UGX {money(last.payout)}</p>
             </div>
           )}
           <div className="space-y-1.5">
             <PayoutRow label="Live table RTP" value={`${(tableRtp(table) * 100).toFixed(2)}%`} highlight />
+            {payoutRate < 1 && (
+              <PayoutRow label="Your session RTP" value={`${(tableRtp(table) * payoutRate * 100).toFixed(2)}%`} />
+            )}
             <PayoutRow label="Buckets" value={`${table.length}`} />
           </div>
         </div>
@@ -225,7 +247,7 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">UGX</span>
           </div>
           <button type="button" onClick={() => void drop()} className="btn-primary h-10 flex-1 !text-[13px]">
             Drop {mult(Math.max(...table))}

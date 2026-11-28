@@ -1,0 +1,249 @@
+name: Deploy edge functions
+
+# Deploys the Supabase Edge Functions that replaced the Vercel /api routes.
+#
+# WHY A WORKFLOW AND NOT `supabase functions deploy`
+#
+# Each function here imports from ../_shared/ (one ZENGAPAY client, one odds-feed
+# client, one set of CORS/JSON helpers). A deployed Edge Function is a single
+# module, so those imports cannot resolve in the uploaded bundle. The CLI's
+# `deploy` does not follow them. `scripts/build-edge-functions.mjs` inlines the
+# shared modules in dependency order, esbuild bundles and minifies the result,
+# and this workflow POSTs one file per function to the Management API.
+#
+# One source of truth, one generated artifact, nothing to hand-copy.
+#
+# Requires repository secret: SUPABASE_ACCESS_TOKEN (a personal access token from
+# supabase.com/dashboard/account/tokens). PROJECT_REF is not secret.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/functions/**'
+      - 'scripts/build-edge-functions.mjs'
+      - '.github/workflows/deploy-functions.yml'
+  workflow_dispatch:
+    inputs:
+      functions:
+        description: 'Comma-separated slugs, or "all"'
+        required: false
+        default: 'all'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edge-functions
+  cancel-in-progress: false
+
+env:
+  PROJECT_REF: dtroufrfavmjldtlprpn
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 22, not 20: @supabase/supabase-js v2 needs a WebSocket
+          # implementation, which Node only grew in 22. On 20, `createClient()`
+          # throws before it ever reaches the network — so every smoke test that
+          # imports a bundle constructing a client failed in CI while passing
+          # locally on 22. android.yml already pins 22.
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Inline shared modules and bundle
+        run: |
+          node scripts/build-edge-functions.mjs --check
+          mkdir -p .edge-bundles
+          for f in supabase/.dist/*.ts; do
+            name=$(basename "$f" .ts)
+            ./node_modules/.bin/esbuild "$f" \
+              --bundle --format=esm --platform=neutral --target=es2022 \
+              --external:'https://*' --external:'npm:*' \
+              --minify-whitespace --legal-comments=none \
+              --outfile=".edge-bundles/$name.js"
+            echo "bundled $name ($(wc -c < ".edge-bundles/$name.js") bytes)"
+          done
+
+      - name: Deploy
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          WANTED: ${{ github.event.inputs.functions || 'all' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN is not set. Add it under Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
+          # Diagnose the token WITHOUT printing it. A 401 from the Management API
+          # has three common causes and they are not interchangeable:
+          #   - the value pasted into the secret is not an sbp_ token at all
+          #     (a project anon/service key looks plausible and is never a PAT)
+          #   - it has a trailing newline or space, which is stored verbatim
+          #   - it is a PAT that has been revoked or expired
+          # Length and a prefix check separate the first from the rest, and an
+          # explicit auth call separates "bad token" from "bad permissions".
+          TOKEN_LEN=${#SUPABASE_ACCESS_TOKEN}
+          case "$SUPABASE_ACCESS_TOKEN" in
+            sbp_*) echo "token: sbp_ prefix found, length $TOKEN_LEN" ;;
+            *)     echo "::error::SUPABASE_ACCESS_TOKEN does not start with sbp_. It is probably a project API key (anon/service_role), not a personal access token. Create one at https://supabase.com/dashboard/account/tokens" ;;
+          esac
+          if [ "$TOKEN_LEN" -lt 40 ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN is only $TOKEN_LEN characters, which is too short for a PAT. It may have been truncated on paste."
+          fi
+          # Detect whitespace without echoing the value: compare against a trimmed
+          # copy. A trailing newline survives the secret UI and breaks the header.
+          if [ "$(printf '%s' "$SUPABASE_ACCESS_TOKEN" | tr -d '\n\r\t ')" != "$SUPABASE_ACCESS_TOKEN" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN contains whitespace (a trailing space or newline from the paste). Delete the secret and re-add it with no trailing whitespace."
+          fi
+
+          # Prove the token itself works before looping over functions, so a 401
+          # on the first function is not mistaken for a function problem.
+          auth_code=$(curl -sS -o /tmp/me.json -w '%{http_code}' \
+            -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+            https://api.supabase.com/v1/projects)
+          if [ "$auth_code" != "200" ]; then
+            echo "::error::The Management API rejected the token (HTTP $auth_code). Regenerate it at https://supabase.com/dashboard/account/tokens and re-add the secret."
+            head -c 300 /tmp/me.json; echo
+            exit 1
+          fi
+          echo "token: accepted by the Management API"
+
+          for f in .edge-bundles/*.js; do
+            name=$(basename "$f" .js)
+            if [ "$WANTED" != "all" ] && [[ ",$WANTED," != *",$name,"* ]]; then
+              echo "skip $name"
+              continue
+            fi
+
+            # verify_jwt=false for every function here, deliberately:
+            #   pay / admin-ops        -> each calls auth.getUser() itself and
+            #                             distinguishes 401 from 403, which the
+            #                             platform gate cannot do
+            #   webhooks-*             -> the caller is ZENGAPAY, and the signature
+            #                             signature over the raw body is the only
+            #                             gate that can admit it
+            #   feed-*                 -> CRON_SECRET bearer, or an admin JWT
+            #                             checked in-function
+            # Leaving the platform default (true) would break the webhooks and
+            # the cron, and would turn a "signed in but not an admin" 403 into an
+            # indistinguishable 401.
+            jq -n --rawfile body "$f" --arg name "$name" \
+              '{slug: $name, name: $name, verify_jwt: false, body: $body}' > payload.json
+
+            echo "::group::deploy $name"
+            code=$(curl -sS -o resp.json -w '%{http_code}' -X POST \
+              "https://api.supabase.com/v1/projects/$PROJECT_REF/functions?slug=$name" \
+              -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+              -H 'Content-Type: application/json' \
+              --data-binary @payload.json)
+
+            # A function that already exists must be PATCHed, not POSTed.
+            if [ "$code" = "409" ] || [ "$code" = "400" ]; then
+              code=$(curl -sS -o resp.json -w '%{http_code}' -X PATCH \
+                "https://api.supabase.com/v1/projects/$PROJECT_REF/functions/$name" \
+                -H "Authorization: Bearer $SUPABASE_ACCESS_TOKEN" \
+                -H 'Content-Type: application/json' \
+                --data-binary @payload.json)
+            fi
+
+            cat resp.json; echo
+            if [ "$code" -lt 200 ] || [ "$code" -ge 300 ]; then
+              echo "::error::deploying $name failed with HTTP $code"
+              exit 1
+            fi
+            echo "::endgroup::"
+          done
+
+      # A deployed bundle is a single minified file assembled by our own inliner.
+      # The failure mode that matters is not "the upload failed" (that is loud) but
+      # "the upload succeeded and the module throws on first request" — which the
+      # dashboard shows as ACTIVE and the app shows as a network error.
+      #
+      # So: call each function once, unauthenticated, and require its own gate to
+      # answer. A 500, a BOOT_ERROR or an HTML body means the bundle is broken.
+      - name: Smoke-test the deployed functions
+        run: |
+          set -euo pipefail
+          BASE="https://$PROJECT_REF.supabase.co/functions/v1"
+
+          # Read the publishable key out of the source rather than restating it
+          # here. It is not a secret (it ships in the browser bundle by design),
+          # but a second copy in a workflow is a second copy to forget to rotate.
+          ANON_KEY=$(sed -n "s/^[[:space:]]*'\(eyJ[^']*\)'/\1/p" src/lib/backend.ts | head -1)
+          if [ -z "$ANON_KEY" ]; then
+            echo "::error::could not read DEFAULT_ANON from src/lib/backend.ts"
+            exit 1
+          fi
+
+          fail=0
+
+          # expect <label> <method> <url> <want-status> <want-substring> [body]
+          expect() {
+            local label="$1" method="$2" url="$3" want="$4" needle="$5" data="${6:-}"
+            local body code
+            body=$(mktemp)
+            if [ -n "$data" ]; then
+              code=$(curl -sS -o "$body" -w '%{http_code}' -X "$method" "$url" \
+                -H "apikey: $ANON_KEY" -H 'Content-Type: application/json' \
+                --data-binary "$data" || echo 000)
+            else
+              code=$(curl -sS -o "$body" -w '%{http_code}' -X "$method" "$url" \
+                -H "apikey: $ANON_KEY" || echo 000)
+            fi
+            if [ "$code" != "$want" ] || ! grep -q "$needle" "$body"; then
+              echo "::error::$label: expected $want containing '$needle', got $code: $(head -c 300 "$body")"
+              fail=1
+            else
+              echo "ok   $label ($code)"
+            fi
+            rm -f "$body"
+          }
+
+          # Every call below must be refused, and refused in JSON. A refusal is
+          # the proof we want: an unbuilt or throwing bundle cannot return its
+          # own error message — it returns a 500, a BOOT_ERROR or an HTML page.
+          expect 'pay refuses an anonymous status read'        GET  "$BASE/pay?op=status&reference=smoke" 401 'not authenticated'
+          expect 'admin-ops refuses an anonymous caller'       GET  "$BASE/admin-ops?op=health"           401 'not signed in'
+          # The session recorder refuses an anonymous caller with an empty body,
+          # which proves both that the module booted and that it gates on the JWT
+          # before it reads anything the caller sent.
+          expect 'session refuses an anonymous caller'         POST "$BASE/session"                     401 'not authenticated' '{}'
+          # The address of a player is never readable without an admin JWT -- and
+          # with none at all it must not even get as far as the lookup.
+          expect 'admin-ops refuses anonymous session reads'   GET  "$BASE/admin-ops?op=sessions&id=x"   401 'not signed in'
+          expect 'feed-sports refuses an anonymous caller'     GET  "$BASE/feed-sports"                   401 'not authorised'
+          expect 'feed-sync refuses an anonymous caller'       GET  "$BASE/feed-sync"                     401 'not authorised'
+          expect 'feed-settle refuses an anonymous caller'     GET  "$BASE/feed-settle"                   401 'not authorised'
+          # The four support agents are player-facing text support. Unconfigured
+          # is a 503 with its own code, which still proves the module booted.
+          expect 'support refuses an anonymous caller'         GET  "$BASE/support?op=agents"             401 'not signed in'
+          # The phone line is guarded by Twilio's signature, not a JWT -- but it
+          # fails closed BEFORE that: with no Twilio credentials configured it
+          # refuses every call outright. Both are refusals and both prove the
+          # module booted, so either is a pass. Asserting only the 401 was wrong
+          # the first time and failed a healthy deploy.
+          voice_code=$(curl -sS -o /tmp/voice.json -w '%{http_code}' -X POST \
+            "$BASE/support-voice?op=answer" \
+            -H "apikey: $ANON_KEY" -H 'Content-Type: application/x-www-form-urlencoded' \
+            --data-binary 'CallSid=CA_test&From=%2B256700000000&To=%2B256800000000' || echo 000)
+          if [ "$voice_code" = "401" ] && grep -q 'invalid signature' /tmp/voice.json; then
+            echo "ok   support-voice rejects an unsigned call (401, configured)"
+          elif [ "$voice_code" = "503" ] && grep -q 'VOICE_NOT_CONFIGURED' /tmp/voice.json; then
+            echo "ok   support-voice refuses every call while unconfigured (503)"
+          else
+            echo "::error::support-voice did not refuse cleanly: HTTP $voice_code $(head -c 300 /tmp/voice.json)"
+            fail=1
+          fi
+          # These two verify the HMAC before parsing, so the payload is irrelevant.
+          expect 'zengapay webhook rejects an unsigned call'   POST "$BASE/webhooks-zengapay"             401 'invalid signature' '{}'
+          expect 'store webhook rejects an unsigned call'      POST "$BASE/webhooks-zengapay-store"       401 'invalid signature' '{}'
+
+          exit $fail

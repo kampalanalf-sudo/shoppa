@@ -1,19 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../lib/store'
 import { sfx } from '../lib/sound'
-import { diceRoll } from '../lib/fair'
 import { money, mult } from '../lib/format'
 import { gameById } from '../lib/games'
 import { BetAmount, BetButton, useHotkey } from '../components/BetControls'
 import { GameShell, PayoutRow } from '../components/GameShell'
 import { Dice3D } from '../components/Dice3D'
+import { MIN_BET } from '../lib/currency'
 
+/** The arcade's published base return, matching `_shared/games.ts`. */
 const EDGE = 0.99
 
 export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('dice')!
-  const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
-  const [bet, setBet] = useState(1000)
+  const { playGame, balance, sound, toast, flashLoss, payoutRate } = useStore()
+  const [bet, setBet] = useState(MIN_BET)
   const [target, setTarget] = useState(50)
   const [mode, setMode] = useState<'over' | 'under'>('under')
   const [roll, setRoll] = useState<number | null>(null)
@@ -23,7 +24,18 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
   const spinRaf = useRef<number>(0)
 
   const winChance = mode === 'under' ? target : 100 - target
-  const multVal = Math.round((EDGE / (winChance / 100)) * 100) / 100
+  /*
+   * The multiplier the board PROMISES has to be the multiplier the server pays.
+   *
+   * The server re-derives dice from the target, and while a float is outstanding
+   * it applies the session rate — so a 50% coin pays 1.30x, not 1.98x. Quoting
+   * the base table here would put a figure on the button that the payout then
+   * fails to match, so the same arithmetic is done on this side from the rate the
+   * server reports.
+   */
+  const multVal = payoutRate < 1
+    ? Math.floor((100 / winChance) * payoutRate * 100) / 100
+    : Math.round((EDGE / (winChance / 100)) * 100) / 100
   const potential = Math.round(bet * multVal * 100) / 100
 
   const play = useCallback(async () => {
@@ -33,12 +45,20 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
       toast({ kind: 'error', title: 'Insufficient balance', body: 'Lower your bet to continue.' })
       return
     }
-    if (!placeBet('dice', bet)) return
     sfx.place()
     setRolling(true)
-    const [u] = await nextFloats(1)
-    const result = diceRoll(u)
-    const won = mode === 'under' ? result < target : result > target
+    // The server decides. We send the bet, never a multiplier, and animate the
+    // roll it sends back -- so the number on screen and the number paid are the
+    // same one.
+    let settled: Awaited<ReturnType<typeof playGame>>
+    try {
+      settled = await playGame('dice', bet, { mode, target })
+    } catch (e) {
+      setRolling(false)
+      toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
+      return
+    }
+    const result = Number(settled.payload.roll ?? 0)
 
     // animated rolling
     const t0 = performance.now()
@@ -51,19 +71,13 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
       } else {
         setRoll(result)
         setRolling(false)
-        const payout = settleBet({
-          game: 'dice',
-          wager: bet,
-          multiplier: won ? multVal : 0,
-          detail: `Rolled ${result.toFixed(2)} · ${mode} ${target}`,
-        })
-        setLast({ v: result, won, payout, mult: won ? multVal : 0 })
-        setHistory((h) => [{ v: result, win: won }, ...h].slice(0, 16))
-        if (won) { if (sound) sfx.win() } else { flashLoss(); if (sound) sfx.lose() }
+        setLast({ v: result, won: settled.won, payout: settled.payout, mult: settled.multiplier })
+        setHistory((h) => [{ v: result, win: settled.won }, ...h].slice(0, 16))
+        if (settled.won) { if (sound) sfx.win() } else { flashLoss(); if (sound) sfx.lose() }
       }
     }
     spinRaf.current = requestAnimationFrame(anim)
-  }, [rolling, bet, balance, placeBet, nextFloats, mode, target, multVal, settleBet, sound, toast])
+  }, [rolling, bet, balance, playGame, mode, target, sound, toast])
 
   useEffect(() => () => cancelAnimationFrame(spinRaf.current), [])
   useHotkey(() => void play())
@@ -117,7 +131,7 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
             </div>
           </div>
 
-          <BetButton onClick={() => void play()} loading={rolling} sub={`Pays ${mult(multVal)} · ${money(potential)} PX`}>
+          <BetButton onClick={() => void play()} loading={rolling} sub={`Pays ${mult(multVal)} · $UGX {money(potential)}`}>
             {rolling ? 'Rolling…' : 'Roll dice'}
           </BetButton>
 
@@ -149,7 +163,7 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
               onChange={(e) => setBet(Math.max(0, parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0))}
               className="num w-16 bg-transparent py-2 text-center text-[13px] font-bold text-white focus:outline-none"
             />
-            <span className="text-[9px] font-bold text-neon-lime/70">PX</span>
+            <span className="text-[9px] font-bold text-neon-lime/70">UGX</span>
           </div>
           <button type="button" onClick={() => void play()} disabled={rolling} className="btn-primary h-10 flex-1 !text-[13px]">
             {rolling ? 'Rolling…' : `Roll ${mode} ${mult(multVal)}`}
@@ -179,7 +193,7 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
             {bar.toFixed(2)}
           </p>
           <p className="mt-1 text-[10.5px] font-bold uppercase tracking-[.2em] text-slate-500">
-            {rolling ? 'Rolling…' : last ? (last.won ? `Won ${money(last.payout)} PX` : 'No win this time') : `Roll ${mode} ${target.toFixed(2)}`}
+            {rolling ? 'Rolling…' : last ? (last.won ? `Won $UGX {money(last.payout)}` : 'No win this time') : `Roll ${mode} ${target.toFixed(2)}`}
           </p>
         </div>
 

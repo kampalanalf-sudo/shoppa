@@ -6,7 +6,7 @@
 // number can ruin the house: odds are the payout multiplier. These checks pin
 // the two invariants that make that impossible, plus the money arithmetic that
 // everything else depends on.
-import { readFileSync } from 'node:fs'
+import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { fmtOdds, potentialPayout, startsIn, stakeUgx, SPORT_LABEL } from '../src/lib/sportsbook'
 
@@ -27,10 +27,12 @@ const authSrc = read('src/lib/auth.tsx')
 ok('odds are stored as integers x100, never a float',
   sql.includes('odds_x100   integer not null') && sql.includes('odds_x100 >= 101'))
 ok('odds format only at the edge', fmtOdds(250) === '2.50' && fmtOdds(101) === '1.01')
-ok('a payout is floored to whole PX', potentialPayout(1000, 250) === 2500)
-ok('a payout never produces a fraction of a PX',
+ok('a payout is floored to whole shillings', potentialPayout(1000, 250) === 2500)
+ok('a payout never produces a fraction of a shilling',
   potentialPayout(999, 333) === Math.floor((999 * 333) / 100))
-ok('stake converts to UGX at the 100:1 peg', stakeUgx(100000) === 1000)
+// No peg: a stake of 100,000 shillings is 100,000 shillings. The function is
+// kept so the boundary still reads as money rather than a token.
+ok('a stake is already in shillings', stakeUgx(100000) === 100000 && stakeUgx(1000) === 1000)
 
 // --------------------------------------------------- the client cannot cheat ====
 // The whole design rests on these two. If either regresses, a player can name
@@ -102,6 +104,56 @@ ok('every sport has a label',
   (['football', 'basketball', 'athletics', 'motorsport', 'cricket', 'rugby', 'tennis'] as const)
     .every((s) => Boolean(SPORT_LABEL[s])))
 
+// --------------------------------------------------- admin operations =====
+const adminSql = read('supabase/migrations/0010_admin_operations.sql')
+// The admin money operations live in the admin-ops Edge Function. The legacy
+// api/admin/ops.ts copy was deleted with the ZENGAPAY migration — it duplicated
+// the same logic and could drift from the code that actually runs.
+const adminApi = read('supabase/functions/admin-ops/index.ts')
+const adminConsole = read('src/pages/AdminConsole.tsx')
+
+// The mistake this suite exists to prevent, made once already: revoking from
+// anon and authenticated but not from PUBLIC leaves the default EXECUTE grant
+// in place, so `authenticated` still inherits it and a player can call the
+// money functions over PostgREST.
+ok('admin money functions are revoked from public, not just from anon',
+  /revoke all on function admin_adjust_balance[^;]+from public/i.test(adminSql))
+ok('every admin function is revoked from public',
+  (adminSql.match(/revoke all on function admin_\w+[^;]+from public/gi) || []).length >= 4)
+ok('the admin flag is re-checked inside the database',
+  adminSql.includes('if not is_admin(p_admin) then'))
+ok('is_admin treats a suspended admin as not an admin',
+  adminSql.includes('is_admin and not suspended'))
+ok('an adjustment must be non-zero and explained',
+  adminSql.includes("p_delta = 0") && adminSql.includes('length(trim(p_reason)) < 8'))
+ok('an adjustment cannot push a wallet below zero',
+  adminSql.includes("raise exception 'that would take the balance below zero'"))
+ok('the last admin cannot be removed',
+  adminSql.includes('this is the last admin account'))
+ok('an admin cannot suspend themselves',
+  adminSql.includes('you cannot suspend your own account'))
+ok('settling reuses settle_cashout rather than reimplementing the refund',
+  adminSql.includes('perform settle_cashout(p_cashout, p_status, p_reason)'))
+ok('rejecting a payout refunds the held PX', read('supabase/migrations/0001_core.sql').includes('cashout_refund'))
+
+// API layer
+ok('a payout is only marked paid after the provider accepts it',
+  adminApi.indexOf('disbursePayment') < adminApi.indexOf("p_status: body.status"))
+ok('a provider failure does not mark the payout paid',
+  adminApi.includes('Nothing was marked paid'))
+ok('only mobile money can be paid from the console',
+  adminApi.includes("only mobile-money payouts can be sent from here"))
+ok('an already-settled payout cannot be settled twice',
+  adminApi.includes('already ${co.status}'))
+ok('adjustments are capped so a stray zero cannot drain a wallet',
+  adminApi.includes('5_000_000'))
+
+// Console UI
+ok('paying a payout requires confirmation naming the amount',
+  adminConsole.includes('cannot be undone from here'))
+ok('the audit tab states it is written by the database',
+  adminConsole.includes('Written by the database, not by this page'))
+
 // ------------------------------------------------------- empty states ======
 // A failed query, a feed that never ran, and a slate where every match has
 // kicked off all used to render "No matches on the board yet". Three different
@@ -116,6 +168,32 @@ ok('an empty board is diagnosed rather than guessed',
   lib.includes('diagnoseEmpty') && lib.includes('upcoming: future.count'))
 ok('the diagnostic cannot mask the board itself',
   /catch \{\s*\/\/ Diagnostics must never mask[\s\S]{0,120}return null/.test(lib))
+
+// --------------------------------------------------------- fixture art =====
+const artLib = read('src/lib/fixtureArt.ts')
+
+// The first version keyed art to four fixtures and looked perfect for exactly
+// one day: the board refills with new matches and the images stop applying,
+// which on screen is indistinguishable from never having existed.
+ok('art is keyed on clubs, not on a fixture that expires overnight',
+  artLib.includes('TEAM_ART') && !/ART\['manchester-city fulham'\]/.test(artLib))
+ok('there is a sport-level fallback so no card is blank',
+  artLib.includes('SPORT_ART') && artLib.includes('fallback-football'))
+ok('the resolver tries home, then away, then the sport',
+  /TEAM_ART\[norm\(home\)\]\s*\?\?\s*TEAM_ART\[norm\(away\)\]\s*\?\?\s*SPORT_ART/.test(artLib))
+ok('the gradient no longer washes out the top of the image',
+  page.includes('inset-x-0 bottom-0 h-2/5') && !page.includes('via-[#0a0f1c]/25 to-transparent'))
+ok('the first cards load their banner without waiting for a scroll',
+  page.includes("eager={i < 2}") && page.includes("loading={eager ? 'eager' : 'lazy'}"))
+
+// Every club banner the map promises must exist on disk, or the card silently
+// falls back and the art looks like it never shipped.
+{
+  const referenced = Array.from(artLib.matchAll(/asset\('(\/art\/[^']+)'\)/g)).map((m) => m[1])
+  const missing = referenced.filter((rel) => !existsSync(resolve('public', rel.replace(/^\//, ''))))
+  ok('every referenced image exists in public/', missing.length === 0)
+  ok('the team set covers the clubs that actually appear most', referenced.length >= 8)
+}
 
 // ------------------------------------------------------ postgrest embeds ====
 // Two foreign keys join sports_markets and sports_selections: the owning
@@ -136,8 +214,10 @@ const pxCode = px.replace(/^\s*--.*$/gm, '')
 // The peg is quoted in three places. If any two disagree the UI promises a
 // withdrawal the server will refuse.
 ok('the database converts at 100 PX per UGX', pxCode.includes('p_amount_px / 100.0'))
-ok('the client peg is 100', read('src/lib/proxicash.ts').includes('PX_PER_UGX = 100'))
-ok('the API peg is 100', read('api/_lib/dgateway.ts').includes('PX_PER_UGX = 100'))
+ok('the client has no peg at all', !read('src/lib/proxicash.ts').includes('PX_PER_UGX'))
+// There is one currency and nothing to convert. What must hold is that no
+// second unit survives anywhere a player could be shown a number.
+ok('the only currency constant is UGX', /CURRENCY = 'UGX'/.test(read('src/lib/currency.ts')))
 ok('no surface still advertises the old 10:1 peg',
   !/(^|[^0-9])10 PX = 1 UGX/.test(read('src/components/Chrome.tsx') + read('src/pages/Sportsbook.tsx')))
 
