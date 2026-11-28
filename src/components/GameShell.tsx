@@ -19,7 +19,7 @@ type Props = {
 }
 
 export function GameShell({ game, onBack, children, aside, footer, onFair, mobileAction }: Props) {
-  const { stats, setHistoryOpen, mode } = useStore()
+  const { stats, setHistoryOpen, mode, payoutRate } = useStore()
   return (
     <div className="mx-auto w-full max-w-[1380px] px-3 pb-24 pt-4 sm:px-5 md:pb-10">
       {/* header row */}
@@ -42,6 +42,28 @@ export function GameShell({ game, onBack, children, aside, footer, onFair, mobil
           </button>
         </div>
       </div>
+
+      {/*
+       * THE FLOAT RATE, SAID OUT LOUD, ON EVERY GAME.
+       *
+       * While a float is outstanding a winning multiplier pays a fraction of face
+       * value. The odds chips beside this still show the table's own figures, so
+       * without this strip a player would read 99% and be paid 65% with nothing
+       * on screen to explain it. It sits above the board rather than in a footer
+       * because it changes what every number on the page is worth.
+       */}
+      {mode === 'real' && payoutRate < 1 && (
+        <div className="mb-3 flex items-start gap-2 rounded-xl border border-amber-400/30 bg-amber-400/[0.07] px-3 py-2">
+          <IconInfo size={14} className="mt-0.5 shrink-0 text-amber-300" />
+          <p className="text-[11.5px] leading-relaxed text-amber-100/90">
+            <b className="font-bold text-amber-200">Float session — {Math.round(payoutRate * 100)}% RTP.</b>{' '}
+            You have an outstanding float, so winnings pay {Math.round(payoutRate * 100)}% of the
+            multiplier you see until it is repaid ({Math.round(payoutRate * 100)}% of a 2.00× win is{' '}
+            {(2 * payoutRate).toFixed(2)}×). Stakes, losses and the float's own fees are unchanged.
+            Repay on the <b className="font-semibold text-amber-200">Float</b> page to restore 99%.
+          </p>
+        </div>
+      )}
 
       <div className="grid gap-3 lg:grid-cols-[1fr_340px]">
         {/* main play area */}

@@ -11,7 +11,7 @@ import { MIN_BET } from '../lib/currency'
 
 export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('limbo')!
-  const { playGame, balance, sound, toast, flashLoss } = useStore()
+  const { playGame, balance, sound, toast, flashLoss, payoutRate } = useStore()
   const [bet, setBet] = useState(MIN_BET)
   const [target, setTarget] = useState(2)
   const [running, setRunning] = useState(false)
@@ -20,7 +20,16 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
   const [history, setHistory] = useState<number[]>([3.42, 1.04, 22.1, 1.55, 6.02, 1.12, 1.88])
   const raf = useRef(0)
 
-  const potential = Math.round(bet * target * 100) / 100
+  /*
+   * What a cleared target PAYS.
+   *
+   * The server caps the winning multiplier at the session rate while a float is
+   * outstanding, so a 3.00x target pays 1.95x. The target the player chooses is
+   * still the target (and still decides the odds of winning); only the figure on
+   * the button changes, so it cannot promise a return that will not be made.
+   */
+  const paidTarget = payoutRate < 1 ? Math.min(target, Math.round(payoutRate * 100) / 100) : target
+  const potential = Math.round(bet * paidTarget * 100) / 100
   const winChance = 99 / target
 
   const play = useCallback(async () => {

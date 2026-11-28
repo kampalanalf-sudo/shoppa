@@ -8,11 +8,12 @@ import { GameShell, PayoutRow } from '../components/GameShell'
 import { Dice3D } from '../components/Dice3D'
 import { MIN_BET } from '../lib/currency'
 
+/** The arcade's published base return, matching `_shared/games.ts`. */
 const EDGE = 0.99
 
 export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('dice')!
-  const { playGame, balance, sound, toast, flashLoss } = useStore()
+  const { playGame, balance, sound, toast, flashLoss, payoutRate } = useStore()
   const [bet, setBet] = useState(MIN_BET)
   const [target, setTarget] = useState(50)
   const [mode, setMode] = useState<'over' | 'under'>('under')
@@ -23,7 +24,18 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
   const spinRaf = useRef<number>(0)
 
   const winChance = mode === 'under' ? target : 100 - target
-  const multVal = Math.round((EDGE / (winChance / 100)) * 100) / 100
+  /*
+   * The multiplier the board PROMISES has to be the multiplier the server pays.
+   *
+   * The server re-derives dice from the target, and while a float is outstanding
+   * it applies the session rate — so a 50% coin pays 1.30x, not 1.98x. Quoting
+   * the base table here would put a figure on the button that the payout then
+   * fails to match, so the same arithmetic is done on this side from the rate the
+   * server reports.
+   */
+  const multVal = payoutRate < 1
+    ? Math.floor((100 / winChance) * payoutRate * 100) / 100
+    : Math.round((EDGE / (winChance / 100)) * 100) / 100
   const potential = Math.round(bet * multVal * 100) / 100
 
   const play = useCallback(async () => {

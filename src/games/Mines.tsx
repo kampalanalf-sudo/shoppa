@@ -24,7 +24,7 @@ const multiplierFor = minesMultiplier
 
 export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('mines')!
-  const { balance, sound, toast, flashLoss, finishRound, syncBalance, mode, placeBet, settleBet, nextFloats } =
+  const { balance, sound, toast, flashLoss, finishRound, syncBalance, mode, placeBet, settleBet, nextFloats, payoutRate } =
     useStore()
   const [bet, setBet] = useState(MIN_BET)
   const [mines, setMines] = useState(3)
@@ -233,7 +233,7 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
 
           <div className="space-y-1.5">
             <PayoutRow label="Grid" value="5 × 5" />
-            <PayoutRow label="House edge" value="1.0%" />
+            <PayoutRow label="House edge" value={payoutRate < 1 ? `${((1 - 0.99 * payoutRate) * 100).toFixed(1)}%` : "1.0%"} />
             <PayoutRow label="Next multiplier" value={mult(nextMult)} highlight />
           </div>
           {picks > 0 && active && (

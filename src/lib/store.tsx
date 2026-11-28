@@ -10,6 +10,7 @@ import {
   FREE_PLAY_REFILL, FREE_PLAY_START, MAX_BET, MIN_BET, type PlayMode,
 } from './currency'
 import { useAuth } from './auth'
+import { supabase } from './supabase'
 
 /** Real wallet. Migrated from PX, so the key is bumped deliberately. */
 const KEY = 'floatbet.v2'
@@ -176,6 +177,13 @@ type SettleArgs = {
 }
 
 type Ctx = Persisted & {
+  /**
+   * Fraction of a winning multiplier the games pay right now: 1 normally, the
+   * float-session rate while a float is outstanding. Read from the server, so
+   * the screens and the payout cannot disagree.
+   */
+  payoutRate: number
+  refreshPayoutRate: () => Promise<void>
   hydrated: boolean
   walletOpen: boolean
   setWalletOpen: (v: boolean) => void
@@ -298,6 +306,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
    */
   const { wallet: serverWallet, session, refreshWallet } = useAuth()
   const [state, setState] = useState<Persisted>(() => defaults())
+  /*
+   * The float-session rate, read from the server.
+   *
+   * Every game quotes odds, and while a float is outstanding those odds are paid
+   * at a fraction of face value. A screen that kept quoting the flat table would
+   * promise a return the payout does not make, so the games read this and say
+   * what is in force. 1 = normal.
+   */
+  const [payoutRate, setPayoutRate] = useState<number>(1)
   const [hydrated, setHydrated] = useState(false)
   const [walletOpen, setWalletOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
@@ -603,6 +620,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
    * balance change is not returned by finishRound. Rather than let the screen
    * go stale, they ask for the authoritative figure.
    */
+  /**
+   * Re-read the float-session rate. Called when the wallet is refreshed (after a
+   * float, a repayment, a settle) so the banner and the quoted multipliers follow
+   * the debt without a reload.
+   */
+  const refreshPayoutRate = useCallback(async () => {
+    if (!supabase) return
+    try {
+      const { data, error } = await supabase.rpc('session_rate_state')
+      if (error || !data) return
+      const pct = Number((data as { rtp_pct?: number }).rtp_pct ?? 100)
+      setPayoutRate(Number.isFinite(pct) ? pct / 100 : 1)
+    } catch {
+      /* a missing rate is not worth an error on a game screen */
+    }
+  }, [])
+
+  useEffect(() => {
+    if (session?.user) void refreshPayoutRate()
+    else setPayoutRate(1)
+  }, [session?.user, refreshPayoutRate])
+
   const syncBalance = useCallback(() => {
     if (!session?.user) return
     void refreshWallet()
@@ -952,6 +991,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       updateClientSeed,
       toggleSound,
       toggleBalanceHidden,
+      payoutRate,
+      refreshPayoutRate,
       setUsername,
       resetAccount,
       winFlash,

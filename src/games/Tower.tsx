@@ -14,7 +14,7 @@ const LEVELS = TOWER_LEVELS
 
 export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('tower')!
-  const { balance, sound, toast, flashLoss, syncBalance, mode, placeBet, settleBet, nextFloats } = useStore()
+  const { balance, sound, toast, flashLoss, syncBalance, mode, placeBet, settleBet, nextFloats, payoutRate } = useStore()
   const [bet, setBet] = useState(MIN_BET)
   const [difficulty, setDifficulty] = useState<1 | 2 | 3>(1)
   const [active, setActive] = useState(false)
@@ -226,7 +226,7 @@ export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => vo
           <div className="space-y-1.5">
             <PayoutRow label="Floors" value={String(LEVELS)} />
             <PayoutRow label="Tiles per floor" value={String(cols)} />
-            <PayoutRow label="House edge" value="1.0%" />
+            <PayoutRow label="House edge" value={payoutRate < 1 ? `${((1 - 0.99 * payoutRate) * 100).toFixed(1)}%` : "1.0%"} />
           </div>
         </div>
       }
