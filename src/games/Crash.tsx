@@ -66,11 +66,24 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       // accordingly. The number on screen is a request, not a fact.
       finishRound('crash', open, bet, `Cashed out at ${mult(at)}`)
         .then((settled) => {
+          // The curve's real peak, revealed only now — after the decision was
+          // already made and the round was already closed.
+          const peak = Number(settled.payload.point ?? 0)
+          if (peak > 0) {
+            setCrashAt(peak)
+            setHistory((h) => [peak, ...h].slice(0, 14))
+          }
           setPayout(settled.payout)
           if (settled.won) {
             toast({ kind: 'win', title: `Cashed out ${mult(at)}`, body: `+UGX ${money(settled.payout)} paid.` })
           } else {
-            flashLoss()
+            setPhase('crashed')
+            if (sound) sfx.crash()
+            toast({
+              kind: 'error',
+              title: peak ? `It crashed at ${mult(peak)}` : 'Crashed',
+              body: 'Your cash-out came after the curve died, so nothing was paid.',
+            })
           }
         })
         .catch((e: Error) => toast({ kind: 'error', title: 'Payout failed', body: e.message }))
@@ -94,9 +107,19 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
       return
     }
-    // A visual ceiling only. The real point is drawn by the server at settle
-    // time, and this never leaves the browser.
-    target.current = 1e6
+    /*
+     * The curve climbs until the player acts.
+     *
+     * It deliberately has NO crash point up front. If the browser knew it, the
+     * decision to cash out would be free — and if the server told it in advance,
+     * a modified client would peek and always cash out one tick before.
+     *
+     * So the player commits blind, and the very first thing they do ends the
+     * round: cash out, and the server reveals what the curve was and pays only
+     * if they beat it. The number they were shown is the number they asked for,
+     * not the number they were given.
+     */
+    target.current = Infinity
     cashed.current = false
     setCrashAt(null)
     setCashedAt(null)
@@ -107,26 +130,16 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
     start.current = performance.now()
 
     const tick = () => {
+      if (cashed.current) return
       const t = (performance.now() - start.current) / 1000
       const cur = mAt(t)
-      if (cur >= target.current) {
-        setM(target.current)
-        setTrail((p) => [...p.slice(-400), { t: tAt(target.current), m: target.current }])
-        setCrashAt(target.current)
-        setPhase('crashed')
-        setHistory((h) => [target.current, ...h].slice(0, 14))
-        if (!cashed.current) {
-          // Never reached: the curve is not given a crash point locally. Kept
-          // so a future visual crash has one place to settle.
-          flashLoss()
-          if (sound) sfx.crash()
-        }
-        return
-      }
       setM(cur)
       setTrail((p) => [...p.slice(-400), { t, m: cur }])
-      if (autoRef.current.enabled && !cashed.current && cur >= autoRef.current.at && autoRef.current.at < target.current) {
+      // Auto cash-out is an action like any other: it ends the round and asks
+      // the server whether it was in time.
+      if (autoRef.current.enabled && cur >= autoRef.current.at) {
         settle(autoRef.current.at)
+        return
       }
       raf.current = requestAnimationFrame(tick)
     }
@@ -136,7 +149,7 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
   useEffect(() => () => cancelAnimationFrame(raf.current), [])
 
   const cashout = () => {
-    if (phase !== 'running') return
+    if (phase !== 'running' || cashed.current) return
     settle(m)
   }
 

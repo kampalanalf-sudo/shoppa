@@ -22,7 +22,9 @@ import { api } from './api'
 import type { GameId, Params } from '../../supabase/functions/_shared/games'
 
 /** Games the server settles. Kept in step with _shared/games.ts. */
-export const SERVER_SETTLED: readonly GameId[] = ['dice', 'limbo', 'wheel', 'plinko', 'roulette', 'crash']
+export const SERVER_SETTLED: readonly GameId[] = [
+  'dice', 'limbo', 'wheel', 'plinko', 'roulette', 'crash', 'mines', 'tower',
+]
 
 export const isServerSettled = (game: GameId) => SERVER_SETTLED.includes(game)
 
@@ -61,4 +63,54 @@ export function startRound(game: GameId, wager: number, params: Params = {}): Pr
 /** Settle the open round. The server decides the multiplier; we only render it. */
 export function settleRound(round: string): Promise<Settled> {
   return api<Settled>('/api/play', { method: 'POST', params: { op: 'settle' }, body: { round } })
+}
+
+// ------------------------------------------------------------- board games ----
+
+export type BoardStart = Started & {
+  mines?: number
+  difficulty?: number
+  /** Mine tiles (25) or tower floors (8). Counts only — never the layout. */
+  grid?: number
+  cols?: number
+}
+
+/** Open a Mines or Tower round. The layout stays on the server. */
+export function startBoardRound(
+  game: 'mines' | 'tower',
+  wager: number,
+  params: { mines?: number; difficulty?: number },
+): Promise<BoardStart> {
+  return api<BoardStart>('/api/play', { method: 'POST', params: { op: 'start' }, body: { game, wager, params } })
+}
+
+export type Reveal = {
+  game: GameId
+  busted: boolean
+  done: boolean
+  /** Mines: the tiles revealed so far. Tower: the floor reached. */
+  picks?: number[]
+  level?: number
+  mines?: number
+  multiplier?: number
+  next_multiplier?: number
+  payout?: number
+  balance?: number
+  /** Revealed only once the round is closed. */
+  mines_at?: number[]
+  safe_at?: number[]
+}
+
+/**
+ * Step on one cell, or cash out.
+ *
+ * The board never leaves the server, so this is the only way to learn a cell.
+ * The answer to "was that a mine" comes back with the round already settled.
+ */
+export function revealCell(round: string, cell: number, cashout = false): Promise<Reveal> {
+  return api<Reveal>('/api/play', {
+    method: 'POST',
+    params: { op: 'reveal' },
+    body: { round, cell, cashout },
+  })
 }

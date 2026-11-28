@@ -212,6 +212,8 @@ type Ctx = Persisted & {
    *
    * Free play must not use this: it has no server row.
    */
+  /** Re-read the wallet after a server-side settle this tab did not route. */
+  syncBalance: () => void
   /** Open a round without settling it (Crash needs to defer the outcome). */
   beginRound: (game: GameId, wager: number, params?: Record<string, number | string>) => Promise<{
     round: string
@@ -288,7 +290,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
    * Free play is untouched. It is a separate object with no server row, which is
    * the whole point of it.
    */
-  const { wallet: serverWallet, session } = useAuth()
+  const { wallet: serverWallet, session, refreshWallet } = useAuth()
   const [state, setState] = useState<Persisted>(() => defaults())
   const [hydrated, setHydrated] = useState(false)
   const [walletOpen, setWalletOpen] = useState(false)
@@ -582,6 +584,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     },
     [],
   )
+
+  /**
+   * Re-read the wallet after the server moved it.
+   *
+   * Board games settle through a different RPC than `playRound`, so their
+   * balance change is not returned by finishRound. Rather than let the screen
+   * go stale, they ask for the authoritative figure.
+   */
+  const syncBalance = useCallback(() => {
+    if (!session?.user) return
+    void refreshWallet()
+  }, [session?.user, refreshWallet])
 
   /** One server-settled round, for games that settle the instant they resolve. */
   const playRound = useCallback(
@@ -905,6 +919,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       playRound,
       beginRound,
       finishRound,
+      syncBalance,
       playGame,
       settleBet,
       refundBet,
