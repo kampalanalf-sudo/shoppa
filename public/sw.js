@@ -28,7 +28,11 @@
 // with a cached shell stayed on its old build indefinitely.
 // v4 = art stops being cache-first. See the note on isImmutable below: it is
 // the reason a repainted character kept showing the old portrait.
-const VERSION = 'v4'
+// v5 = the referral screen and the `#join` route. Not because a shell file
+// changed (it did not — the hashed bundle is content-addressed) but because the
+// shell is what routes a shared invite link, and a device holding the v4 shell
+// would open `#join?code=…` into an app that has no such route.
+const VERSION = 'v5'
 const SHELL_CACHE = `floatbet-shell-${VERSION}`
 const ASSET_CACHE = `floatbet-assets-${VERSION}`
 
