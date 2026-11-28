@@ -88,7 +88,20 @@ export function BonniClyve({ onBack, onFair }: { onBack: () => void; onFair: () 
       let next: BonniGrid
       let serverMult: number | null = null
       if (!free && mode === 'real') {
-        const settled = await playGame('bonni', stake, {})
+        /*
+         * Same trap as the engine slots: a throw after `setSpinning(true)` and
+         * before the animation callback leaves the button dead until a reload.
+         * The stake is not taken unless the server opened the round, so the
+         * honest answer is to put the button back and say why.
+         */
+        let settled: Awaited<ReturnType<typeof playGame>>
+        try {
+          settled = await playGame('bonni', stake, {})
+        } catch (e) {
+          setSpinning(false)
+          toast({ kind: 'error', title: 'Spin refused', body: (e as Error).message })
+          return
+        }
         const rows = JSON.parse(String(settled.payload.grid ?? '[]')) as string[][]
         if (rows.length !== REELS || rows.some((reel) => reel.length !== ROWS)) {
           toast({ kind: 'error', title: 'Spin refused', body: 'The server returned an unexpected reel shape.' })

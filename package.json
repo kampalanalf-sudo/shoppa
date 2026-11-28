@@ -45,7 +45,8 @@
     "test:games": "vite build --config smoke/vite.games.config.ts && node smoke/dist-games/games.js",
     "test:slotvalue": "node scripts/gen-slot-configs.mjs && npm run edge:build && node scripts/slot-value-check.mjs",
     "test:float": "vite build --config smoke/vite.float.config.ts && node smoke/dist-float/float.js",
-    "test:referral": "vite build --config smoke/vite.referral.config.ts && node smoke/dist-referral/referral.js"
+    "test:referral": "vite build --config smoke/vite.referral.config.ts && node smoke/dist-referral/referral.js",
+    "test:spins": "vite build --config smoke/vite.spins.config.ts && node smoke/dist-spins/spins.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",

@@ -96,6 +96,12 @@ jobs:
       - name: Verify the deposit and Float rules
         run: npm run test:float
 
+      # Spins. Five ways a game stops working: a button left disabled by a
+      # refused round, a lost round locking the account out of every bet, and a
+      # wheel that pays one slice and stops on another.
+      - name: Verify the spin and stuck-round rules
+        run: npm run test:spins
+
       # Referrals. The promise is a share of PROFIT on a referred player's first
       # five deposits -- a shape that is easy to get subtly wrong in a way that
       # either pays twice or pays on turnover. Checked against the SQL.

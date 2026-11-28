@@ -77,6 +77,74 @@ end $$;
 create unique index if not exists rounds_open_one_per_user
   on rounds (user_id) where status = 'open';
 
+-- ------------------------------------------------------- abandon a stale round --
+
+/**
+ * Close a round the player walked away from, and give the stake back.
+ *
+ * WHY THIS EXISTS
+ *
+ * `start_round` refuses a second open round ("finish your last round first"),
+ * and the only thing that ever closes an open round is a request from the
+ * browser that opened it. So the player who closes the tab mid-spin, loses
+ * signal, refreshes during the animation, or whose settle request fails on the
+ * way out is left with an open round and a stake already debited — and every
+ * later spin is refused with a sentence that blames them for a round they cannot
+ * see or reach. The game looks broken and the money looks gone.
+ *
+ * The rule it protects is real (one open round at a time, or a player could open
+ * twenty against one balance and settle the winners), so the rule stays. What
+ * changes is that a round nobody is still playing stops holding the account
+ * hostage: `start_round` closes abandoned rounds older than the window below and
+ * returns the stake, in the same call, before deciding whether to open a new one.
+ *
+ * WHY A TIME WINDOW IS SAFE
+ *
+ * A settled round cannot be double-paid: `settle_round_server` refuses a round
+ * that is not `open`, so the worst a window can do is cancel a round that would
+ * have been settled — and the board games hold a round open for as long as the
+ * player is deciding. Hence 30 minutes: far longer than any spin, Mine board or
+ * Tower climb, and far shorter than a night.
+ *
+ * The refund is the player's own money, so it is not a payout: no multiplier is
+ * derived, the ledger row says `adjustment`, and the stake returns exactly as it
+ * left.
+ */
+create or replace function public.abandon_stale_rounds(p_user uuid, p_older_than interval default '30 minutes')
+returns int
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_round  rounds;
+  v_n      int := 0;
+  v_after  bigint;
+begin
+  for v_round in
+    select * from rounds
+     where user_id = p_user
+       and status = 'open'
+       and created_at < now() - p_older_than
+     for update
+  loop
+    select balance_px into v_after from wallets where user_id = p_user for update;
+    v_after := coalesce(v_after, 0) + v_round.wager_px;
+    update wallets set balance_px = v_after where user_id = p_user;
+
+    update rounds set status = 'cancelled', settled_at = now() where id = v_round.id;
+
+    insert into ledger (user_id, kind, delta_px, balance_after, ref, meta)
+    values (p_user, 'adjustment', v_round.wager_px, v_after, v_round.game,
+            jsonb_build_object('game', v_round.game, 'round', v_round.id,
+                               'reason', 'round abandoned — stake returned'));
+
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end;
+$$;
+
 -- --------------------------------------------------------- start a live round --
 
 create or replace function public.start_round(
@@ -116,6 +184,11 @@ begin
   if exists (select 1 from profiles where id = v_uid and suspended) then
     raise exception 'account suspended' using errcode = '42501';
   end if;
+
+  -- A round nobody is still playing must not lock the account out of every
+  -- future spin. See abandon_stale_rounds above: the stake goes back, and only
+  -- then does the one-open-round rule below apply.
+  perform public.abandon_stale_rounds(v_uid);
 
   -- One open round at a time. Otherwise a player could open twenty rounds
   -- against one balance and settle the winning ones.
@@ -284,3 +357,8 @@ grant execute on function public.settle_round_server(bigint, numeric, double pre
 
 revoke all on function public.cancel_round(bigint) from public, anon, authenticated;
 grant execute on function public.cancel_round(bigint) to service_role;
+
+-- Internal: `start_round` calls it. A player must not be able to reach it
+-- directly with an arbitrary user id, and there is nothing a browser needs it for.
+revoke all on function public.abandon_stale_rounds(uuid, interval) from public, anon, authenticated;
+grant execute on function public.abandon_stale_rounds(uuid, interval) to service_role;

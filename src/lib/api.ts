@@ -58,6 +58,22 @@ type Opts = {
  * server explains a failure, and a plain Error only when the network itself
  * failed.
  */
+/**
+ * Close a round this player left open, and say whether it worked.
+ *
+ * Best effort by design: if it fails, the original refusal is still the honest
+ * answer and is what the player should see.
+ */
+async function clearStuckRound(client: NonNullable<typeof supabase>): Promise<boolean> {
+  try {
+    const { data, error } = await client.rpc('forfeit_open_round')
+    if (error) return false
+    return Boolean(data) && (data as { still_open?: boolean }).still_open === false
+  } catch {
+    return false
+  }
+}
+
 export async function api<T>(path: string, opts: Opts = {}): Promise<T> {
   if (!supabase) throw new Error('Backend is not configured.')
 
@@ -101,6 +117,30 @@ export async function api<T>(path: string, opts: Opts = {}): Promise<T> {
     // drop it so the app shows the sign-in screen instead of a stale shell.
     await supabase.auth.signOut().catch(() => undefined)
     throw new AuthExpiredError()
+  }
+
+  /*
+   * THE ONE REFUSAL WORTH RETRYING: a round the player cannot reach.
+   *
+   * `start_round` refuses a second open round ("finish your last round first").
+   * The usual cause is not cheating, it is a spin that was interrupted — a
+   * refresh, a closed tab, a dropped request on the way to settle — which leaves
+   * an open round and a debited stake behind, and from then on EVERY bet in every
+   * game is refused with a sentence about a round the player cannot see. The
+   * game looks broken.
+   *
+   * So when that exact refusal comes back, close the caller's own stuck round
+   * (`forfeit_open_round` refunds the stake), and retry the bet once. One retry,
+   * only for this message, and only when the retry is a round START — never a
+   * settle, which could pay a bet twice.
+   */
+  if (!res.ok && /finish your last round first/i.test(body?.error || body?.message || '') && opts.body) {
+    const cleared = await clearStuckRound(supabase)
+    if (cleared) {
+      const fresh = await supabase.auth.getSession()
+      const again = fresh.data.session?.access_token
+      if (again) res = await send(again)
+    }
   }
 
   if (!res.ok) {

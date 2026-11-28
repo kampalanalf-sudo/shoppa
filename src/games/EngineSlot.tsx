@@ -75,7 +75,24 @@ export function EngineSlot({ config, id, onBack, onFair }: Props) {
     let out: ReturnType<typeof resolve>
     let serverMult: number | null = null
     if (!free && mode === 'real') {
-      const settled = await playGame(id, bet, {})
+      /*
+       * A refusal here used to leave the button on "Spinning…" for good.
+       *
+       * `setSpinning(true)` has already run and the only code that clears it is
+       * the animation callback further down — so any throw between the two (no
+       * session, the server declining the stake, an open round elsewhere, a
+       * dropped request) disabled the button and the game until a reload. The
+       * player saw a spin that never happened and could not try again. The other
+       * arcade games have always wrapped this step; these two did not.
+       */
+      let settled: Awaited<ReturnType<typeof playGame>>
+      try {
+        settled = await playGame(id, bet, {})
+      } catch (e) {
+        setSpinning(false)
+        toast({ kind: 'error', title: 'Spin refused', body: (e as Error).message })
+        return
+      }
       const rows = JSON.parse(String(settled.payload.grid ?? '[]')) as string[][]
       // A wrong-sized grid throws later, inside an animation callback, and
       // leaves the button on "Spinning…" for good. Check it here.
