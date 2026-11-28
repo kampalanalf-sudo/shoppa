@@ -96,6 +96,12 @@ jobs:
       - name: Verify the deposit and Float rules
         run: npm run test:float
 
+      # Float sessions. "Reduce the RTP to 65% for float sessions" is a claim
+      # about money, and the three plausible implementations give 64.35%, 99% and
+      # 65%. Measured per game, per outcome.
+      - name: Verify the float-session RTP
+        run: npm run test:floatrtp
+
       # Spins. Five ways a game stops working: a button left disabled by a
       # refused round, a lost round locking the account out of every bet, and a
       # wheel that pays one slice and stops on another.

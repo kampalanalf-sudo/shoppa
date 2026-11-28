@@ -35,7 +35,7 @@ const SEG = 360 / SLICES.length
 
 export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('wheel')!
-  const { playGame, balance, sound, toast, flashLoss } = useStore()
+  const { playGame, balance, sound, toast, flashLoss, payoutRate } = useStore()
   const [bet, setBet] = useState(MIN_BET)
   const [spinning, setSpinning] = useState(false)
   const [angle, setAngle] = useState(0)
@@ -131,7 +131,14 @@ export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => vo
           </div>
           <div className="space-y-1.5">
             <PayoutRow label="Slices" value={String(SLICES.length)} />
+            {/* The table's own return, and — while a float is outstanding — the
+                return actually in force. Both, because the slice a player is
+                looking at is labelled with its table multiplier and pays the
+                reduced one. */}
             <PayoutRow label="Exact RTP" value={`${(WHEEL_RTP * 100).toFixed(2)}%`} highlight />
+            {payoutRate < 1 && (
+              <PayoutRow label="Your session RTP" value={`${(WHEEL_RTP * payoutRate * 100).toFixed(2)}%`} />
+            )}
             <PayoutRow label="Losing slices" value={`${SLICES.filter((m) => m === 0).length} / ${SLICES.length}`} />
           </div>
         </div>

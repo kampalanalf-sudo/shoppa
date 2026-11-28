@@ -80,7 +80,7 @@ const H = 330
 
 export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('plinko')!
-  const { playGame, balance, sound, toast, flashLoss } = useStore()
+  const { playGame, balance, sound, toast, flashLoss, payoutRate } = useStore()
   const [risk, setRisk] = useState<Risk>('medium')
   const [rows, setRows] = useState(12)
   const [bet, setBet] = useState(MIN_BET)
@@ -230,6 +230,9 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
           )}
           <div className="space-y-1.5">
             <PayoutRow label="Live table RTP" value={`${(tableRtp(table) * 100).toFixed(2)}%`} highlight />
+            {payoutRate < 1 && (
+              <PayoutRow label="Your session RTP" value={`${(tableRtp(table) * payoutRate * 100).toFixed(2)}%`} />
+            )}
             <PayoutRow label="Buckets" value={`${table.length}`} />
           </div>
         </div>

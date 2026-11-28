@@ -88,6 +88,22 @@ async function svc<T>(path: string, init?: { method?: string; body?: unknown }):
 const rpc = <T,>(fn: string, args: Record<string, unknown>) =>
   svc<T>(`/rest/v1/rpc/${fn}`, { method: 'POST', body: args })
 
+/**
+ * The fraction of a winning multiplier this round pays.
+ *
+ * The board animates the multiplier it is handed, so if the rate lived only in
+ * the database the reels would celebrate a 2.00x that paid 1.30x. The round is
+ * stamped when it opens; this hands the same figure back. Null means no
+ * adjustment.
+ */
+async function rateOf(roundId: string): Promise<number | null> {
+  const rows = await svc<{ payout_rate: number | null }[]>(
+    `/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}&select=payout_rate`,
+  )
+  const rate = Number(rows[0]?.payout_rate ?? 1)
+  return Number.isFinite(rate) && rate > 0 && rate < 1 ? rate : null
+}
+
 /** Load a round the caller owns. Ownership is checked, not assumed. */
 async function loadRound(roundId: string, userId: string) {
   const rows = await svc<
@@ -195,6 +211,8 @@ async function start(req: Request, user: { id: string }): Promise<Response> {
       ...started,
       game,
       params: { mines, difficulty },
+      // the rate this board's multipliers will PAY at, so the ladder can say so
+      ...(await rateHint(started.round)),
       // Counts only. No layout, no positions.
       grid: game === 'mines' ? MINE_GRID : TOWER_LEVELS,
       cols: game === 'mines' ? 5 : towerCols(difficulty),
@@ -266,20 +284,28 @@ async function settle(req: Request, user: User): Promise<Response> {
       delivery: board.delivery === true,
     })
     try {
-      const settled = await rpc<{ payout: number; balance: number; multiplier: number }>(
+      const settled = await rpc<{ payout: number; balance: number; multiplier: number; rate?: number }>(
         'settle_round_server',
         { p_round: roundId, p_multiplier: spin.multiplier, p_u: fs[0] ?? 0, p_detail: spin.detail },
       )
+      const rate = Number(settled.rate ?? 1)
       return json({
         round: roundId,
         game,
+        // What was PAID, not what the paytable says: while a float is
+        // outstanding the two differ, and the board must animate the one the
+        // player was credited.
         multiplier: settled.multiplier,
         payout: settled.payout,
         balance: settled.balance,
         detail: spin.detail,
         // The reels, from the server. The board animates THIS grid; it did not
         // choose it.
-        payload: { ...spin.extra, grid: JSON.stringify(spin.grid) },
+        payload: {
+          ...spin.extra,
+          grid: JSON.stringify(spin.grid),
+          ...(rate < 1 ? { rate, table_multiplier: spin.multiplier } : {}),
+        },
       })
     } catch (e) {
       await rpc('cancel_round', { p_round: roundId }).catch(() => null)
@@ -300,20 +326,27 @@ async function settle(req: Request, user: User): Promise<Response> {
 
   // If settling throws, the stake must not stay stranded in an open round.
   try {
-    const settled = await rpc<{ payout: number; balance: number; multiplier: number }>('settle_round_server', {
+    const settled = await rpc<{ payout: number; balance: number; multiplier: number; rate?: number }>('settle_round_server', {
       p_round: roundId,
       p_multiplier: outcome.multiplier,
       p_u: outcome.u,
       p_detail: outcome.detail,
     })
+    const rate = Number(settled.rate ?? 1)
     return json({
       round: roundId,
       game,
+      // The paid multiplier. The database is the only place the float-session
+      // rate can be applied, so this is authoritative even for dice, whose
+      // outcome the server re-derives.
       multiplier: settled.multiplier,
       payout: settled.payout,
       balance: settled.balance,
       detail: outcome.detail,
-      payload: outcome.payload ?? {},
+      payload: {
+        ...(outcome.payload ?? {}),
+        ...(rate < 1 ? { rate, table_multiplier: outcome.multiplier } : {}),
+      },
     })
   } catch (e) {
     await rpc('cancel_round', { p_round: roundId }).catch(() => null)
@@ -357,7 +390,7 @@ async function reveal(req: Request, user: User): Promise<Response> {
       if (picks.length === 0) return json({ error: 'reveal at least one tile first' }, 400)
       const mult = minesMultiplier(mines, picks.length)
       const settled = await settleBoard(roundId, mult, `${mines} mines · ${picks.length} gems`)
-      return json({ ...settled, game, busted: false, mines, picks, done: true })
+      return json({ ...settled, game, busted: false, mines, picks, done: true, ...(await rateHint(roundId)) })
     }
 
     if (!Number.isInteger(stepping) || stepping < 0 || stepping >= MINE_GRID) {
@@ -395,7 +428,7 @@ async function reveal(req: Request, user: User): Promise<Response> {
     if (level === 0) return json({ error: 'climb at least one floor first' }, 400)
     const mult = towerLevelMultiplier(difficulty, level)
     const settled = await settleBoard(roundId, mult, `Climbed ${level} floors`)
-    return json({ ...settled, game, busted: false, level, done: true })
+    return json({ ...settled, game, busted: false, level, done: true, ...(await rateHint(roundId)) })
   }
 
   const row = Math.floor(stepping / cols)
@@ -415,7 +448,7 @@ async function reveal(req: Request, user: User): Promise<Response> {
     const mult = towerLevelMultiplier(difficulty, TOWER_LEVELS)
     const settled = await settleBoard(roundId, mult, `Cleared all ${TOWER_LEVELS} floors`)
     await saveBoard(roundId, { ...board, level: next })
-    return json({ ...settled, game, busted: false, level: next, done: true })
+    return json({ ...settled, game, busted: false, level: next, done: true, ...(await rateHint(roundId)) })
   }
 
   await saveBoard(roundId, { ...board, level: next })
@@ -424,6 +457,12 @@ async function reveal(req: Request, user: User): Promise<Response> {
     multiplier: towerLevelMultiplier(difficulty, next),
     next_multiplier: towerLevelMultiplier(difficulty, next + 1),
   })
+}
+
+/** `{ rate, table_multiplier? }` when a float session is in force, else `{}`. */
+async function rateHint(roundId: string | number): Promise<Record<string, number>> {
+  const rate = await rateOf(String(roundId))
+  return rate === null ? {} : { rate }
 }
 
 const settleBoard = (roundId: number, multiplier: number, detail: string) =>
