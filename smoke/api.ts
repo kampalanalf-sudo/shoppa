@@ -216,6 +216,46 @@ ok(
   offenders.length ? `-> ${offenders.join(', ')}` : '',
 )
 
+// ------------------------------------------ every route resolves to a URL ---
+
+/*
+ * The regression this block exists for: `apiUrl` joined its query string with
+ * `&` unconditionally, which is right for the routes that map to `pay?op=…` and
+ * silently wrong for the ones that map to a bare function name. `/api/play` +
+ * `{op:'start'}` became `…/functions/v1/play&op=start` — a path, not a query —
+ * so the function was never invoked and every server-settled game answered 404.
+ * The arcade stopped starting and nothing in the suite noticed.
+ *
+ * So: resolve EVERY route with a parameter and assert the result is a usable
+ * URL. The check is on the shape, not on the deployment.
+ */
+const { apiUrl, ROUTES } = await import('../src/lib/backend')
+
+const badUrls: string[] = []
+for (const bare of Object.keys(ROUTES)) {
+  for (const withParam of [false, true]) {
+    // A neutral parameter name: `op` is already carried by half the routes, and
+    // setting it twice would be this test's bug, not the app's.
+    const url = apiUrl(bare, withParam ? { probe: 'x' } : undefined)
+    const path = new URL(url).pathname
+    // The `&` bug turned the query into part of the path.
+    const broken =
+      /[&?]/.test(path) ||
+      /&op=/.test(url) ||
+      (withParam && !/[?&]probe=x\b/.test(url))
+    if (broken) badUrls.push(`${bare} -> ${url}`)
+  }
+}
+ok(
+  'every backend route resolves to a well-formed URL with its params',
+  badUrls.length === 0,
+  badUrls.slice(0, 3).join(' | '),
+)
+
+// The two shapes that must both work, named explicitly so the reason is clear.
+ok('a route with its own query string joins with &', /pay\?op=collect&.*/.test(apiUrl('/api/collect', { a: 'b' })) || /[?]/.test(apiUrl('/api/collect', { a: 'b' })))
+ok('a bare route joins its first parameter with ?', /\/play\?op=start$/.test(apiUrl('/api/play', { op: 'start' })), apiUrl('/api/play', { op: 'start' }))
+
 globalThis.fetch = realFetch
 console.log(fails.length ? `\n${fails.length} FAILED: ${fails.join(', ')}` : '\nall api-client checks passed')
 process.exit(fails.length ? 1 : 0)

@@ -48,7 +48,7 @@ export const SUPABASE_ANON_KEY = pick(env.VITE_SUPABASE_ANON_KEY, DEFAULT_ANON)
 export const SUPABASE_FUNCTIONS_URL = `${SUPABASE_URL.replace(/\/$/, '')}/functions/v1`
 
 /** Vercel route -> Supabase Edge Function. Anything unlisted throws. */
-const ROUTES: Record<string, string> = {
+export const ROUTES: Record<string, string> = {
   '/api/collect': 'pay?op=collect',
   '/api/disburse': 'pay?op=disburse',
   '/api/status': 'pay?op=status',
@@ -86,7 +86,19 @@ export function apiUrl(path: string, params?: Record<string, string>): string {
   const qs = new URLSearchParams(search ?? '')
   for (const [k, v] of Object.entries(params ?? {})) qs.set(k, v)
   const tail = qs.toString()
-  return `${SUPABASE_FUNCTIONS_URL}/${mapped}${tail ? `&${tail}` : ''}`
+  /*
+   * The join is `?` when the route carries no query string of its own, and `&`
+   * when it does.
+   *
+   * It used to be `&` unconditionally, which was correct for every route that
+   * mapped to `pay?op=collect` and silently wrong for the two that map to a bare
+   * function name: `/api/play` and `/api/feed/*`. `apiUrl('/api/play', {op:'start'})`
+   * produced `…/functions/v1/play&op=start` — not a query string, part of the
+   * PATH — so the function was never invoked, and every server-settled game
+   * answered 404. That is why the whole arcade stopped starting.
+   */
+  const sep = tail ? (mapped.includes('?') ? '&' : '?') : ''
+  return `${SUPABASE_FUNCTIONS_URL}/${mapped}${sep}${tail}`
 }
 
 /**
