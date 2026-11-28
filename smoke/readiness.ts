@@ -147,6 +147,12 @@ check('the checkout return URL uses the key the router reads',
   !/#topup-success\?session=CHECKOUT_SESSION_ID/.test(pay))
 check('the router parses both rails', /qs\.get\('session'\)/.test(read('src/App.tsx')))
 check('there is a signed-in endpoint to resolve a session', /op === 'session'/.test(pay))
+// APP_URL was never set on this project, so the fallback built return URLs from
+// the request host -- the Supabase function host -- and returned a paying player
+// to a 401 page. The default must be the site.
+check('checkout returns to the site even when APP_URL is unset',
+  /DEFAULT_APP_ORIGIN = 'https:\/\/floatbet\.space'/.test(pay) &&
+  /if \(!\/supabase/.test(pay))
 check('a session id is validated before it reaches the provider',
   /\^\[A-Za-z0-9_-\]\{8,128\}\$/.test(pay))
 check('the client can call it', /'\/api\/session': 'pay\?op=session'/.test(read('src/lib/backend.ts')))
