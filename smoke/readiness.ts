@@ -31,7 +31,7 @@ const envStore: Record<string, string> = {}
     delete: (k: string) => { delete envStore[k] },
   },
 }
-const { paymentReadiness, isIpNotPermitted, GatewayError } =
+const { paymentReadiness, isIpNotPermitted, extractIp, GatewayError } =
   await import('../supabase/functions/_shared/zengapay.ts')
 
 let fail = 0
@@ -207,6 +207,24 @@ check('the cashout page no longer asks for phone verification',
     'Connection refused from unauthorized IP: 81.202.241.36,  This IP is NOT ' +
     'unauthorized to access the /account endpoint on your account. If you believe ' +
     'this is in error, please contact support@zengapay.com'
+  // The live wording differs from the documented one: "unauthorized host" and
+  // "NOT PERMITTED", with the address in parentheses. Both must work, and the
+  // address must be read out correctly -- an earlier loose regex returned the
+  // "ed" from the word "refused" and would have told the operator to whitelist
+  // a nonsense value.
+  const liveWording =
+    'Connection refused from unauthorized host. This IP ' +
+    '(2a05:d01c:76e:790b:6ec9:17e9:af8a:6396) is NOT PERMITTED to access this ' +
+    'endpoint on your account.'
+  check('the live wording is recognised too', isIpNotPermitted(liveWording))
+  check('it reads the IPv6 address out of the live wording',
+    extractIp(liveWording) === '2a05:d01c:76e:790b:6ec9:17e9:af8a:6396',
+    `(${extractIp(liveWording)})`)
+  check('it reads the IPv4 address out of the documented wording',
+    extractIp(theirs) === '81.202.241.36', `(${extractIp(theirs)})`)
+  check('it never mistakes a word for an address', extractIp('Connection refused') === null,
+    `(${extractIp('Connection refused')})`)
+  check('no address in a token complaint', extractIp('Invalid API token supplied') === null)
   check('an IP refusal is recognised', isIpNotPermitted(theirs))
   check('a token complaint is not mistaken for an IP refusal',
     !isIpNotPermitted('Invalid API token supplied'))
@@ -264,6 +282,8 @@ check('the cashout page no longer asks for phone verification',
     /Developer Settings/.test(admin) && /IP Address/.test(admin))
   check('it says deposits are unaffected, because they are',
     /Deposits still work/.test(admin))
+  check('the health screen reads the IP out of their message with extractIp',
+    /extractIp\(/.test(read('supabase/functions/_shared/zengapay.ts')))
   check('the probe is bounded so the screen cannot hang',
     /timeoutMs: 8_000/.test(read('supabase/functions/_shared/zengapay.ts')))
 }

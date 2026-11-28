@@ -249,10 +249,52 @@ type RawCollection = {
  * account reads are whitelisted; collections are not, which is why deposits can
  * keep working while payouts are refused.
  */
+/**
+ * Pull the offending address out of a provider error, or null.
+ *
+ * Two shapes exist in the wild, and they differ enough that a naive regex is
+ * actively harmful:
+ *
+ *   "...unauthorized IP: 81.202.241.36,  This IP is NOT..."   (their docs)
+ *   "...unauthorized host. This IP (2a05:d01c:76e:...) is NOT PERMITTED..."  (live)
+ *
+ * A loose `[0-9a-f:.]+` character class matches the "ed" inside "refused", so
+ * the operator would be told to whitelist `ed` -- a wrong answer delivered with
+ * confidence. This only accepts something that really parses as an address.
+ */
+export function extractIp(message: string): string | null {
+  const ipv4 = /\b(\d{1,3}(?:\.\d{1,3}){3})\b/.exec(message)
+  if (ipv4 && ipv4[1].split('.').every((o) => Number(o) <= 255)) return ipv4[1]
+
+  // IPv6: two or more colon-separated hex groups. Anchored on a boundary so a
+  // stray word cannot be mistaken for one, and on the structure so IPv4-mapped
+  // and compressed forms both pass.
+  const ipv6 = /(?:^|[^0-9a-z:])((?:[0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4})(?![0-9a-z:])/i.exec(message)
+  if (ipv6) {
+    const candidate = ipv6[1]
+    if (isValidIpv6(candidate)) return candidate
+  }
+  return null
+}
+
+/** Enough structure checking that a word cannot pass as an address. */
+function isValidIpv6(value: string): boolean {
+  if (!/^[0-9a-f:]+$/i.test(value)) return false
+  if (!value.includes('::') && value.split(':').length !== 8) return false
+  if (value.split('::').length > 2) return false
+  return value.split(':').every((group) => group === '' || /^[0-9a-f]{1,4}$/i.test(group))
+}
+
 export function isIpNotPermitted(message: string): boolean {
-  return (
-    /\bIP\b/i.test(message) &&
-    /(not\s+(permitted|unauthorized|allowed|whitelisted)|unauthorized\s+IP|connection\s+refused)/i.test(message)
+  // Reference the address or the word "IP", so a plain credential complaint
+  // cannot match. The observed wordings:
+  //   "unauthorized IP: ..."          "This IP is NOT unauthorized to access"
+  //   "unauthorized host. This IP ..."  "IP is NOT PERMITTED to access"
+  const mentionsAddress =
+    /\bIP\b/i.test(message) || /\bhost\b/i.test(message) || extractIp(message) !== null
+  if (!mentionsAddress) return false
+  return /(not\s+(permitted|unauthorized|allowed|whitelisted)|unauthorized\s+(IP|host)|connection\s+refused)/i.test(
+    message,
   )
 }
 
@@ -459,8 +501,10 @@ export async function checkIpAllowed(): Promise<{
       // the caller will see that in the payments check.
       return { allowed: true, ip: null }
     }
-    const named = /([0-9a-f:.]+)\s*(?:,|$|\s)/i.exec(err.message.replace(/^[^:]*IP:[^0-9a-f]*/i, ''))
-    return { allowed: false, code: err.code, ip: named?.[1] ?? null, detail: err.message }
+    // Prefer the IP named in their message. If they did not name one, this
+    // server still needs to tell the operator where to look, so say so plainly
+    // rather than reporting a null they cannot act on.
+    return { allowed: false, code: err.code, ip: extractIp(err.message), detail: err.message }
   }
 }
 
