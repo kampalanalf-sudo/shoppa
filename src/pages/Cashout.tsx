@@ -126,7 +126,11 @@ export function Cashout({ onBack }: { onBack: () => void }) {
     }
   }
 
-  const gated = !profile?.age_confirmed || !profile?.phone_verified
+  // Only the 18+ confirmation is a gate now. The account-age wait and the phone
+  // verification were removed at the owner's request, so telling a player to
+  // verify their phone here would send them to a screen that no longer unblocks
+  // anything.
+  const gated = !profile?.age_confirmed
 
   return (
     <div className="mx-auto w-full max-w-[900px] px-3 pb-24 pt-4 sm:px-5">
@@ -151,9 +155,7 @@ export function Cashout({ onBack }: { onBack: () => void }) {
 
           {gated && (
             <div className="mb-3 rounded-xl border border-amber-400/30 bg-amber-400/10 px-3 py-2.5 text-[11.5px] text-amber-200">
-              {!profile?.age_confirmed
-                ? 'Confirm you are 18 or older before cashing out.'
-                : 'Verify your phone number in Settings before cashing out.'}
+              Confirm you are 18 or older before cashing out.
             </div>
           )}
 

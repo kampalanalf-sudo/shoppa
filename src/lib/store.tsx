@@ -7,6 +7,7 @@ import type { ExchangeOrder } from './proxicash'
 import {
   FREE_PLAY_REFILL, FREE_PLAY_START, MAX_BET, MIN_BET, type PlayMode,
 } from './currency'
+import { useAuth } from './auth'
 
 /** Real wallet. Migrated from PX, so the key is bumped deliberately. */
 const KEY = 'floatbet.v2'
@@ -212,6 +213,23 @@ type Ctx = Persisted & {
 const StoreCtx = createContext<Ctx | null>(null)
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
+  /*
+   * THE REAL BALANCE IS THE SERVER'S, NOT THIS FILE'S.
+   *
+   * The real wallet lived only in localStorage, seeded to STARTING_UGX, and was
+   * never read back from the database. So a confirmed top-up credited
+   * wallets.balance_px correctly -- order TOP-MWZSSJUU, 600 UGX, ledger +600 --
+   * and the app carried on showing the local number. A player who paid and was
+   * credited saw their balance not move.
+   *
+   * It is worse than a stale display: `placeBet` decrements the local balance,
+   * so the app would happily let a player stake money the database says they do
+   * not have, and block them from staking money it says they do.
+   *
+   * Free play is untouched. It is a separate object with no server row, which is
+   * the whole point of it.
+   */
+  const { wallet: serverWallet, session } = useAuth()
   const [state, setState] = useState<Persisted>(() => defaults())
   const [hydrated, setHydrated] = useState(false)
   const [walletOpen, setWalletOpen] = useState(false)
@@ -245,6 +263,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       alive = false
     }
   }, [])
+
+  /*
+   * The real balance is the server's.
+   *
+   * It lived only in localStorage, seeded to STARTING_UGX, and was never read
+   * back from the database. A confirmed top-up credited wallets.balance_px and
+   * wrote a ledger row (order TOP-MWZSSJUU, UGX 600, +600) while the app went on
+   * showing the local number, so a player who had paid saw nothing change.
+   *
+   * `placeBet` decrements this same value, so it was not only a display bug: the
+   * app would let a player stake money the database says they do not have.
+   *
+   * Free play is untouched. It has no server row, which is the point of it.
+   */
+  useEffect(() => {
+    if (!hydrated || !session?.user || !serverWallet) return
+    const server = Math.round(serverWallet.balance_px ?? 0)
+    if (!Number.isFinite(server)) return
+    if (stateRef.current.balance === server) return
+    stateRef.current = { ...stateRef.current, balance: server }
+    setState((prev) => ({ ...prev, balance: server }))
+  }, [serverWallet, session?.user, hydrated])
 
   /* persist */
   useEffect(() => {
