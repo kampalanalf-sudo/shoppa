@@ -113,6 +113,13 @@ jobs:
       - name: Verify no currency conversion in the money paths
         run: npm run test:migration
 
+      # Mines and Tower hide a board in the browser; Crash drew its own crash
+      # point. This runs the flattened `play` bundle — the exact file the deploy
+      # uploads — against a stub of PostgREST, and tries to read the board out of
+      # the start response, name its own payout, and cash out twice.
+      - name: Verify the board games cannot be read or paid from the client
+        run: npm run test:board
+
       # Starts a real HTTP server that answers as ZENGAPAY, sends the real
       # bundled function at it, and prints the request that goes over the wire.
       # It is the only check that proves the endpoint, the auth header, the

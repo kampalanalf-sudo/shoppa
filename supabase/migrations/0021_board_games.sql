@@ -146,7 +146,9 @@ begin
   if not found then raise exception 'no such round' using errcode = 'P0002'; end if;
   if v_round.status <> 'open' then raise exception 'round already settled' using errcode = '23505'; end if;
 
-  v_payout := floor(v_round.wager_px * v_mult)::bigint;
+  -- The epsilon matters: 100 * 1.13 is 112.99999999999999 in binary floating
+  -- point, and a bare floor would pay 112 for a 113 stake return.
+  v_payout := floor(v_round.wager_px * v_mult + 1e-9)::bigint;
 
   select balance_px into v_after from wallets where user_id = v_round.user_id for update;
   v_after := v_after + v_payout;
