@@ -25,6 +25,7 @@ type NavView =
   | 'auth'
   | 'topup'
   | 'float'
+  | 'referral'
 
 type HeaderProps = {
   view: NavView
@@ -205,6 +206,9 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
                     again after they have borrowed. */}
                 <MenuItem icon={<IconBolt size={15} />} onClick={() => { setAccountOpen(false); onNavigate('float') }}>
                   Float — borrow credit
+                </MenuItem>
+                <MenuItem icon={<IconGift size={15} />} onClick={() => { setAccountOpen(false); onNavigate('referral') }}>
+                  Refer a friend
                 </MenuItem>
                 {configured && (
                   <MenuItem icon={<IconUser size={15} />} onClick={() => { setAccountOpen(false); onNavigate('sportsbook') }}>

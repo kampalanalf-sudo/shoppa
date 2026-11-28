@@ -18,6 +18,7 @@ import { ChatRoom } from './components/ChatRoom'
 import { Deposit } from './pages/Deposit'
 import { Float } from './pages/Float'
 import { FloatMe } from './pages/FloatMe'
+import { Referral } from './pages/Referral'
 import { TopUpSuccess } from './pages/TopUpSuccess'
 import { AdminParked } from './pages/AdminParked'
 import { AdminPlayers } from './pages/AdminPlayers'
@@ -51,6 +52,7 @@ type View =
   | { name: 'deposit' }
   | { name: 'float' }
   | { name: 'float-me'; code: string }
+  | { name: 'referral' }
   | { name: 'topup-success'; reference: string | null; sessionId: string | null }
   | { name: 'admin-parked' }
   | { name: 'admin-players' }
@@ -69,6 +71,12 @@ function Shell() {
     setView({ name: 'deposit' })
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
     try { window.history.replaceState(null, '', '#deposit') } catch { /* noop */ }
+  }, [])
+
+  const openReferral = useCallback(() => {
+    setView({ name: 'referral' })
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+    try { window.history.replaceState(null, '', '#referral') } catch { /* noop */ }
   }, [])
 
   const openFloat = useCallback(() => {
@@ -109,6 +117,16 @@ function Shell() {
       // Deposit: the number is the account's own, so this needs a session.
       if (h === 'deposit' || h === 'topup') { setView({ name: 'deposit' }); return }
       if (h === 'float' || h === 'credit') { setView({ name: 'float' }); return }
+      if (h === 'referral' || h === 'invite') { setView({ name: 'referral' }); return }
+      /*
+       * A shared invite link: `#join?code=ABC123`.
+       *
+       * It goes to SIGN-UP, not to the referral page — the person holding the link
+       * does not have an account yet, which is the whole point. The code stays in
+       * the URL so the form can pre-fill it (src/pages/Auth.tsx reads the hash),
+       * and it is still there after a reload.
+       */
+      if (h === 'join' || h === 'signup') { setView({ name: 'auth' }); return }
       /*
        * "Float Me": the PUBLIC sponsor page.
        *
@@ -289,7 +307,9 @@ function Shell() {
                   ? openCashout()
                   : v === 'topup'
                     ? openDeposit()
-                    : home()
+                    : v === 'referral'
+                      ? openReferral()
+                      : home()
         }
         onSearch={() => setSearch(true)}
       />
@@ -321,6 +341,7 @@ function Shell() {
         {view.name === 'deposit' && <Deposit onBack={home} onOpenFloat={openFloat} />}
         {view.name === 'float' && <Float onBack={home} onDeposit={openDeposit} />}
         {view.name === 'float-me' && <FloatMe code={view.code} onHome={home} />}
+        {view.name === 'referral' && <Referral onBack={home} />}
         {view.name === 'auth' && <Auth onDone={home} />}
         {view.name === 'set-password' && <SetPassword onDone={home} />}
         {view.name === 'sportsbook' && <Sportsbook onBack={home} />}
@@ -338,7 +359,8 @@ function Shell() {
           />
         )}
         {!current && !isProxiCash && view.name !== 'sportsbook' && view.name !== 'support'
-          && view.name !== 'deposit' && view.name !== 'float' && view.name !== 'float-me' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} onSports={openSportsbook} />}
+          && view.name !== 'deposit' && view.name !== 'float' && view.name !== 'float-me'
+          && view.name !== 'referral' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} onSports={openSportsbook} />}
       </main>
 
       {/* On every page a player can reach, including sign-in: someone who
