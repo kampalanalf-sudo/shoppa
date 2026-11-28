@@ -100,7 +100,16 @@ try {
 }
 ok('api: an unrecoverable 401 throws AuthExpiredError', err instanceof AuthExpiredError)
 ok('api: it does not retry a second time', sent.length === 2, `(${sent.length})`)
-ok('api: the dead session is signed out', signedOut)
+/*
+ * The opposite of what this used to assert.
+ *
+ * One refused request must NOT end the session. `signOut()` here threw away the
+ * persisted session for the whole origin, so a single refused bet on every game
+ * looked like a login fault everywhere. The caller now gets a typed error and the
+ * auth provider re-checks against the server on focus.
+ */
+ok('api: a 401 does not sign the player out', !signedOut)
+ok('api: a 401 still says the session is the problem', err instanceof AuthExpiredError)
 
 // ------------------------------------------------------- no session at all --
 
