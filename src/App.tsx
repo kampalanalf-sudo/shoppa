@@ -38,6 +38,7 @@ import { Limbo } from './games/Limbo'
 import { Wheel } from './games/Wheel'
 import { Tower } from './games/Tower'
 import { Roulette } from './games/Roulette'
+import { Privacy } from './pages/Privacy'
 import type { GameId } from './lib/types'
 
 type View =
@@ -49,6 +50,7 @@ type View =
   | { name: 'set-password' }
   | { name: 'sportsbook' }
   | { name: 'support' }
+  | { name: 'privacy' }
   | { name: 'deposit' }
   | { name: 'float' }
   | { name: 'float-me'; code: string }
@@ -346,6 +348,7 @@ function Shell() {
         {view.name === 'set-password' && <SetPassword onDone={home} />}
         {view.name === 'sportsbook' && <Sportsbook onBack={home} />}
         {view.name === 'support' && <Support onHome={home} onSignIn={() => setView({ name: 'auth' })} />}
+        {view.name === 'privacy' && <Privacy onBack={home} />}
         {/* Placeholder kept so the grid does not shift while loading. */}
         {view.name === 'admin-parked' && <AdminParked onHome={home} />}
         {view.name === 'admin-players' && <AdminPlayers onHome={home} />}
@@ -358,7 +361,7 @@ function Shell() {
             onTopUpAgain={() => { home(); openDeposit() }}
           />
         )}
-        {!current && !isProxiCash && view.name !== 'sportsbook' && view.name !== 'support'
+        {!current && !isProxiCash && view.name !== 'sportsbook' && view.name !== 'support' && view.name !== 'privacy'
           && view.name !== 'deposit' && view.name !== 'float' && view.name !== 'float-me'
           && view.name !== 'referral' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} onSports={openSportsbook} />}
       </main>
@@ -372,7 +375,7 @@ function Shell() {
         onOpen={() => openSupport()}
       />
 
-      <Footer onSupport={() => openSupport()} />
+      <Footer onSupport={() => openSupport()} onPrivacy={() => setView({ name: 'privacy' })} />
       <div className="h-16 md:hidden" />
       <BottomBar
         view={view.name === 'game' ? 'game' : view.name === 'proxicash' ? 'proxicash' : view.name === 'sportsbook' ? 'sportsbook' : 'home'}

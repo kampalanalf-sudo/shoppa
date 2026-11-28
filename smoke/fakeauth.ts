@@ -134,6 +134,20 @@ export const supabase: any = {
         error: null,
       }
     }
+    // The player's own sign-in history, city-level only — the same shape
+    // `my_session_log` returns, so the support screen renders its real card.
+    if (fn === 'my_session_log') {
+      return {
+        data: {
+          entries: [
+            { event: 'sign_in', at: new Date().toISOString(), place: 'Kampala', country: 'UG' },
+          ],
+          total: 1,
+          distinct_countries: 1,
+        },
+        error: null,
+      }
+    }
     return { data: 15000, error: null }
   },
   channel: noopChannel,
@@ -145,6 +159,13 @@ export const supabase: any = {
     }),
   },
 }
+
+/**
+ * Edge-function calls during a signed-out render: the session recorder is the
+ * only caller, and it must be a no-op here. It is installed by the auth provider
+ * on sign-in, which a signed-out test never fires.
+ */
+export const callFunction = async () => ({ recorded: true })
 
 export const isBackendConfigured = true
 export const onChatMessage = () => () => {}

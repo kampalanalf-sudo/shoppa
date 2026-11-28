@@ -113,9 +113,21 @@ export async function api<T>(path: string, opts: Opts = {}): Promise<T> {
     | null
 
   if (res.status === 401) {
-    // A refresh token that is also dead means the session cannot be saved here;
-    // drop it so the app shows the sign-in screen instead of a stale shell.
-    await supabase.auth.signOut().catch(() => undefined)
+    /*
+     * A 401 no longer signs the player out.
+     *
+     * It used to: `signOut()` was called here, which drops the persisted session
+     * for the whole origin. One refused bet — or, when the play function was
+     * calling the database with the wrong identity, one refused bet on EVERY
+     * game — therefore ended the session everywhere, and the player was thrown
+     * back to the sign-in screen with "not authenticated" on every route. The
+     * screen they land on looks like a login fault, not the refusal it is.
+     *
+     * The session is not ours to destroy on one failed request. If it really is
+     * dead, the next `/auth/v1/user` check (on reload, or the next request that
+     * needs it) will say so, and the auth provider handles it there. The caller
+     * gets the typed error and can say "sign in again" without logging anyone out.
+     */
     throw new AuthExpiredError()
   }
 

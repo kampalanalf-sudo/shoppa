@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { api, describeApiError } from '../lib/api'
-import { onSupportMessage } from '../lib/supabase'
+import { onSupportMessage, supabase } from '../lib/supabase'
 import { IconChevronLeft, IconChat, IconInfo, IconRefresh, IconShield, IconUser } from '../components/Icons'
 
 /**
@@ -60,6 +60,13 @@ export function Support({ onHome, onSignIn }: { onHome: () => void; onSignIn?: (
   const [booting, setBooting] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
+  // The player's own sign-in history: where and when, city-level only. This is the
+  // their side of the security record — if a sign-in came from a city they have
+  // never been to, this is how they notice somebody else is in the account.
+  const [logins, setLogins] = useState<{
+    entries: { event: string; at: string; place: string | null; country: string | null }[]
+    distinct_countries: number
+  } | null>(null)
 
   const byId = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents])
 
@@ -171,6 +178,25 @@ export function Support({ onHome, onSignIn }: { onHome: () => void; onSignIn?: (
     [busy, conv, scroll, user],
   )
 
+  useEffect(() => {
+    if (!user || !supabase) return
+    let alive = true
+    // Not through `api()`: this is a direct RPC, and a failure just means the card
+    // stays hidden. Nothing about support depends on it.
+    void supabase
+      .rpc('my_session_log', { p_limit: 5 })
+      .then(({ data }: { data: typeof logins }) => {
+        // Shape-checked: this card is decoration, and a surprise in the payload
+        // must not take the support screen down with it.
+        if (alive && data && Array.isArray((data as { entries?: unknown[] }).entries)) {
+          setLogins(data)
+        }
+      })
+    return () => {
+      alive = false
+    }
+  }, [user])
+
   const activeAgent = conv?.agent_id ? byId.get(conv.agent_id) : null
 
   return (
@@ -249,6 +275,36 @@ export function Support({ onHome, onSignIn }: { onHome: () => void; onSignIn?: (
                 </button>
               ))}
             </div>
+
+            {logins && logins.entries.length > 0 && (
+              <div className="mx-auto mt-2 max-w-[460px] rounded-xl border border-white/[0.07] bg-white/[0.02] px-3 py-2.5">
+                <p className="flex items-center gap-1.5 text-[11px] font-bold text-white">
+                  <IconShield size={11} className="text-slate-400" />
+                  Your recent sign-ins
+                </p>
+                <p className="mb-1.5 text-[9.5px] leading-relaxed text-slate-500">
+                  City only — we do not show addresses. If one of these is somewhere you have
+                  never been, say so below and we will end every session on the account.
+                </p>
+                <ul className="space-y-0.5">
+                  {logins.entries.map((e, i) => (
+                    <li key={`${e.at}-${i}`} className="flex items-center gap-2 text-[10.5px]">
+                      <span className="w-[74px] shrink-0 text-slate-500">
+                        {new Date(e.at).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-slate-300">
+                        {[e.place, e.country].filter(Boolean).join(', ') || 'Location not available'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                {logins.distinct_countries > 1 && (
+                  <p className="mt-1 text-[9.5px] text-amber-300/80">
+                    Your account has been used from {logins.distinct_countries} countries.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
 

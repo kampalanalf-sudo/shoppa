@@ -40,6 +40,26 @@ type Totals = {
   claims_today: number
 }
 
+type SessionEntry = {
+  event: 'sign_in' | 'heartbeat'
+  at: string
+  ip: string | null
+  country: string | null
+  region: string | null
+  city: string | null
+  lat: number | null
+  lng: number | null
+  accuracy_m: number | null
+  source: string | null
+  agent: string | null
+}
+
+type SessionLog = {
+  user: string | null
+  entries: SessionEntry[]
+  shared_ip_accounts: { ip: string; accounts: number; names: string[] }[]
+}
+
 type Detail = {
   profile: Row & { phone: string | null; phone_verified: boolean | null; date_of_birth: string | null }
   wallet: { balance_px: number; wagered_px: number; won_px: number; cashed_out_px: number } | null
@@ -94,6 +114,8 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
   // re-checks the admin flag server-side -- this state is UI only.
   const [actBusy, setActBusy] = useState(false)
   const [actNote, setActNote] = useState<{ kind: 'ok' | 'bad'; text: string } | null>(null)
+  const [sessions, setSessions] = useState<SessionLog | null>(null)
+  const [sessionsBusy, setSessionsBusy] = useState(false)
   const [adjustOpen, setAdjustOpen] = useState(false)
   const [adjustPx, setAdjustPx] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
@@ -123,13 +145,27 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
   const openPlayer = useCallback(async (id: string) => {
     setOpenId(id)
     setDetail(null)
+    setSessions(null)
     setDetailBusy(true)
+    setSessionsBusy(true)
     try {
       setDetail(await api<Detail>('/api/admin/players', { params: { id } }))
     } catch (e) {
       setError(describeApiError(e, 'Could not load that player.'))
     } finally {
       setDetailBusy(false)
+    }
+    /*
+     * Separate request, and deliberately not awaited with the profile: the
+     * security record is the one thing that must still render when something
+     * else on this page fails, and it is the one an operator may look at alone.
+     */
+    try {
+      setSessions(await api<SessionLog>('/api/admin/sessions', { params: { id } }))
+    } catch {
+      setSessions({ user: null, entries: [], shared_ip_accounts: [] })
+    } finally {
+      setSessionsBusy(false)
     }
   }, [])
 
@@ -334,6 +370,70 @@ export function AdminPlayers({ onHome }: { onHome: () => void }) {
                   </button>
                 </div>
               )}
+            </div>
+
+            {/* ------------------------------------------ sign-in record --- */}
+            <div className="panel mb-2 overflow-hidden">
+              <div className="border-b border-white/[0.06] px-3 py-2">
+                <p className="text-[12px] font-bold text-white">Where they signed in from</p>
+                <p className="text-[9.5px] leading-relaxed text-slate-500">
+                  Address and country come from the connection and cannot be set by the app.
+                  Coordinates are what the device claimed, kept to about a kilometre and
+                  <span className="text-amber-400/90"> unverified</span>.
+                </p>
+              </div>
+
+              {sessionsBusy && <p className="px-3 py-4 text-center text-[11px] text-slate-500">Loading…</p>}
+
+              {!sessionsBusy && sessions && sessions.shared_ip_accounts.length > 0 && (
+                <div className="border-b border-amber-500/20 bg-amber-500/[0.07] px-3 py-2">
+                  <p className="text-[10.5px] font-bold text-amber-200">Shared address</p>
+                  {sessions.shared_ip_accounts.map((s) => (
+                    <p key={s.ip} className="text-[10px] text-amber-200/80">
+                      <span className="num">{s.ip}</span> — also used by{' '}
+                      {s.names.filter((n) => n !== sessions.user).join(', ') || `${s.accounts} accounts`}
+                    </p>
+                  ))}
+                  <p className="mt-0.5 text-[9.5px] text-amber-200/60">
+                    One address can be a household, a café or a shared phone. Worth a look, not a verdict.
+                  </p>
+                </div>
+              )}
+
+              {!sessionsBusy && sessions && sessions.entries.length === 0 && (
+                <p className="px-3 py-5 text-center text-[11px] text-slate-500">
+                  Nothing recorded yet. Entries start at the next sign-in.
+                </p>
+              )}
+
+              <div className="divide-y divide-white/[0.04]">
+                {(sessions?.entries ?? []).map((e, i) => (
+                  <div key={`${e.at}-${i}`} className="px-3 py-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-[52px] shrink-0 text-[9.5px] font-bold ${e.event === 'sign_in' ? 'text-sky-300' : 'text-slate-500'}`}>
+                        {e.event === 'sign_in' ? 'sign-in' : 'active'}
+                      </span>
+                      <span className="num shrink-0 text-[10.5px] text-slate-300">{e.ip || 'address unknown'}</span>
+                      <span className="min-w-0 flex-1 truncate text-[10px] text-slate-400">
+                        {[e.city, e.region, e.country].filter(Boolean).join(', ') || '—'}
+                      </span>
+                      <span className="w-[52px] shrink-0 text-right text-[9.5px] text-slate-600">{ago(e.at)}</span>
+                    </div>
+                    {(e.lat !== null || e.lng !== null) && (
+                      <p className="num mt-0.5 pl-[60px] text-[9.5px] text-slate-600">
+                        {e.lat !== null ? e.lat.toFixed(2) : '—'}, {e.lng !== null ? e.lng.toFixed(2) : '—'}
+                        {e.accuracy_m ? ` · ±${Math.round(e.accuracy_m)}m claimed` : ''}
+                        {e.source ? ` · ${e.source}` : ''} · unverified
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <p className="border-t border-white/[0.06] px-3 py-1.5 text-[9px] leading-relaxed text-slate-600">
+                Recorded at sign-in and at most every 30 minutes. Addresses older than
+                180 days are blanked. Not used for bets, payouts or limits.
+              </p>
             </div>
 
             <div className="panel mb-2 overflow-hidden">
