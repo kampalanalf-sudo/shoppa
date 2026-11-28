@@ -186,6 +186,15 @@ type Ctx = Persisted & {
   dismissToast: (id: string) => void
   /** The balance the games should show and spend: real or free, by mode. */
   playBalance: number
+  /**
+   * Credit on screen the platform has not recorded.
+   *
+   * The arcade settles in the browser and writes the result nowhere, so this is
+   * the part of the displayed balance that `wallets.balance_px` does not
+   * include -- and therefore the part a cashout cannot pay. It exists so the UI
+   * can be honest about that instead of letting someone plan around it.
+   */
+  unsentCredit: number
   /** Stats for the active mode, so free play never inflates real stats. */
   playStats: Stats
   playBets: BetRecord[]
@@ -245,6 +254,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   /** Live mirror of persisted state. setState updaters run during render, so
    *  an action cannot rely on a flag it sets inside one to read back. */
   const stateRef = useRef<Persisted>(state)
+  /** The last `wallets.balance_px` this tab adopted. Null until the first read. */
+  const serverBaselineRef = useRef<number | null>(null)
+  /** Gameplay credit the server does not know about yet (see the sync effect). */
+  const staleCreditRef = useRef(0)
   const nonceUsedRef = useRef(0)
   const flashTimer = useRef<number | null>(null)
 
@@ -282,9 +295,61 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const server = Math.round(serverWallet.balance_px ?? 0)
     if (!Number.isFinite(server)) return
     if (stateRef.current.balance === server) return
-    stateRef.current = { ...stateRef.current, balance: server }
-    setState((prev) => ({ ...prev, balance: server }))
+
+    /*
+     * Keep anything the arcade added on top of the server figure.
+     *
+     * The arcade settles in the browser and writes the result nowhere, so the
+     * local number is server + every game result since login. Overwriting it
+     * with the server figure -- which is what this did, and what "the balance
+     * goes back to the beginning of the session" looked like -- deleted real
+     * winnings from the screen. A player who won, refreshed, and found their
+     * balance restored to the pre-win figure was seeing this exact line.
+     *
+     * The distinction that keeps both properties at once:
+     *
+     *   the server value rising   -> a deposit, a gift or an admin credit.
+     *                                Show it immediately. This is the bug that
+     *                                started all of this.
+     *   the local value rising    -> an arcade win we never sent anywhere.
+     *                                Keep it, and remember the offset.
+     *
+     * The offset resets the moment the server moves, because a server change
+     * means the row is authoritative again.
+     */
+    const prevServer = serverBaselineRef.current
+    const local = stateRef.current.balance
+    if (prevServer !== null && server === prevServer) {
+      // Server has not moved: the difference is unsent gameplay. Preserve it.
+      return
+    }
+    serverBaselineRef.current = server
+    const unsent = prevServer === null ? 0 : local - prevServer
+    if (unsent !== 0) staleCreditRef.current = unsent
+    const next = Math.max(0, server + (unsent > 0 ? unsent : 0))
+    stateRef.current = { ...stateRef.current, balance: next }
+    setState((prev) => ({ ...prev, balance: next }))
   }, [serverWallet, session?.user, hydrated])
+
+  /*
+   * Tell the player when they are holding money the platform cannot see.
+   *
+   * This is not a display nicety. `wallets.balance_px` is what a cashout is
+   * checked against, so arcade winnings above the server figure are not
+   * withdrawable, and no code path writes them there. Rather than let someone
+   * think they are owed money that will vanish at the cashout screen, the
+   * wallet says so.
+   */
+  const [staleCredit, setStaleCredit] = useState(0)
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      const server = serverBaselineRef.current
+      if (server === null) return
+      const unsent = stateRef.current.balance - server
+      if (unsent !== staleCredit) setStaleCredit(unsent > 0 ? unsent : 0)
+    }, 2_000)
+    return () => window.clearInterval(id)
+  }, [staleCredit])
 
   /* persist */
   useEffect(() => {
@@ -612,6 +677,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       // The games read these, never `balance` directly, so a free-play round
       // physically cannot spend real money.
       playBalance: state.mode === 'free' ? state.free.credits : state.balance,
+      // Credit on screen that the platform has not recorded. Surfaced so the
+      // wallet can say so instead of letting a player plan around money that
+      // will not withdraw.
+      unsentCredit: state.mode === 'free' ? 0 : staleCredit,
       playStats: state.mode === 'free' ? state.free.stats : state.stats,
       playBets: state.mode === 'free' ? state.free.bets : state.bets,
       setMode,

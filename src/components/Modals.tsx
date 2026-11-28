@@ -85,7 +85,7 @@ const COINS = [
  * a balance, so there is nothing here to abuse.
  */
 export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
-  const { walletOpen, setWalletOpen, balance, totalDeposited, stats, mode, playBalance, username } = useStore()
+  const { walletOpen, setWalletOpen, balance, totalDeposited, stats, mode, playBalance, unsentCredit, username } = useStore()
   const [tab, setTab] = useState<'overview' | 'topup' | 'cashout'>('overview')
 
   const go = (hash: string) => {
@@ -118,6 +118,16 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
           </span>
           <span className="mb-1 text-[12px] font-bold text-slate-400">UGX</span>
         </div>
+        {/* Game results in the arcade are settled in the browser, so they are not
+            on the platform's books until a deposit or the daily reward moves the
+            balance. Saying so is the difference between a player discovering this
+            at the cashout screen and knowing it now. */}
+        {mode !== 'free' && unsentCredit > 0 && (
+          <p className="mt-2 rounded-lg border border-amber-400/25 bg-amber-400/[0.08] px-2.5 py-2 text-[10.5px] leading-relaxed text-amber-200">
+            UGX {money(unsentCredit)} of this is game winnings this device is holding. It is not
+            withdrawable yet — only the amount the platform has recorded can be cashed out.
+          </p>
+        )}
         <div className="mt-3 grid grid-cols-3 gap-2 text-center">
           {[
             { l: 'Deposited', v: money(totalDeposited) },
