@@ -164,6 +164,12 @@ export function paymentReadiness(): { mode: 'live' | 'sandbox' | 'unconfigured';
   if (!secrets.isSandbox && /sandbox/i.test(secrets.apiUrl)) {
     blockers.push('ZENGAPAY_API_URL still points at the sandbox while the token looks like production')
   }
+  // Not a blocker -- pay falls back to the production origin -- but worth
+  // knowing, because a wrong APP_URL returns a paid player to a site that is
+  // not the app, and that is invisible until someone complains.
+  if (secrets.appUrl && !/^https:\/\/[A-Za-z0-9.-]+$/.test(secrets.appUrl)) {
+    blockers.push('APP_URL is not a bare https origin, so checkout return URLs may be malformed')
+  }
   const mode = !secrets.apiToken ? 'unconfigured' : live ? 'live' : 'sandbox'
   return { mode, blockers: blockers.map((b) => b.replace(/[\r\n]+/g, ' ')) }
 }

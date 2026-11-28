@@ -61,13 +61,25 @@ async function requireUser(req: Request): Promise<{ id: string } | null> {
 
 /**
  * The public origin of the app, for the URLs ZENGAPAY sends the player back to.
+ *
  * APP_URL wins; otherwise derive it from the request.
+ *
+ * The fallback is dangerous and was silently in play: APP_URL was never set, so
+ * `new URL(req.url)` returned the Supabase function host, and the player who had
+ * just paid was redirected to `...supabase.co/functions/v1/pay` -- a 401 page,
+ * not the app. The default is now the production site. Anything else has to be
+ * an explicit APP_URL.
  */
+const DEFAULT_APP_ORIGIN = 'https://floatbet.space'
+
 const appOrigin = (req: Request) => {
   const app = env('APP_URL')
   if (app) return app.replace(/\/$/, '')
   const u = new URL(req.url)
-  return `${u.protocol}//${u.host}`
+  // Only trust the request host if it is not the function host itself.
+  const host = `${u.protocol}//${u.host}`
+  if (!/supabase\.(co|in)$/i.test(u.hostname)) return host
+  return DEFAULT_APP_ORIGIN
 }
 
 // --------------------------------------------------------------- collect ---
