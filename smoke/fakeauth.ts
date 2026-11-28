@@ -24,6 +24,16 @@ export function fireSignOut() {
   authListeners.forEach((cb) => cb('SIGNED_OUT', null))
 }
 
+/**
+ * The own mobile-money number.
+ *
+ * A REAL one, because the deposit page refuses to charge a number it cannot
+ * parse and locks the field once the profile has one. With `phone: null` the
+ * page would (correctly) show its "add your number" box instead of the locked
+ * line, and the route assertion would be measuring the wrong screen.
+ */
+const PHONE = '256758443666'
+
 const SESSION = { access_token: 'test-token', user: { id: USER_ID, email: 'player@example.com' } }
 
 // A profile good enough that the app does NOT divert to onboarding: it needs
@@ -34,7 +44,7 @@ const ROWS: Record<string, unknown> = {
     username: 'kampalanalf',
     display_name: 'Kampalanalf',
     avatar_url: null,
-    phone: null,
+    phone: PHONE,
     phone_verified: true,
     age_confirmed: true,
     suspended: false,
@@ -108,7 +118,24 @@ export const supabase: any = {
     resend: async () => ({ error: null }),
   },
   from: (table: string) => builder(table),
-  rpc: async () => ({ data: 15000, error: null }),
+  /**
+   * The app calls four RPCs that do not exist server-side in a signed-out test:
+   * claim_daily_px, and the Float/deposit pair. Answer by name so the Float
+   * screen renders its real "no float yet" state instead of an error.
+   */
+  rpc: async (fn: string) => {
+    if (fn === 'float_state') {
+      return {
+        data: {
+          open: false,
+          balance: 125_000,
+          offer: { eligible: true, limit: 5000, instalments: 3, window_hours: 24, levy_rate: 0.06 },
+        },
+        error: null,
+      }
+    }
+    return { data: 15000, error: null }
+  },
   channel: noopChannel,
   removeChannel: () => {},
   storage: {

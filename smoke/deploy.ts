@@ -77,7 +77,9 @@ const dirs = readdirSync(FN_DIR, { withFileTypes: true })
   .map((d) => d.name)
 ok('there are functions to deploy', dirs.length > 0, `(${dirs.length})`)
 
-for (const required of ['pay', 'play', 'admin-ops', 'webhooks-zengapay', 'webhooks-zengapay-store']) {
+// `gift` is the public "Float Me" route: a payer with no account must be able to
+// reach it, so its absence is a deposit that can never be paid by a friend.
+for (const required of ['pay', 'play', 'gift', 'admin-ops', 'webhooks-zengapay', 'webhooks-zengapay-store']) {
   ok(`${required} is a real function directory`, dirs.includes(required))
 }
 ok('no dgateway function survives', !dirs.some((d) => /dgateway/i.test(d)))

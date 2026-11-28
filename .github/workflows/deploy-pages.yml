@@ -89,6 +89,13 @@ jobs:
       - name: Verify the ZENGAPAY client
         run: npm run test:zp
 
+      # Deposits and Float. Two products where a wrong number is a player's money:
+      # borrowed credit must not be withdrawable, a deposit code must pay the
+      # REQUESTER, and the deposit page must charge the account's own number
+      # rather than a field somebody can retype.
+      - name: Verify the deposit and Float rules
+        run: npm run test:float
+
       - name: Verify the deploy topology
         run: npm run test:deploy
 

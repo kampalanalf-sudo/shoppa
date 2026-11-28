@@ -162,12 +162,15 @@ check('the client can call it', /'\/api\/session': 'pay\?op=session'/.test(read(
 // The pay button was silently disabled when the amount was under 500 or the
 // phone was short. A tap on a disabled button does nothing at all, so a player
 // reported "no outward sign" and had no way to learn the phone field was empty.
-const panel = read('src/components/TopUpPanel.tsx')
-check('a blocked top-up states the requirement up front',
-  /blockedReason/.test(panel) && /minimum top-up is UGX 500/i.test(panel) && /mobile money number/i.test(panel))
-check('the pay button is not disabled for a form problem, only while sending',
-  /disabled=\{busy\}/.test(panel) && !/disabled=\{busy \|\| ugx < 500/.test(panel))
-check('a tap while blocked still surfaces the reason', /if \(blockedReason\) \{ setError\(blockedReason\); return \}/.test(panel))
+// The panel became the Deposit page: a modal could not be linked to, and a
+// "Float Me" link has to open the payer's screen directly.
+const panel = read('src/pages/Deposit.tsx')
+check('a blocked deposit states the requirement up front',
+  /minimum deposit is UGX/i.test(panel) && /mobile money number/i.test(panel))
+check('the deposit button is not disabled for a form problem, only while sending',
+  /disabled=\{busy\}/.test(panel))
+check('a blocked deposit sets an error instead of doing nothing',
+  /setError\(`The minimum deposit is/.test(panel))
 
 // ------------------------------- a confirmed top-up must reach the screen --
 // A real UGX 600 deposit completed on 2026-11-28 (order TOP-MWZSSJUU): the
@@ -179,8 +182,8 @@ check('the store adopts the server wallet balance',
   /stateRef\.current\.balance === server/.test(store) || /balance: server/.test(store))
 check('and it reads the balance from the server row, not a local seed',
   /serverWallet\.balance_px/.test(store))
-check('the top-up panel refreshes after a completed payment',
-  /poll\.state === 'completed'[\s\S]{0,120}refreshWallet\(\)/.test(read('src/components/TopUpPanel.tsx')))
+check('the deposit page refreshes after a completed payment',
+  /poll\.state === 'completed'[\s\S]{0,120}refreshWallet\(\)/.test(read('src/pages/Deposit.tsx')))
 
 // ------------------------------- the cashout gates the owner asked for ----
 // Comments in this migration name the gates it removed, so strip them before

@@ -123,6 +123,19 @@ const ROUTES: { hash: string; name: string; marker: RegExp }[] = [
   { hash: '#support', name: 'support', marker: /Customer care/ },
   { hash: '#cashout', name: 'cashout', marker: /Available to cash out|You receive/ },
   { hash: '#proxicash', name: 'proxicash', marker: /You send/ },
+  // The deposit page. The marker is the LOCKED number, not just the word
+  // "Deposit": the requirement is that the player's own number is shown and
+  // cannot be typed over, and a marker that only found the heading would pass on
+  // a page that still had a free-text phone field.
+  { hash: '#deposit', name: 'deposit', marker: /not editable/ },
+  { hash: '#float', name: 'float', marker: /Your limit|No float available/ },
+  // The sponsor's page. It must paint for a player too, because a player can
+  // open their own link before sending it.
+  {
+    hash: '#float-me?code=ABCD2345',
+    name: 'float-me',
+    marker: /Deposit code/,
+  },
 ]
 
 /** Text of the signed-in page, or '' when nothing painted. */
@@ -195,6 +208,29 @@ async function main() {
   await new Promise((r) => setTimeout(r, 450))
   ok('signing back out keeps the page painted', pageText().length > 200)
   ok('the sign-out transition reports no error', outErrors.length === 0, outErrors[0]?.slice(0, 160) ?? '')
+
+  // --- the sponsor's page, with NO account --------------------------------
+  //
+  // This is the case that matters: the person paying for a friend's deposit is
+  // usually not a player. Before this, every non-auth route was behind the
+  // sign-in guard, so a "Float Me" link sent on WhatsApp would have opened the
+  // login screen and the friend's deposit would never be paid.
+  //
+  // `fireSignOut` leaves the app signed out for the rest of this file, so this
+  // block must stay LAST.
+  w.location.hash = '#float-me?code=ABCD2345'
+  el.innerHTML = ''
+  const anonRoot = createRoot(el)
+  const anonErrors = await capturing(() => {
+    anonRoot.render(React.createElement(App))
+  })
+  await new Promise((r) => setTimeout(r, 400))
+  const anonText = pageText()
+  ok('the sponsor page paints with no account', anonText.length > 200, `${anonText.length} chars`)
+  ok('it asks for a deposit code, not a login', /Deposit code/.test(anonText) && !/Sign in|Create account/.test(anonText))
+  ok('it does not offer to sign a payer up', !/Sign up/.test(anonText))
+  anonRoot.unmount()
+  void anonErrors
 
   if (fails.length) {
     console.log(`\n${fails.length} FAILED`)

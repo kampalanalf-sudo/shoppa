@@ -151,7 +151,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
       ) : (
         <>
           <div className="mb-3 flex gap-1 rounded-xl border border-white/[0.07] bg-ink-900/70 p-1">
-            {([['overview', 'Overview'], ['topup', 'Top up'], ['cashout', 'Cash out']] as const).map(([id, label]) => (
+            {([['overview', 'Overview'], ['topup', 'Deposit'], ['cashout', 'Cash out']] as const).map(([id, label]) => (
               <button
                 key={id}
                 type="button"
@@ -168,12 +168,15 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
           {tab === 'overview' && (
             <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
               <p className="text-[11.5px] leading-relaxed text-slate-400">
-                Top up with MTN or Airtel mobile money. Every deposit is charged by
-                the network and credited once the payment is confirmed — never
-                before.
+                Deposit with MTN or Airtel mobile money, from your own number. It is
+                credited once the network confirms — never before. If you would rather
+                someone else paid, use <b className="text-slate-200">Float Me</b>.
               </p>
-              <button type="button" onClick={() => go('#topup')} className="btn-primary mt-3 h-10 w-full !text-[12.5px]">
-                <IconBolt size={15} /> Top up
+              <button type="button" onClick={() => go('#deposit')} className="btn-primary mt-3 h-10 w-full !text-[12.5px]">
+                <IconBolt size={15} /> Deposit
+              </button>
+              <button type="button" onClick={() => go('#float')} className="btn-dark mt-2 h-9 w-full !text-[12px]">
+                Float — borrow credit
               </button>
             </div>
           )}
@@ -185,7 +188,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
                 Minimum UGX 500. You will get a prompt on your phone — approve it
                 and the balance updates when the network confirms.
               </p>
-              <button type="button" onClick={() => go('#topup')} className="btn-primary mt-3 h-10 w-full !text-[12.5px]">
+              <button type="button" onClick={() => go('#deposit')} className="btn-primary mt-3 h-10 w-full !text-[12.5px]">
                 <IconBolt size={15} /> Enter an amount
               </button>
             </div>
