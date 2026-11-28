@@ -30,7 +30,13 @@ export function TopUpPanel({
 
   const poll = usePaymentPoll(reference)
 
-  // credit landed -> refresh the wallet so the balance updates live
+  /*
+   * The webhook credits the database, and this poll is what notices. Without the
+   * refresh the balance on screen is whatever localStorage held, so a player
+   * could be credited (payment_orders.completed, ledger +600) and see nothing
+   * change. The store now adopts the server balance too, so one refresh here
+   * propagates everywhere.
+   */
   useEffect(() => {
     if (poll.state === 'completed') {
       sfx.bigwin()

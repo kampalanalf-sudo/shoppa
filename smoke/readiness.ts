@@ -168,6 +168,32 @@ check('the pay button is not disabled for a form problem, only while sending',
   /disabled=\{busy\}/.test(panel) && !/disabled=\{busy \|\| ugx < 500/.test(panel))
 check('a tap while blocked still surfaces the reason', /if \(blockedReason\) \{ setError\(blockedReason\); return \}/.test(panel))
 
+// ------------------------------- a confirmed top-up must reach the screen --
+// A real UGX 600 deposit completed on 2026-11-28 (order TOP-MWZSSJUU): the
+// webhook credited wallets.balance_px and wrote a +600 ledger row, and the app
+// showed no change. The real balance lived only in localStorage, seeded to
+// STARTING_UGX, and nothing ever read it back from the database.
+const store = read('src/lib/store.tsx')
+check('the store adopts the server wallet balance',
+  /stateRef\.current\.balance === server/.test(store) || /balance: server/.test(store))
+check('and it reads the balance from the server row, not a local seed',
+  /serverWallet\.balance_px/.test(store))
+check('the top-up panel refreshes after a completed payment',
+  /poll\.state === 'completed'[\s\S]{0,120}refreshWallet\(\)/.test(read('src/components/TopUpPanel.tsx')))
+
+// ------------------------------- the cashout gates the owner asked for ----
+// Comments in this migration name the gates it removed, so strip them before
+// asserting on the code.
+const sql17 = read('supabase/migrations/0017_cashout_gates.sql')
+  .split('\n').map((l) => l.replace(/--.*$/, '')).join('\n')
+check('no 7-day account-age gate remains', !/86400|v_age_days/.test(sql17))
+check('no phone-verification gate remains', !/phone_verified/.test(sql17))
+check('the 18+ gate is kept (not part of the request)', /age_confirmed/.test(sql17))
+check('the minimum and the balance lock survive',
+  /minimum cashout is 1,000 UGX/.test(sql17) && /for update/.test(sql17))
+check('the cashout page no longer asks for phone verification',
+  !/Verify your phone number in Settings/.test(read('src/pages/Cashout.tsx')))
+
 // ------------------------------------------------------- the env is honest --
 const env = read('.env.example')
 check('the env template no longer documents the retired gateway', !/DGATEWAY/i.test(env))

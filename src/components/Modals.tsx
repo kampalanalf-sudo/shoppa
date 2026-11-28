@@ -185,8 +185,7 @@ export function WalletModal({ forceOpen }: { forceOpen?: boolean } = {}) {
             <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-3">
               <p className="mb-1 text-[11px] font-bold uppercase tracking-wider text-slate-400">Withdraw to mobile money</p>
               <p className="text-[11.5px] leading-relaxed text-slate-400">
-                Minimum UGX 1,000. Your account must be 7 days old, with your age
-                and phone confirmed.
+                Minimum UGX 1,000. Paid out to the mobile money number you enter.
               </p>
               <button type="button" onClick={() => go('#cashout')} className="btn-primary mt-3 h-10 w-full !text-[12.5px]">
                 <IconBolt size={15} /> Request a cashout
