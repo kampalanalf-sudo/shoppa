@@ -238,6 +238,77 @@ async function main() {
     }
   }
 
+  // ---- every game must be playable in free play ----
+  //
+  // The demo notice offers "Play <game> on Free play", so free play has to work
+  // for ALL fourteen titles. It did not: Mines, Tower and Crash had no
+  // free-play path at all — every action called the server, which rightly
+  // refused a free-play round — so the switch dropped the player into a game
+  // where the button did nothing. That is the "games are demo / not settled"
+  // report this suite kept missing.
+  w.location.hash = '#dice'
+  w.dispatchEvent(new w.Event('hashchange'))
+  await new Promise((r) => setTimeout(r, 350))
+  ok('free play can be turned on', await setMode('Free play'))
+
+  for (const game of GAMES) {
+    w.location.hash = `#${game}`
+    w.dispatchEvent(new w.Event('hashchange'))
+    await new Promise((r) => setTimeout(r, 400))
+
+    // Roulette needs a chip on the felt before its button unlocks.
+    if (game === 'roulette') {
+      const chip = Array.from(w.document.querySelectorAll('button')).find(
+        (b) => /^(100|500|1,?000|5,?000|25,?000)$/.test((b.textContent ?? '').trim()),
+      ) as HTMLButtonElement | undefined
+      chip?.click()
+      await new Promise((r) => setTimeout(r, 200))
+      const felt = Array.from(w.document.querySelectorAll('button')).find((b) => /felt|red|black|even|odd|dozen/i.test(b.textContent ?? ''))
+      felt?.click()
+      await new Promise((r) => setTimeout(r, 200))
+    }
+
+    const buttons = playButtons()
+    if (!buttons.length) {
+      if (process.env.SHOW_BUTTONS) {
+        const all = Array.from(w.document.querySelectorAll('main button')) as HTMLButtonElement[]
+        console.log(`   ${game} free buttons:`, all.map((b) => `${JSON.stringify((b.textContent ?? '').trim().slice(0, 22))}${b.disabled ? '(dis)' : ''}`).join(' '))
+      }
+      ok(`${game}: has a play action in free play`, false)
+      continue
+    }
+    const before = text()
+    buttons[buttons.length - 1].click()
+    /*
+     * Every one of these games animates before it settles, and `spinning`
+     * disables the button for the whole animation: slots ~1.6s (5 reels x 120ms
+     * stagger + 90ms nudge + 1000ms travel), Roulette 4.8s, Wheel 5.4s. The
+     * first draft waited 800ms and reported a dead button on three games — that
+     * was this test's timing, not the app's. Wait past the longest of them.
+     */
+    await new Promise((r) => setTimeout(r, 6000))
+    const after = text()
+    if (process.env.SHOW_BUTTONS) {
+      const all = Array.from(w.document.querySelectorAll('main button')) as HTMLButtonElement[]
+      console.log(`   ${game} post-click:`, all.map((b) => `${JSON.stringify((b.textContent ?? '').trim().slice(0, 20))}${b.disabled ? '(dis)' : ''}`).join(' '))
+      console.log(`   ${game} tail:`, JSON.stringify(after.slice(-140)))
+    }
+    const stillSpinning = Array.from(w.document.querySelectorAll('main button')).some((b) =>
+      /Spinning|Rolling|Dropping|Climbing|Flying/i.test(b.textContent ?? ''),
+    )
+    ok(
+      `${game}: starts in free play`,
+      !stillSpinning && after !== before && !/bet refused|not settled by the server/i.test(after),
+      after === before ? 'nothing changed — the button is dead in free play' : after.slice(-70),
+    )
+  }
+
+  // Back to real money for the demo-notice checks below.
+  w.location.hash = '#dice'
+  w.dispatchEvent(new w.Event('hashchange'))
+  await new Promise((r) => setTimeout(r, 350))
+  await setMode('Real money')
+
   // ---- the switch has to actually work ----
   //
   // A button that describes the fix and does not apply it is worse than no

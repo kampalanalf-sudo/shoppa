@@ -1,6 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../lib/store'
 import { sfx } from '../lib/sound'
+// The FREE-PLAY crash distribution, from the module the server settles with, so
+// practice play shows the same curve a paid round would.
+import { crashPoint } from '../../supabase/functions/_shared/games'
 import { money, mult } from '../lib/format'
 import { gameById } from '../lib/games'
 import { BetAmount, BetButton } from '../components/BetControls'
@@ -19,7 +22,8 @@ type Phase = 'idle' | 'running' | 'crashed' | 'cashed'
 
 export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('crash')!
-  const { beginRound, finishRound, balance, sound, toast, flashLoss } = useStore()
+  const { beginRound, finishRound, balance, sound, toast, flashLoss, mode, placeBet, settleBet, nextFloats } =
+    useStore()
   const [bet, setBet] = useState(MIN_BET)
   const [autoCash, setAutoCash] = useState(2)
   const [autoEnabled, setAutoEnabled] = useState(false)
@@ -44,6 +48,15 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
   const openRef = useRef<{ round: string; nonce: number; server_hash: string } | null>(null)
   const raf = useRef<number>(0)
   const start = useRef(0)
+  /**
+   * The FREE-PLAY crash point, drawn when the player cashes out.
+   *
+   * Free play has no server, so this is the only thing standing in for it. It is
+   * drawn at cash-out for the same reason the server draws it there: the player
+   * must commit blind, or the decision is free. Without any of this, Crash had
+   * no free-play path at all and the button simply did nothing.
+   */
+  const freePoint = useRef<number | null>(null)
   const target = useRef(1)
   const cashed = useRef(false)
   const autoRef = useRef({ enabled: false, at: 2 })
@@ -59,6 +72,37 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       setCashedAt(at)
       setPhase('cashed')
       if (sound) sfx.cashout()
+
+      // ---- free play: draw the point NOW, exactly as the server would ----
+      if (mode === 'free') {
+        void nextFloats(1).then(([u]) => {
+          const point = crashPoint(u)
+          freePoint.current = point
+          setCrashAt(point)
+          setHistory((h) => [point, ...h].slice(0, 14))
+          const won = at >= 1 && at <= point
+          const paid = settleBet({
+            game: 'crash',
+            wager: Math.round(bet),
+            multiplier: won ? at : 0,
+            detail: won ? `Crashed at ${point}x · cashed out ${at}x` : `Crashed at ${point}x`,
+          })
+          setPayout(paid)
+          if (won) {
+            toast({ kind: 'win', title: `Cashed out ${mult(at)}`, body: `+UGX ${money(paid)} in practice credits.` })
+          } else {
+            setPhase('crashed')
+            if (sound) sfx.crash()
+            toast({
+              kind: 'error',
+              title: `It crashed at ${mult(point)}`,
+              body: 'Your cash-out came after the curve died. Nothing was paid — this was practice credits.',
+            })
+          }
+        })
+        return
+      }
+
       const open = openRef.current
       if (!open) return
       openRef.current = null
@@ -89,7 +133,7 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
         .catch((e: Error) => toast({ kind: 'error', title: 'Payout failed', body: e.message }))
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [finishRound, bet, sound, toast, flashLoss],
+    [finishRound, bet, sound, toast, flashLoss, mode, settleBet, nextFloats],
   )
 
   const play = useCallback(async () => {
@@ -99,13 +143,22 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       return
     }
     sfx.place()
-    // Opening the round debits the stake on the server. We do NOT receive the
-    // crash point: showing it would make the cash-out decision free.
-    try {
-      openRef.current = await beginRound('crash', bet, {})
-    } catch (e) {
-      toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
-      return
+
+    if (mode === 'free') {
+      // No server row in free play: debit locally and let settle() draw the
+      // point when the player acts.
+      if (!placeBet('crash', Math.round(bet))) return
+      openRef.current = null
+      freePoint.current = null
+    } else {
+      // Opening the round debits the stake on the server. We do NOT receive the
+      // crash point: showing it would make the cash-out decision free.
+      try {
+        openRef.current = await beginRound('crash', bet, {})
+      } catch (e) {
+        toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
+        return
+      }
     }
     /*
      * The curve climbs until the player acts.
@@ -144,7 +197,7 @@ export function Crash({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       raf.current = requestAnimationFrame(tick)
     }
     raf.current = requestAnimationFrame(tick)
-  }, [phase, bet, balance, beginRound, sound, toast, settle])
+  }, [phase, bet, balance, beginRound, sound, toast, settle, mode, placeBet])
 
   useEffect(() => () => cancelAnimationFrame(raf.current), [])
 
