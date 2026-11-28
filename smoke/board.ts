@@ -53,6 +53,31 @@ class Stub {
       return row ? [{ ...row }] : []
     }
 
+    if (table === 'rpc/start_round') {
+      const id = this.nextId++
+      const wager = Number(body?.p_wager_px)
+      this.balance -= wager
+      this.rounds.set(id, {
+        id, user_id: 'u1', game: String(body?.p_game), wager_px: wager,
+        nonce: this.nonce++, status: 'open', params: body?.p_params ?? {}, board: null,
+      })
+      return { round: String(id), nonce: this.rounds.get(id)!.nonce, server_hash: 'h', balance: this.balance }
+    }
+
+    if (table === 'rpc/settle_round_server') {
+      const id = Number(body?.p_round)
+      const row = this.rounds.get(id)
+      if (!row) throw new Error('no such round')
+      if (row.status !== 'open') throw new Error('round already settled')
+      const mult = Number(body?.p_multiplier)
+      const payout = Math.floor(Number(row.wager_px) * mult + 1e-9)
+      row.status = 'settled'
+      this.balance += payout
+      return { payout, balance: this.balance, multiplier: mult }
+    }
+
+    if (table === 'rpc/cancel_round') return null
+
     if (table === 'rpc/start_board_round') {
       const id = this.nextId++
       const wager = Number(body?.p_wager_px)
@@ -204,6 +229,31 @@ const up = await op('reveal', { round: t2Id, cell: t2Safe[0] })
 check('a right tile advances the climb', up.done === false && up.level === 1)
 // Hard tower is 2 columns, so floor 1 is 0.99 * 2 / 1 = 1.98x.
 check('hard tower pays more per floor', Number(up.multiplier) === 1.98, `(${up.multiplier})`)
+
+// --------------------------------------------------------------- the slots ---
+//
+// The six video slots now settle through the same `?op=start` / `?op=settle`
+// path as the Originals. This exercises a real slot spin through the emitted
+// edge bundle: the server draws the floats, derives the grid, and pays it.
+
+for (const game of ['bonni', 'craters', 'chape', 'bluemountain', 'bazaar', 'boda']) {
+  const started = await op('start', { game, wager: 100, params: {} })
+  const id = Number(started.round)
+  if (!id) {
+    check(`${game}: opens a server round`, false, JSON.stringify(started))
+    continue
+  }
+  const settled = await op('settle', { round: id })
+  const cols = Number(settled.cols ?? 0)
+  const grid = JSON.parse(String((settled.payload as Row)?.grid ?? '[]')) as string[][]
+  check(`${game}: opens a server round`, true)
+  check(`${game}: the server returns the reels`, grid.length > 0 && grid.every((c) => c.length > 0), `${grid.length} reels`)
+  check(`${game}: the server sets the multiplier`, typeof settled.multiplier === 'number' && Number.isFinite(settled.multiplier as number), String(settled.multiplier))
+  check(`${game}: payout matches wager × multiplier`,
+    Number(settled.payout) === Math.floor(100 * Number(settled.multiplier) + 1e-9),
+    `${settled.payout} vs ${Math.floor(100 * Number(settled.multiplier) + 1e-9)}`)
+  void cols
+}
 
 // ----------------------------------------------------------------- verdict ---
 

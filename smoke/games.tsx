@@ -26,8 +26,19 @@ import App from '../src/App'
  * other, this test follows it without being edited — and if the app and the rule
  * module ever disagree, the assertions here fail instead of drifting silently.
  */
-const SERVER = ['dice', 'limbo', 'wheel', 'plinko', 'roulette', 'crash', 'mines', 'tower']
-const DEMO = ['bonni', 'craters', 'chape', 'bluemountain', 'bazaar', 'boda']
+const SERVER = [
+  'dice', 'limbo', 'wheel', 'plinko', 'roulette', 'crash', 'mines', 'tower',
+  'bonni', 'craters', 'chape', 'bluemountain', 'bazaar', 'boda',
+]
+/**
+ * Nothing is demo-only any more.
+ *
+ * The six video slots used to be browser-settled and the app labelled them
+ * "Demo · practice only" — which is what the player reported as "you made it
+ * worse". They are server-settled now (see _shared/slots.ts and
+ * test:slotvalue), so no game on this floor may show that notice.
+ */
+const DEMO: string[] = []
 
 if (!(globalThis as any).markResourceTiming) (globalThis as any).markResourceTiming = () => undefined
 if (!(globalThis as any).PerformanceObserver) {
@@ -97,15 +108,54 @@ const realFetch = globalThis.fetch
       })
     }
     if (op === 'settle') {
-      // A losing round with a real payload shape, so the game can animate it.
+      /*
+       * Slots need a REAL grid of the right shape, or the board throws inside
+       * an animation callback and the button hangs. So the stub fills one using
+       * the game's own config — the same source the server uses — rather than a
+       * guessed 5x3.
+       */
+      const slotGrid = (game: string): string[][] => {
+        const cfg = SLOT_CFG[game]
+        if (!cfg) return []
+        return Array.from({ length: cfg.reels }, () =>
+          Array.from({ length: cfg.rows }, (_, row) => cfg.symbols[row % cfg.symbols.length].id),
+        )
+      }
+      const grid = slotGrid(String(body.game ?? ''))
       return json({
-        round: String(stubRound), multiplier: 0, payout: 0, balance: stubBalance,
-        detail: 'stub roll', payload: { roll: 50, point: 1.5, index: 0, number: 7, colour: 'red' },
+        round: String(stubRound), multiplier: 0.2, payout: Math.floor(Number(body.wager ?? 0) * 0.2),
+        balance: stubBalance, detail: 'stub spin',
+        payload: grid.length
+          ? { grid: JSON.stringify(grid), scatters: 0, wins: 1, crates: 0, bodas: 0, omenCount: 0 }
+          : { roll: 50, point: 1.5, index: 0, number: 7, colour: 'red' },
       })
     }
     if (op === 'reveal') return json({ done: false, busted: false, picks: [1], multiplier: 1.13 })
   }
   return json({ ok: true, balance: stubBalance })
+}
+
+/*
+ * The reel shapes, from the games' own configs. Hard-coding "5x3" here is how
+ * the stub fed Craters (4 reels) a 5-wide grid and produced a hang that looked
+ * like an app bug.
+ */
+import { CHAPE, BLUE_MOUNTAIN } from '../src/lib/slots/games'
+import { BAZAAR, BODA } from '../src/lib/slots/games2'
+import { CRATERS } from '../src/lib/slots/craters'
+import { REELS as BONNI_REELS, ROWS as BONNI_ROWS, SYMBOLS as BONNI_SYMBOLS } from '../src/lib/slot'
+
+const SLOT_CFG: Record<string, { reels: number; rows: number; symbols: { id: string }[] }> = {
+  chape: CHAPE,
+  bluemountain: BLUE_MOUNTAIN,
+  bazaar: BAZAAR,
+  boda: BODA,
+  craters: CRATERS as never,
+  bonni: {
+    reels: BONNI_REELS,
+    rows: BONNI_ROWS,
+    symbols: Object.keys(BONNI_SYMBOLS).map((id) => ({ id })),
+  },
 }
 
 const fails: string[] = []
@@ -204,14 +254,17 @@ async function main() {
       felt?.click()
       await new Promise((r) => setTimeout(r, 250))
     }
+    if (!playButtons().length && process.env.SHOW_BUTTONS) {
+      const all = Array.from(w.document.querySelectorAll('main button')) as HTMLButtonElement[]
+      console.log(`   ${game} real buttons:`, all.map((b) => `${JSON.stringify((b.textContent ?? '').trim().slice(0, 18))}${b.disabled ? '(dis)' : ''}`).join(' '))
+      const tail = before.slice(-320)
+      console.log(`   ${game} toasts:`, JSON.stringify(tail))
+    }
     ok(`${game}: opens with a play action`, playButtons().length > 0, `${before.length} chars`)
 
-    // A demo game must say it is a demo BEFORE the player presses anything. The
-    // old behaviour mentioned it only in a refusal toast, which reads as a bug.
-    if (isDemo) {
-      ok(`${game}: says it is a demo before the bet button`, DEMO_BADGE.test(before))
-      ok(`${game}: offers the free-play switch`, /Play .* on Free play/i.test(before))
-    }
+    // No game is demo-only. A "practice only" notice on any of these screens is
+    // the regression that made the whole floor look broken.
+    ok(`${game}: is not labelled demo`, !DEMO_BADGE.test(before))
 
     const ready = playButtons()
     if (!ready.length) continue
@@ -224,12 +277,7 @@ async function main() {
     const after = text()
     const refused = REFUSAL.test(after)
 
-    if (isDemo) {
-      // In real mode a demo game refuses — but now the screen already explained
-      // why, so a refusal is not the player's first clue.
-      ok(`${game}: a refused demo bet still explains itself on screen`, !refused || DEMO_BADGE.test(after))
-      ok(`${game}: the refusal names the way out`, !refused || /Free play/i.test(after), refused ? 'REFUSED' : 'started')
-    } else {
+    {
       ok(`${game}: pressing "${label.slice(0, 22)}" is never refused as local`, !refused, refused ? 'REFUSED — this game is server-settled' : '')
       if (process.env.SHOW_BUTTONS) {
       console.log(`   ${game} after:`, JSON.stringify(after.slice(-220)))
@@ -309,43 +357,9 @@ async function main() {
   await new Promise((r) => setTimeout(r, 350))
   await setMode('Real money')
 
-  // ---- the switch has to actually work ----
-  //
-  // A button that describes the fix and does not apply it is worse than no
-  // button, and that is exactly the kind of thing this project keeps shipping.
-  // Land on a demo game first: the switch only exists where it is relevant.
-  w.location.hash = '#bonni'
-  w.dispatchEvent(new w.Event('hashchange'))
-  await new Promise((r) => setTimeout(r, 400))
-  const switchButton = Array.from(w.document.querySelectorAll('button')).find((b) =>
-    SWITCH_LABEL.test((b.textContent ?? '').trim()),
-  ) as HTMLButtonElement | undefined
-  if (switchButton) {
-    const label = (switchButton.textContent ?? '').trim()
-    switchButton.click()
-    await new Promise((r) => setTimeout(r, 500))
-    const afterSwitch = text()
-    // The panel states the mode in words, so this is visible, not inferred.
-    ok('the free-play switch turns free play on', /practice credits/i.test(afterSwitch), label)
-    // And the demo game must now START instead of refusing.
-    const again = playButtons()
-    if (again.length) {
-      const t2 = text()
-      again[again.length - 1].click()
-      await new Promise((r) => setTimeout(r, 700))
-      const afterSpin = text()
-      // In free play the slot's own reels are on screen; in real mode the demo
-      // notice and its refusal are. Assert on what the screen now says, not on
-      // the absence of a word the previous screen may still be showing.
-      ok(
-        'a demo game starts once free play is on',
-        /practice credits/i.test(afterSpin) && afterSpin !== t2,
-        afterSpin === t2 ? 'nothing changed' : afterSpin.slice(-80),
-      )
-    }
-  } else {
-    ok('a demo game offers the free-play switch', false, 'no switch button found')
-  }
+  // NOTE: the "Play <game> on Free play" switch is gone, and so is its test.
+  // It only existed because six games could not be played for money; they all
+  // settle on the server now, so there is nothing to switch away from.
 
   root.unmount()
   if (fails.length) {

@@ -26,7 +26,7 @@
 //
 // Keeping those rules in one file, with a Monte Carlo, means the RTP can be
 // re-tuned without touching render code — and the smoke suite can prove it.
-import { asset } from '../games'
+import { ASSET_BASE } from '../assetBase'
 import type { SlotConfig, SlotSymbolDef, Grid } from './engine'
 
 // ------------------------------------------------------------------ symbols --
@@ -65,7 +65,7 @@ export const CRATERS_SYMBOLS: CratersSymbol[] = [
     tier: 'high',
     glyph: '🍾',
     color: '#8bff5a',
-    art: asset('/art/craters/nile.webp'),
+    art: `${ASSET_BASE}art/craters/nile.webp`,
   },
   {
     id: 'club',
@@ -76,7 +76,7 @@ export const CRATERS_SYMBOLS: CratersSymbol[] = [
     tier: 'high',
     glyph: '🍺',
     color: '#ff8f5c',
-    art: asset('/art/craters/club.webp'),
+    art: `${ASSET_BASE}art/craters/club.webp`,
   },
   {
     id: 'bell',
@@ -87,7 +87,7 @@ export const CRATERS_SYMBOLS: CratersSymbol[] = [
     tier: 'high',
     glyph: '🧊',
     color: '#3ad7ff',
-    art: asset('/art/craters/bell.webp'),
+    art: `${ASSET_BASE}art/craters/bell.webp`,
   },
   // ---- local brews, mid
   {
@@ -99,7 +99,7 @@ export const CRATERS_SYMBOLS: CratersSymbol[] = [
     tier: 'mid',
     glyph: '🏰',
     color: '#ffcf5c',
-    art: asset('/art/craters/castle.webp'),
+    art: `${ASSET_BASE}art/craters/castle.webp`,
   },
   {
     id: 'mbarara',
@@ -110,7 +110,7 @@ export const CRATERS_SYMBOLS: CratersSymbol[] = [
     tier: 'mid',
     glyph: '🌾',
     color: '#d8b98a',
-    art: asset('/art/craters/mbarara.webp'),
+    art: `${ASSET_BASE}art/craters/mbarara.webp`,
   },
   {
     id: 'ngule',
@@ -121,7 +121,7 @@ export const CRATERS_SYMBOLS: CratersSymbol[] = [
     tier: 'mid',
     glyph: '🪵',
     color: '#c98b5c',
-    art: asset('/art/craters/ngule.webp'),
+    art: `${ASSET_BASE}art/craters/ngule.webp`,
   },
   // ---- the low tier. `rolex` had no art budget left, so it runs on the
   // engine's vector tile and is styled to look deliberate, not missing.
@@ -144,7 +144,7 @@ export const CRATERS_SYMBOLS: CratersSymbol[] = [
     tier: 'low',
     glyph: '🧾',
     color: '#8b93a5',
-    art: asset('/art/craters/tab.webp'),
+    art: `${ASSET_BASE}art/craters/tab.webp`,
   },
   // ---- specials
   {
@@ -156,7 +156,7 @@ export const CRATERS_SYMBOLS: CratersSymbol[] = [
     tier: 'special',
     glyph: '🤵🏿',
     color: '#c6f24e',
-    art: asset('/art/craters/bartender.webp'),
+    art: `${ASSET_BASE}art/craters/bartender.webp`,
   },
   {
     id: 'crate',
@@ -166,7 +166,7 @@ export const CRATERS_SYMBOLS: CratersSymbol[] = [
     tier: 'special',
     glyph: '📦',
     color: '#3ad7ff',
-    art: asset('/art/craters/crate.webp'),
+    art: `${ASSET_BASE}art/craters/crate.webp`,
   },
   {
     id: 'boda',
@@ -176,7 +176,7 @@ export const CRATERS_SYMBOLS: CratersSymbol[] = [
     tier: 'special',
     glyph: '🛵',
     color: '#ff8f5c',
-    art: asset('/art/craters/boda.webp'),
+    art: `${ASSET_BASE}art/craters/boda.webp`,
   },
 ]
 

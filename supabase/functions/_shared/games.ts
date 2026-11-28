@@ -35,21 +35,28 @@ export type GameId =
   | 'mines' | 'tower' | 'bonni' | 'craters'
   | 'chape' | 'bluemountain' | 'bazaar' | 'boda'
 
-/** Games the server can settle from a float alone. */
+/**
+ * Every game on the floor settles on the server.
+ *
+ * The six video slots were the last holdouts: their rules lived in src/lib/slots
+ * and the browser spun them, so they could not be played for money and the app
+ * had to label them "demo". That label was never the fix. The rules turned out
+ * to be portable — pure functions, no DOM, with the artwork the only thing tying
+ * them to Vite — and the edge bundle now runs the SAME code via
+ * _shared/slots.ts. `npm run test:slotvalue` compares 720 spins between the
+ * server and the board and requires identical multipliers.
+ */
 export const SERVER_SETTLED: readonly GameId[] = [
   'dice', 'limbo', 'wheel', 'plinko', 'roulette', 'crash', 'mines', 'tower',
+  'bonni', 'craters', 'chape', 'bluemountain', 'bazaar', 'boda',
 ]
 
 /**
- * Games that settle in the browser, and cannot be played for money.
- *
- * These are the ways slots: the outcome is a grid of symbol weights whose rules
- * live in src/lib/slots (and, for Bonni & Clyve, src/lib/slot.ts). Porting them
- * means moving a paytable *and* a feature state machine server-side, and doing
- * that badly pays multipliers the board never shows — which is exactly the
- * mistake the wheel made on the first pass here.
+ * Games that settle in the browser. Empty, and kept so that adding one has a
+ * named place to go — with the consequence spelled out: anything here cannot be
+ * played for money.
  */
-export const LOCAL_ONLY: readonly GameId[] = ['bonni', 'craters', 'chape', 'bluemountain', 'bazaar', 'boda']
+export const LOCAL_ONLY: readonly GameId[] = []
 
 /**
  * House edge, matching the arcade's existing tables.
@@ -98,7 +105,7 @@ export type Outcome = {
   payload?: Record<string, number | string>
 }
 
-const r2 = (n: number) => Math.round(n * 100) / 100
+export const r2 = (n: number) => Math.round(n * 100) / 100
 const clampInt = (n: unknown, lo: number, hi: number, fallback: number) => {
   const v = typeof n === 'number' && Number.isFinite(n) ? Math.trunc(n) : fallback
   return Math.min(hi, Math.max(lo, v))

@@ -380,11 +380,11 @@ const near = (a: number, b: number, tol = 1e-9) => Math.abs(a - b) < tol
 
 // -------------------------------------- the game list says what it can settle --
 {
-  check('eight games are server-settled', SERVER_SETTLED.length === 8, `(${SERVER_SETTLED.length})`)
-  check('mines and tower are no longer local-only',
-    !['mines', 'tower'].some((g) => (LOCAL_ONLY as readonly string[]).includes(g)))
-  check('the ways slots are honestly listed as local',
-    ['bonni', 'craters'].every((g) => (LOCAL_ONLY as readonly string[]).includes(g)))
+  check('every game on the floor is server-settled', SERVER_SETTLED.length === 14, `(${SERVER_SETTLED.length})`)
+  check('nothing is local-only any more', LOCAL_ONLY.length === 0, `(${LOCAL_ONLY.join(', ')})`)
+  check('the six video slots are settled by the server too',
+    ['bonni', 'craters', 'chape', 'bluemountain', 'bazaar', 'boda']
+      .every((g) => (SERVER_SETTLED as readonly string[]).includes(g)))
   check('a local-only game cannot be settled by the server',
     (() => { try { resolveBet('bonni' as never, {}, 0.5); return false } catch { return true } })())
 }

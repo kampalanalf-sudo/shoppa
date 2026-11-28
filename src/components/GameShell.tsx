@@ -5,7 +5,6 @@ import { money, mult } from '../lib/format'
 import { BetFeed } from './Chrome'
 import { IconChevronLeft, IconInfo, IconShield, IconTrophy } from './Icons'
 import { ModeSwitch } from './ModeBadge'
-import { isServerSettled } from '../lib/play'
 
 type Props = {
   game: GameMeta
@@ -20,16 +19,7 @@ type Props = {
 }
 
 export function GameShell({ game, onBack, children, aside, footer, onFair, mobileAction }: Props) {
-  const { stats, setHistoryOpen, mode, switchToFreePlay } = useStore()
-  /*
-   * Is this game's result decided somewhere the player cannot see?
-   *
-   * The six video slots are not: they spin in this browser. Say so ON THE SCREEN,
-   * before the bet button, and offer the switch instead of only refusing after a
-   * press. The refusal used to be the first and only mention of it, which read
-   * as "the game is broken".
-   */
-  const demoOnly = !isServerSettled(game.id)
+  const { stats, setHistoryOpen, mode } = useStore()
   return (
     <div className="mx-auto w-full max-w-[1380px] px-3 pb-24 pt-4 sm:px-5 md:pb-10">
       {/* header row */}
@@ -67,25 +57,6 @@ export function GameShell({ game, onBack, children, aside, footer, onFair, mobil
 
         {/* right rail: bet controls */}
         <div className="space-y-3">
-          {demoOnly && (
-            <div className="panel border-amber-400/30 bg-amber-400/[0.06] p-3.5">
-              <p className="text-[11px] font-bold uppercase tracking-[.12em] text-amber-200">Demo · practice only</p>
-              <p className="mt-1 text-[10.5px] leading-snug text-amber-100/75">
-                {game.name} is a video slot. Its reels are spun in your browser, so a win here is
-                not real money and cannot be withdrawn. Originals games — Dice, Limbo, Wheel,
-                Plinko, Roulette, Crash, Mines, Tower — are settled by the server and pay real UGX.
-              </p>
-              {mode === 'real' && (
-                <button
-                  type="button"
-                  onClick={() => switchToFreePlay(game.id)}
-                  className="mt-2 w-full rounded-lg border border-amber-400/40 bg-amber-400/15 py-1.5 text-[10.5px] font-bold text-amber-100 transition hover:bg-amber-400/25"
-                >
-                  Play {game.name} on Free play
-                </button>
-              )}
-            </div>
-          )}
           <div className="panel p-3">
             <div className="mb-1.5 flex items-center justify-between">
               <span className="text-[10px] font-bold uppercase tracking-[.14em] text-slate-400">Play mode</span>
