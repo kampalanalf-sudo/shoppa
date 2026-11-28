@@ -3,6 +3,43 @@ import type { Session, User } from '@supabase/supabase-js'
 import { isBackendConfigured, supabase } from './supabase'
 import { DAILY_BONUS_UGX } from './currency'
 
+/**
+ * Where a referral code waits between signing up and having a session.
+ *
+ * localStorage, not user metadata: `raw_user_meta_data` can be written by the
+ * client at any time after sign-up, and a referral decides who gets paid.
+ */
+export const PENDING_REFERRAL_KEY = 'floatbet.referral.pending'
+
+/**
+ * A code read from a share link: `#join?code=ABC123`, `?ref=ABC123` or
+ * `?code=ABC123`. Read once at start-up, before any navigation, and handed to
+ * the sign-up form so the player does not have to type what they just tapped.
+ */
+/** A code this browser is still holding from an earlier sign-up attempt. */
+export function pendingReferralCode(): string {
+  try {
+    return (window.localStorage.getItem(PENDING_REFERRAL_KEY) ?? '')
+      .replace(/[^a-zA-Z0-9_]/g, '').toUpperCase().slice(0, 18)
+  } catch {
+    return ''
+  }
+}
+
+export function referralCodeFromUrl(): string {
+  try {
+    const hashQ = window.location.hash.split('?')[1] || ''
+    const fromHash = new URLSearchParams(hashQ)
+    const fromSearch = new URLSearchParams(window.location.search)
+    const raw =
+      fromHash.get('code') || fromHash.get('ref') ||
+      fromSearch.get('ref') || fromSearch.get('code') || ''
+    return raw.replace(/[^a-zA-Z0-9_]/g, '').toUpperCase().slice(0, 18)
+  } catch {
+    return ''
+  }
+}
+
 export type PlayerProfile = {
   id: string
   username: string
@@ -35,7 +72,7 @@ type AuthState = {
   wallet: Wallet | null
   /** true when the player is mid-onboarding (needs a username or 18+ confirmation) */
   needsOnboarding: boolean
-  signUpEmail: (email: string, password: string, username: string, dob: string) => Promise<void>
+  signUpEmail: (email: string, password: string, username: string, dob: string, referralCode?: string) => Promise<void>
   signInEmail: (email: string, password: string) => Promise<void>
   signInGoogle: () => Promise<void>
   resetPassword: (email: string) => Promise<void>
@@ -52,6 +89,8 @@ type AuthState = {
   resendVerification: (email: string) => Promise<void>
   /** PX credited by today's login bonus, or 0 when already claimed. */
   dailyPxAwarded: number
+  /** Changes when a referral code has been claimed, so the screen can re-read. */
+  referralRefresh: number
   signOut: () => Promise<void>
   refreshWallet: () => Promise<void>
   updateProfile: (patch: Partial<Pick<PlayerProfile, 'username' | 'display_name' | 'phone' | 'age_confirmed'>>) => Promise<void>
@@ -71,6 +110,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [recoveryReady, setRecoveryReady] = useState(false)
   const [recoveryError, setRecoveryError] = useState<string | null>(null)
   const [dailyPxAwarded, setDailyPxAwarded] = useState(0)
+  // Bumped when a referral code is claimed, so the referral screen re-reads.
+  const [referralRefresh, setReferralRefresh] = useState(0)
 
   /**
    * The daily login bonus, once per calendar day (Africa/Kampala). The amount
@@ -228,9 +269,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const here = (hash: string) => `${window.location.pathname}${hash}`
 
+  /**
+   * Sign up, and remember a referral code for when the account exists.
+   *
+   * The code CANNOT be claimed here: sign-up may return without a session (email
+   * confirmation is on), and `claim_referral()` needs `auth.uid()`. So it is
+   * stored locally and claimed once a session exists — see the effect below —
+   * which also covers the Google sign-in path and a confirmation link opened in a
+   * different tab. It is deliberately kept in localStorage rather than sent as
+   * user metadata: metadata is attacker-writable after the fact, and a referral
+   * decides money.
+   */
   const signUpEmail = useCallback(
-    async (email: string, password: string, username: string, dob: string) => {
+    async (email: string, password: string, username: string, dob: string, referralCode?: string) => {
       if (!supabase) throw new Error('Backend is not configured.')
+      const code = (referralCode ?? '').trim().toUpperCase()
+      if (code) {
+        try { window.localStorage.setItem(PENDING_REFERRAL_KEY, code) } catch { /* private mode */ }
+      }
       const { error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -244,6 +300,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     },
     [],
   )
+
+  /**
+   * Claim whatever referral code this browser is holding, once.
+   *
+   * A failure is silent by design EXCEPT that the code is cleared: "that code
+   * does not exist" on a player's first screen is an error about somebody else's
+   * typo, not about them, and the account is already created either way. The
+   * referral screen shows whether a code landed.
+   */
+  const claimPendingReferral = useCallback(async () => {
+    let code = ''
+    try { code = window.localStorage.getItem(PENDING_REFERRAL_KEY) ?? '' } catch { return }
+    if (!code || !supabase) return
+    try {
+      await supabase.rpc('claim_referral', { p_code: code })
+    } catch {
+      /* the reason is shown on the referral screen, not as a start-up error */
+    } finally {
+      try { window.localStorage.removeItem(PENDING_REFERRAL_KEY) } catch { /* ignore */ }
+      setReferralRefresh((n) => n + 1)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!session?.user) return
+    void claimPendingReferral()
+  }, [session?.user, claimPendingReferral])
 
   const signInEmail = useCallback(async (email: string, password: string) => {
     if (!supabase) throw new Error('Backend is not configured.')
@@ -369,6 +452,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearRecovery,
       resendVerification,
       dailyPxAwarded,
+      referralRefresh,
       signOut,
       refreshWallet,
       updateProfile,
@@ -377,6 +461,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       ready, session, profile, wallet, needsOnboarding, signUpEmail, signInEmail, signInGoogle,
+    referralRefresh,
       resetPassword, updatePassword, recoveryReady, recoveryError, clearRecovery, resendVerification, signOut, refreshWallet, updateProfile,
       startPhoneVerification, confirmPhoneVerification, dailyPxAwarded,
     ],

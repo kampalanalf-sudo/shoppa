@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { pendingReferralCode, referralCodeFromUrl } from '../lib/auth'
 import { useAuth } from '../lib/auth'
 import { sfx } from '../lib/sound'
 import { IconShield } from '../components/Icons'
@@ -28,6 +29,15 @@ export function Auth({ onDone }: { onDone?: () => void }) {
   const [password, setPassword] = useState('')
   const [username, setUsername] = useState('')
   const [dob, setDob] = useState('')
+  /*
+   * A referral code, from a share link or from a code typed in.
+   *
+   * Pre-filled from the URL so a player who taps a friend's link does not have to
+   * copy eight characters by hand — and pre-filled into a VISIBLE field, not
+   * attached silently, because a referral is a relationship with another player
+   * and the person accepting it should see whose code it is.
+   */
+  const [refCode, setRefCode] = useState(() => referralCodeFromUrl() || pendingReferralCode())
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -71,7 +81,7 @@ export function Auth({ onDone }: { onDone?: () => void }) {
       if (!passwordOk) return setError('Use at least 8 characters for your password.')
       if (!ageOk) return setError('You must be 18 or older to open an account.')
       void run(async () => {
-        await signUpEmail(email, password, username, dob)
+        await signUpEmail(email, password, username, dob, refCode || undefined)
         setNotice('Check your inbox to verify your email, then sign in.')
         setMode('signin')
       })
@@ -202,6 +212,27 @@ export function Auth({ onDone }: { onDone?: () => void }) {
               autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
               className="field"
             />
+          </div>
+        )}
+
+        {mode === 'signup' && (
+          <div>
+            <label className="label" htmlFor="refcode">
+              <span>Referral code</span>
+              <span className="normal-case tracking-normal text-slate-500">optional</span>
+            </label>
+            <input
+              id="refcode"
+              value={refCode}
+              onChange={(e) => setRefCode(e.target.value.replace(/[^a-zA-Z0-9_]/g, '').toUpperCase().slice(0, 18))}
+              placeholder="A friend's code"
+              autoCapitalize="characters"
+              spellCheck={false}
+              className="field num"
+            />
+            <p className="mt-1 text-[10px] text-slate-500">
+              It can be added later, but only before your first deposit.
+            </p>
           </div>
         )}
 

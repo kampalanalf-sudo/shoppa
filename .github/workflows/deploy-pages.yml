@@ -96,6 +96,12 @@ jobs:
       - name: Verify the deposit and Float rules
         run: npm run test:float
 
+      # Referrals. The promise is a share of PROFIT on a referred player's first
+      # five deposits -- a shape that is easy to get subtly wrong in a way that
+      # either pays twice or pays on turnover. Checked against the SQL.
+      - name: Verify the referral rules
+        run: npm run test:referral
+
       - name: Verify the deploy topology
         run: npm run test:deploy
 
