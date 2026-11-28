@@ -464,10 +464,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
        * it debit a real stake it will never pay out would be worse.
        */
       if (!free && !isServerSettled(game)) {
+        // Every game on the floor is settled by the server, so this is a guard,
+        // not a supported state. Keep it as a guard: the day a game is added
+        // without server settlement, it must refuse money rather than pay it
+        // from the browser. The copy stays neutral so it can never tell a player
+        // a playable game is a demo.
         toast({
           kind: 'error',
-          title: 'Not available for money yet',
-          body: `${gameById(game)?.name ?? game} is a demo slot: it is settled in your browser, so it cannot be played for cash. Switch to Free play to keep playing it, or choose an Originals game — Dice, Limbo, Wheel, Plinko, Roulette, Crash, Mines and Tower are all real.`,
+          title: 'Not available for money',
+          body: `${gameById(game)?.name ?? game} cannot be settled right now. Nothing was staked. Please try again in a moment, or pick another game.`,
         })
         return false
       }
