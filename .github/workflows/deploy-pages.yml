@@ -113,6 +113,12 @@ jobs:
       - name: Verify no currency conversion in the money paths
         run: npm run test:migration
 
+      # The arcade went down because apiUrl joined a bare route with "&" and
+      # every server-settled game requested a path that does not exist. This
+      # opens all fourteen titles as a signed-in player and presses Play on each.
+      - name: Start every game and read what happens
+        run: npm run test:games
+
       # Mines and Tower hide a board in the browser; Crash drew its own crash
       # point. This runs the flattened `play` bundle — the exact file the deploy
       # uploads — against a stub of PostgREST, and tries to read the board out of

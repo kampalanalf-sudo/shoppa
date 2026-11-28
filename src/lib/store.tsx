@@ -201,6 +201,12 @@ type Ctx = Persisted & {
   playStats: Stats
   playBets: BetRecord[]
   setMode: (m: PlayMode) => void
+  /**
+   * Switch to free play because the game the player just tried cannot be played
+   * for money. Same switch as `setMode('free')`, but the toast explains the
+   * reason — a bare "Free play on" after a refusal reads like a second error.
+   */
+  switchToFreePlay: (game?: GameId) => void
   refillFreePlay: () => void
   placeBet: (game: GameId, wager: number) => boolean
   /**
@@ -461,7 +467,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         toast({
           kind: 'error',
           title: 'Not available for money yet',
-          body: `${gameById(game)?.name ?? game} settles on the device, so it cannot be played for cash. Switch to free play, or pick a game marked live.`,
+          body: `${gameById(game)?.name ?? game} is a demo slot: it is settled in your browser, so it cannot be played for cash. Switch to Free play to keep playing it, or choose an Originals game — Dice, Limbo, Wheel, Plinko, Roulette, Crash, Mines and Tower are all real.`,
         })
         return false
       }
@@ -871,6 +877,19 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
    * is only a change of which one the games read -- which is exactly why a
    * free-play win can never become a real balance.
    */
+  const switchToFreePlay = useCallback(
+    (game?: GameId) => {
+      const name = game ? gameById(game)?.name ?? game : 'This game'
+      setState((s) => ({ ...s, mode: 'free' }))
+      toast({
+        kind: 'info',
+        title: 'Free play on',
+        body: `${name} runs on practice credits: the same reels, the same rules, no real money. Your UGX balance is untouched.`,
+      })
+    },
+    [toast],
+  )
+
   const setMode = useCallback(
     (m: PlayMode) => {
       setState((s) => ({ ...s, mode: m }))
@@ -945,13 +964,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       playStats: state.mode === 'free' ? state.free.stats : state.stats,
       playBets: state.mode === 'free' ? state.free.bets : state.bets,
       setMode,
+      switchToFreePlay,
       refillFreePlay,
     }),
     [
       state, hydrated, walletOpen, historyOpen, fairOpen, toasts, toast, dismissToast, placeBet, settleBet,
       refundBet, nextFloats, rotateSeed, updateClientSeed, toggleSound, toggleBalanceHidden,
       setUsername, resetAccount, winFlash, lossFlash, flashLoss, recordExchange, settleExchange,
-      setMode, refillFreePlay,
+      setMode, switchToFreePlay, refillFreePlay,
     ],
   )
 
