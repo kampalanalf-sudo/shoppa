@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useStore } from '../lib/store'
 import { sfx } from '../lib/sound'
-import { diceRoll } from '../lib/fair'
 import { money, mult } from '../lib/format'
 import { gameById } from '../lib/games'
 import { BetAmount, BetButton, useHotkey } from '../components/BetControls'
@@ -13,7 +12,7 @@ const EDGE = 0.99
 
 export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('dice')!
-  const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
+  const { playGame, balance, sound, toast, flashLoss } = useStore()
   const [bet, setBet] = useState(MIN_BET)
   const [target, setTarget] = useState(50)
   const [mode, setMode] = useState<'over' | 'under'>('under')
@@ -34,12 +33,20 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
       toast({ kind: 'error', title: 'Insufficient balance', body: 'Lower your bet to continue.' })
       return
     }
-    if (!placeBet('dice', bet)) return
     sfx.place()
     setRolling(true)
-    const [u] = await nextFloats(1)
-    const result = diceRoll(u)
-    const won = mode === 'under' ? result < target : result > target
+    // The server decides. We send the bet, never a multiplier, and animate the
+    // roll it sends back -- so the number on screen and the number paid are the
+    // same one.
+    let settled: Awaited<ReturnType<typeof playGame>>
+    try {
+      settled = await playGame('dice', bet, { mode, target })
+    } catch (e) {
+      setRolling(false)
+      toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
+      return
+    }
+    const result = Number(settled.payload.roll ?? 0)
 
     // animated rolling
     const t0 = performance.now()
@@ -52,19 +59,13 @@ export function Dice({ onBack, onFair }: { onBack: () => void; onFair: () => voi
       } else {
         setRoll(result)
         setRolling(false)
-        const payout = settleBet({
-          game: 'dice',
-          wager: bet,
-          multiplier: won ? multVal : 0,
-          detail: `Rolled ${result.toFixed(2)} · ${mode} ${target}`,
-        })
-        setLast({ v: result, won, payout, mult: won ? multVal : 0 })
-        setHistory((h) => [{ v: result, win: won }, ...h].slice(0, 16))
-        if (won) { if (sound) sfx.win() } else { flashLoss(); if (sound) sfx.lose() }
+        setLast({ v: result, won: settled.won, payout: settled.payout, mult: settled.multiplier })
+        setHistory((h) => [{ v: result, win: settled.won }, ...h].slice(0, 16))
+        if (settled.won) { if (sound) sfx.win() } else { flashLoss(); if (sound) sfx.lose() }
       }
     }
     spinRaf.current = requestAnimationFrame(anim)
-  }, [rolling, bet, balance, placeBet, nextFloats, mode, target, multVal, settleBet, sound, toast])
+  }, [rolling, bet, balance, playGame, mode, target, sound, toast])
 
   useEffect(() => () => cancelAnimationFrame(spinRaf.current), [])
   useHotkey(() => void play())

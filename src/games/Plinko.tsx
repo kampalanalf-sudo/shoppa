@@ -50,14 +50,37 @@ export const tableRtp = (t: number[]) =>
   t.reduce((acc, m, k) => acc + (binom(t.length - 1, k) / 2 ** (t.length - 1)) * m, 0)
 
 type Risk = keyof typeof TABLES
-type Ball = { id: number; path: number[]; bucket: number; mult: number; wager: number }
+type Ball = {
+  id: number
+  path: number[]
+  bucket: number
+  mult: number
+  wager: number
+  /** What the server already paid for this ball. Landing only renders it. */
+  settled: { payout: number; won: boolean }
+}
+
+/**
+ * The visual path, rebuilt from the bucket the server chose.
+ *
+ * The servers' bucket is the number of right-hand steps, so any path with that
+ * many rights lands on the paid bucket. Shuffling the rights deterministically
+ * keeps the ball's route varied without ever disagreeing with the payout.
+ */
+const roulettePath = (payload: Record<string, number | string>, rows: number): number[] => {
+  const rights = Math.max(0, Math.min(rows, Number(payload.index ?? 0)))
+  const path = Array.from({ length: rows }, (_, i) => (i < rights ? 1 : 0))
+  // rotate by the bucket so successive balls do not all lean the same way
+  const shift = rights % Math.max(1, rows)
+  return [...path.slice(shift), ...path.slice(0, shift)]
+}
 
 const W = 620
 const H = 330
 
 export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('plinko')!
-  const { placeBet, settleBet, nextFloats, balance, sound, flashLoss } = useStore()
+  const { playGame, balance, sound, toast, flashLoss } = useStore()
   const [risk, setRisk] = useState<Risk>('medium')
   const [rows, setRows] = useState(12)
   const [bet, setBet] = useState(MIN_BET)
@@ -85,23 +108,21 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
     if (bet > balance) {
       return
     }
-    if (!placeBet('plinko', bet)) return
     sfx.place()
-    const [u] = await nextFloats(1)
-    // derive a Bernoulli path from the float's bits for visual variety
-    const path: number[] = []
-    let bits = u
-    for (let i = 0; i < rows; i++) {
-      bits = bits * 2
-      path.push(bits >= 1 ? 1 : 0)
-      if (bits >= 1) bits -= 1
+    // The server picks the bucket. The path drawn below is the binary
+    // expansion of the float it publishes, so the ball lands where it was paid.
+    let settled: Awaited<ReturnType<typeof playGame>>
+    try {
+      settled = await playGame('plinko', bet, { rows, risk })
+    } catch (e) {
+      toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
+      return
     }
-    const total = path.reduce((a, b) => a + b, 0)
-    // Rejection-free unbiased mapping: the path sum is the bucket index.
-    const bucket = Math.max(0, Math.min(table.length - 1, total))
+    const bucket = Number(settled.payload.index ?? 0)
+    const path = roulettePath(settled.payload, rows)
     const id = ++idRef.current
-    setBalls((b) => [...b.slice(-40), { id, path, bucket, mult: table[bucket], wager: bet }])
-  }, [bet, balance, placeBet, nextFloats, rows, table])
+    setBalls((b) => [...b.slice(-40), { id, path, bucket, mult: settled.multiplier, wager: bet, settled }])
+  }, [bet, balance, playGame, rows, risk, toast, table])
 
   // resolve a ball once it lands (kept out of the state updater so React's
   // double-invocation in dev can never settle the same ball twice)
@@ -115,12 +136,9 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
       const ball = ballsRef.current.find((b) => b.id === ballId)
       if (!ball) return
       landedRef.current.add(ballId)
-      const payout = settleBet({
-        game: 'plinko',
-        wager: ball.wager,
-        multiplier: ball.mult,
-        detail: `${rows} rows · ${TABLES[risk].label} risk · ${mult(ball.mult)}`,
-      })
+      // Already settled by the server when the ball was dropped: paying here
+      // again would be a second credit for one bet.
+      const payout = ball.settled.payout
       setLast({ mult: ball.mult, payout })
       if (sound) {
         if (ball.mult >= 1) sfx.win()
@@ -131,7 +149,7 @@ export function Plinko({ onBack, onFair }: { onBack: () => void; onFair: () => v
       }
       setBalls((prev) => prev.filter((b) => b.id !== ballId))
     },
-    [settleBet, rows, risk, sound, flashLoss],
+    [rows, sound, flashLoss],
   )
 
   useHotkey(drop)

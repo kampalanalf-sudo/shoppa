@@ -11,7 +11,7 @@ import { MIN_BET } from '../lib/currency'
 
 export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('limbo')!
-  const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
+  const { playGame, balance, sound, toast, flashLoss } = useStore()
   const [bet, setBet] = useState(MIN_BET)
   const [target, setTarget] = useState(2)
   const [running, setRunning] = useState(false)
@@ -30,12 +30,20 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       toast({ kind: 'error', title: 'Insufficient balance', body: 'Lower your bet to continue.' })
       return
     }
-    if (!placeBet('limbo', bet)) return
     sfx.place()
     setRunning(true)
     setResult(null)
-    const [u] = await nextFloats(1)
-    const point = limboPoint(u)
+    // The target is the bet; the multiplier paid is the target only if the
+    // server's own point clears it. The browser no longer sees the point first.
+    let settled: Awaited<ReturnType<typeof playGame>>
+    try {
+      settled = await playGame('limbo', bet, { target })
+    } catch (e) {
+      setRunning(false)
+      toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
+      return
+    }
+    const point = Number(settled.payload.point ?? 1)
     const t0 = performance.now()
     const dur = 780
     const anim = () => {
@@ -51,13 +59,8 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
         setRunning(false)
         setResult(point)
         setHistory((h) => [point, ...h].slice(0, 18))
-        const won = point >= target
-        const payout = settleBet({
-          game: 'limbo',
-          wager: bet,
-          multiplier: won ? target : 0,
-          detail: `${mult(point)} result · target ${mult(target)}`,
-        })
+        const won = settled.won
+        const payout = settled.payout
         if (!won) flashLoss()
         if (sound) {
           if (won) {
@@ -69,7 +72,7 @@ export function Limbo({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       }
     }
     raf.current = requestAnimationFrame(anim)
-  }, [running, bet, balance, placeBet, nextFloats, target, settleBet, sound, toast])
+  }, [running, bet, balance, playGame, target, sound, toast])
 
   useEffect(() => () => cancelAnimationFrame(raf.current), [])
 

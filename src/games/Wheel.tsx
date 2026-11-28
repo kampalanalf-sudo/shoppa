@@ -9,57 +9,15 @@ import { MIN_BET } from '../lib/currency'
 
 /**
  * Fortune Wheel — 80 physical slices with an audited layout.
- * EV = Σ (multiplier × slices) / 80 = 0.99 exactly (99% RTP).
- *   0×  ×19   ·   0.5× ×10   ·   1.2× ×26   ·   1.5× ×22   ·   2× ×1   ·   3× ×1   ·   5× ×1
+ *
+ * The layout and the slice ORDER now come from `_shared/games.ts`, which the
+ * server uses to settle. They used to be duplicated here, and a duplicate is a
+ * wheel that can pay a multiplier the board never showed. One table, two users.
+ * EV = 0.99 exactly (99% RTP).
  */
-const LAYOUT: [number, number][] = [
-  [0, 19],
-  [0.5, 10],
-  [1.2, 26],
-  [1.5, 22],
-  [2, 1],
-  [3, 1],
-  [5, 1],
-]
+import { WHEEL_SEGMENTS } from '../../supabase/functions/_shared/games'
 
-const SLICES: number[] = (() => {
-  const TOTAL = 80
-  const NULLS = 19
-  const wins: number[] = []
-  LAYOUT.forEach(([m, n]) => {
-    if (m > 0) for (let i = 0; i < n; i++) wins.push(m)
-  })
-
-  // deterministic Fisher–Yates so the wheel looks different every load,
-  // but the slice *counts* (and therefore the RTP) are always identical.
-  let seed = 1337
-  const rnd = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648)
-  for (let i = wins.length - 1; i > 0; i--) {
-    const j = Math.floor(rnd() * (i + 1))
-    ;[wins[i], wins[j]] = [wins[j], wins[i]]
-  }
-
-  const out: number[] = []
-  let nullsUsed = 0
-  let wi = 0
-  for (let p = 0; p < TOTAL; p++) {
-    if (p % 4 === 0 && nullsUsed < NULLS) {
-      out.push(0)
-      nullsUsed++
-    } else if (wi < wins.length) {
-      out.push(wins[wi++])
-    }
-  }
-  while (out.length < TOTAL) out.push(0)
-
-  // finish on the top jackpot for a satisfying spin
-  const big = out.lastIndexOf(5)
-  if (big >= 0 && big !== out.length - 1) {
-    out[big] = out[out.length - 1]
-    out[out.length - 1] = 5
-  }
-  return out
-})()
+const SLICES: number[] = [...WHEEL_SEGMENTS]
 
 const COLOR = (m: number) => {
   if (m === 0) return '#333b50'
@@ -77,7 +35,7 @@ const SEG = 360 / SLICES.length
 
 export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('wheel')!
-  const { placeBet, settleBet, nextFloats, balance, sound, toast, flashLoss } = useStore()
+  const { playGame, balance, sound, toast, flashLoss } = useStore()
   const [bet, setBet] = useState(MIN_BET)
   const [spinning, setSpinning] = useState(false)
   const [angle, setAngle] = useState(0)
@@ -99,12 +57,20 @@ export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       toast({ kind: 'error', title: 'Insufficient balance', body: 'Lower your bet to continue.' })
       return
     }
-    if (!placeBet('wheel', bet)) return
     sfx.place()
     setSpinning(true)
-    const [u] = await nextFloats(1)
-    const idx = Math.min(SLICES.length - 1, Math.floor(u * SLICES.length))
-    const m = SLICES[idx]
+    // The player picks nothing and the browser decides nothing: the request is
+    // only the stake, and the slice comes back from the server.
+    let settled: Awaited<ReturnType<typeof playGame>>
+    try {
+      settled = await playGame('wheel', bet, {})
+    } catch (e) {
+      setSpinning(false)
+      toast({ kind: 'error', title: 'Bet refused', body: (e as Error).message })
+      return
+    }
+    const idx = Number(settled.payload.index ?? 0)
+    const m = settled.multiplier
     const targetCenter = idx * SEG + SEG / 2
     const turns = 6 + Math.floor(Math.random() * 2)
     const current = ((angle % 360) + 360) % 360
@@ -117,12 +83,7 @@ export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       setSpinning(false)
       setLast(idx)
       setHistory((h) => [m, ...h].slice(0, 16))
-      const payout = settleBet({
-        game: 'wheel',
-        wager: bet,
-        multiplier: m,
-        detail: m > 0 ? `Landed ${mult(m)}` : 'Landed on a losing slice',
-      })
+      const payout = settled.payout
       if (sound) {
         if (m >= 5) sfx.bigwin()
         else if (m > 0) sfx.win()
@@ -131,7 +92,7 @@ export function Wheel({ onBack, onFair }: { onBack: () => void; onFair: () => vo
       if (m === 0) flashLoss()
       if (m >= 3) toast({ kind: 'win', title: `Wheel jackpot ${mult(m)}!`, body: `+$UGX {money(payout)} paid out.` })
     }, 5400)
-  }, [spinning, bet, balance, placeBet, nextFloats, angle, settleBet, sound, toast])
+  }, [spinning, bet, balance, playGame, angle, sound, toast, flashLoss])
 
   useHotkey(() => void spin())
   const landed = last !== null ? SLICES[last] : null
