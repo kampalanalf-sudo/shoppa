@@ -14,7 +14,7 @@
 //   * the layout only appears after the round is closed,
 //   * cashing out twice pays once.
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 
 const PASS: string[] = []
@@ -122,9 +122,8 @@ const source = readFileSync('supabase/.dist/play.ts', 'utf8')
 const js = ts.transpileModule(source, {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
 }).outputText
-mkdirSync('smoke/dist-board', { recursive: true })
-writeFileSync('smoke/dist-board/play.live.mjs', js)
-await import('../smoke/dist-board/play.live.mjs')
+// A data: URL rather than a file, so nothing is written next to the source.
+await import('data:text/javascript;base64,' + Buffer.from(js).toString('base64'))
 
 if (!handler) throw new Error('the bundle did not register a handler')
 

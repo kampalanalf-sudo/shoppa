@@ -41,7 +41,7 @@
     "test:signedin": "vite build --config smoke/vite.signedin.config.ts && node smoke/dist-signedin/signedin.js",
     "test:readiness": "vite build --config smoke/vite.readiness.config.ts && node smoke/dist-readiness/readiness.js",
     "test:settle": "vite build --config smoke/vite.settle.config.ts && node smoke/dist-settle/settle.js",
-    "test:board": "npm run edge:build && node --experimental-strip-types smoke/board.ts"
+    "test:board": "npm run edge:build && vite build --config smoke/vite.board.config.ts && node smoke/dist-board/board.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",
