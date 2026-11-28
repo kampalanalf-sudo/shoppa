@@ -89,6 +89,9 @@ ok('the sweep refunds the stake as an adjustment, not a win',
   /update wallets set balance_px = v_after where user_id = p_user/.test(startSql))
 ok('the sweep only touches rounds old enough to be abandoned',
   /created_at < now\(\) - p_older_than/.test(startSql) && /'30 minutes'/.test(startSql))
+ok('the board games (Mines, Tower) sweep too, or one abandoned board wedges every bet',
+  /perform public\.abandon_stale_rounds\(v_uid\)/.test(
+    read('supabase/migrations/0021_board_games.sql')))
 ok('the sweep closes only rounds that are still open',
   /and status = 'open'/.test(startSql))
 ok('a player can clear their own stuck round without waiting 30 minutes',
@@ -156,6 +159,19 @@ ok('the wheel stops on the slice the server paid', (() => {
 })())
 
 // ------------------------------------------------ 6. the settle path is reachable --
+
+// The actual cause of "the spins are not working": start_round declared the new
+// round's id as uuid while rounds.id is bigint, so every arcade start threw
+// 22P02 at runtime. `create or replace` accepted it and the function compiled, so
+// nothing caught it until a player pressed Spin.
+ok('start_round reads rounds.id as a bigint, the type the column actually is',
+  /v_round\s+bigint/.test(startSql) && !/v_round\s+uuid/.test(startSql))
+ok('and so does the board-game starter', (() => {
+  const board = read('supabase/migrations/0021_board_games.sql')
+  return /v_round\s+bigint/.test(board) && !/v_round\s+uuid/.test(board)
+})())
+ok('settle and cancel take a bigint round too',
+  /p_round bigint/.test(startSql) && /cancel_round\(p_round bigint\)/.test(startSql))
 
 ok('the play function still serves start, settle and reveal',
   /op === 'start'/.test(playFn) && /op === 'settle'/.test(playFn) && /op === 'reveal'/.test(playFn))

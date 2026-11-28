@@ -162,7 +162,12 @@ declare
   v_after   bigint;
   v_seed    fair_seeds;
   v_nonce   bigint;
-  v_round   uuid;
+  -- rounds.id is BIGINT (0001 created it as bigserial). Typing it uuid here is
+  -- what made every arcade start fail with 'invalid input syntax for type uuid',
+  -- and it is invisible until someone actually spins: `create or replace` accepts
+  -- the wrong type, the function compiles, and the error only appears at runtime.
+  -- 0021's start_board_round has it right, which is why Mines and Tower worked.
+  v_round   bigint;
   v_open    bigint;
 begin
   if v_uid is null then
