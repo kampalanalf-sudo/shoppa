@@ -44,6 +44,14 @@ const {
   diceRoll,
   SERVER_SETTLED,
   LOCAL_ONLY,
+  minesMultiplier,
+  mineLayout,
+  MINE_GRID,
+  towerLayout,
+  towerCols,
+  towerLevelMultiplier,
+  TOWER_LEVELS,
+  floatsNeeded,
 } = await import('../supabase/functions/_shared/games.ts')
 
 let fail = 0
@@ -277,11 +285,89 @@ const near = (a: number, b: number, tol = 1e-9) => Math.abs(a - b) < tol
 `)
 }
 
+// ------------------------------------------------- board games: no peeking ----
+// Mines and Tower are the games where the browser must NOT know the answer.
+{
+  const sql21 = read('supabase/migrations/0021_board_games.sql')
+    .split('\n').map((l) => l.replace(/--.*$/, '')).join('\n')
+  check('the board lives on the round row, not in the response',
+    /alter table rounds add column if not exists board jsonb/.test(sql21))
+  check('settling a board round is service_role only',
+    /settle_board_round\(bigint, numeric, text\) from public, anon, authenticated/.test(sql21))
+  check('opening one is open to players',
+    /start_board_round\(text, bigint, integer, integer\) to authenticated/.test(sql21))
+
+  const fn = read('supabase/functions/play/index.ts')
+  check('the reveal step reads the layout server-side',
+    /await boardOf\(roundId\)/.test(fn))
+  check('the start response carries counts, not positions',
+    /grid: game === 'mines' \? MINE_GRID/.test(fn))
+  check('the layout is only returned once the round is closed',
+    /mines_at: layout/.test(fn) || /safe_at: layout/.test(fn))
+
+  const mines = read('src/games/Mines.tsx')
+  check('the mines board holds no local minefield',
+    !/new Set\(positions\.slice/.test(mines) && !/nextFloats/.test(mines))
+  check('tower holds no local safe set',
+    !/floats.forEach\(/.test(read('src/games/Tower.tsx')))
+
+  // The multiplier tables must be shared, not copied. A copy is a table that
+  // can drift, and drift means the board and the payout disagree.
+  check('mines imports the server\'s multiplier table',
+    /multiplierFor = minesMultiplier/.test(mines))
+  check('tower imports the server\'s multiplier table',
+    /towerLevelMultiplier\(difficulty, lv\)/.test(read('src/games/Tower.tsx')))
+}
+
+// -------------------------------------------------------- the mines paytable ----
+{
+  // Published mines returns: risk grows with picks, and one pick on 3 mines is
+  // 0.99 / (22/25) = 1.13x.
+  check('one pick with 3 mines pays 1.13x',
+    minesMultiplier(3, 1) === 1.13, `(${minesMultiplier(3, 1)})`)
+  check('the payout rises with every safe pick',
+    [1, 2, 3, 4, 5].every((n) => n === 1 || minesMultiplier(3, n) > minesMultiplier(3, n - 1)))
+  check('more mines pay better at the same depth',
+    minesMultiplier(10, 3) > minesMultiplier(3, 3))
+  check('clearing all 22 safe tiles with 3 mines is capped and finite',
+    Number.isFinite(minesMultiplier(3, 22)) && minesMultiplier(3, 22) > 1)
+  check('pick zero pays nothing extra', minesMultiplier(3, 0) === 1)
+
+  // The layout must be a real shuffle of 25 tiles.
+  const floats = Array.from({ length: 25 }, (_, i) => ((i * 37) % 100) / 100)
+  const layout = mineLayout(floats, 5)
+  check('the layout has exactly the chosen number of mines', layout.length === 5)
+  check('the layout positions are unique and in range',
+    new Set(layout).size === 5 && layout.every((p) => p >= 0 && p < MINE_GRID))
+  check('the same floats give the same board, so it is reproducible',
+    JSON.stringify(mineLayout(floats, 5)) === JSON.stringify(layout))
+  check('mines needs 25 floats, not one', floatsNeeded('mines') === 25)
+  check('tower needs one float per floor', floatsNeeded('tower') === TOWER_LEVELS)
+}
+
+// ------------------------------------------------------- the tower paytable ----
+{
+  check('easy tower has 4 tiles per floor', towerCols(1) === 4)
+  check('hard tower has 2 tiles per floor', towerCols(3) === 2)
+  check('level 0 pays exactly the stake back', towerLevelMultiplier(1, 0) === 1)
+  check('each floor improves the multiplier',
+    towerLevelMultiplier(1, 3) > towerLevelMultiplier(1, 2))
+  check('harder difficulties pay more per floor',
+    towerLevelMultiplier(3, 4) > towerLevelMultiplier(1, 4))
+
+  const safe = towerLayout([0.1, 0.9, 0.5, 0.2, 0.8, 0.3, 0.7, 0.4], 1)
+  check('one safe tile per floor', safe.length === TOWER_LEVELS)
+  check('safe tiles are real columns',
+    safe.every((c) => c >= 0 && c < towerCols(1)))
+}
+
 // -------------------------------------- the game list says what it can settle --
 {
-  check('six games are server-settled', SERVER_SETTLED.length === 6, `(${SERVER_SETTLED.length})`)
-  check('the slot boards and multi-step games are honestly listed as local',
-    ['mines', 'tower', 'bonni', 'craters'].every((g) => (LOCAL_ONLY as readonly string[]).includes(g)))
+  check('eight games are server-settled', SERVER_SETTLED.length === 8, `(${SERVER_SETTLED.length})`)
+  check('mines and tower are no longer local-only',
+    !['mines', 'tower'].some((g) => (LOCAL_ONLY as readonly string[]).includes(g)))
+  check('the ways slots are honestly listed as local',
+    ['bonni', 'craters'].every((g) => (LOCAL_ONLY as readonly string[]).includes(g)))
   check('a local-only game cannot be settled by the server',
     (() => { try { resolveBet('bonni' as never, {}, 0.5); return false } catch { return true } })())
 }

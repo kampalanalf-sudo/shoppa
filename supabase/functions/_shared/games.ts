@@ -36,12 +36,20 @@ export type GameId =
   | 'chape' | 'bluemountain' | 'bazaar' | 'boda'
 
 /** Games the server can settle from a float alone. */
-export const SERVER_SETTLED: readonly GameId[] = ['dice', 'limbo', 'wheel', 'plinko', 'roulette', 'crash']
-
-/** Games that still settle in the browser. See `unsupportedReason`. */
-export const LOCAL_ONLY: readonly GameId[] = [
-  'mines', 'tower', 'bonni', 'craters', 'chape', 'bluemountain', 'bazaar', 'boda',
+export const SERVER_SETTLED: readonly GameId[] = [
+  'dice', 'limbo', 'wheel', 'plinko', 'roulette', 'crash', 'mines', 'tower',
 ]
+
+/**
+ * Games that settle in the browser, and cannot be played for money.
+ *
+ * These are the ways slots: the outcome is a grid of symbol weights whose rules
+ * live in src/lib/slots (and, for Bonni & Clyve, src/lib/slot.ts). Porting them
+ * means moving a paytable *and* a feature state machine server-side, and doing
+ * that badly pays multipliers the board never shows — which is exactly the
+ * mistake the wheel made on the first pass here.
+ */
+export const LOCAL_ONLY: readonly GameId[] = ['bonni', 'craters', 'chape', 'bluemountain', 'bazaar', 'boda']
 
 /**
  * House edge, matching the arcade's existing tables.
@@ -265,6 +273,84 @@ export function plinkoBucket(u: number, rows: number, buckets: number): number {
     }
   }
   return Math.max(0, Math.min(buckets - 1, sum))
+}
+
+// ------------------------------------------------------- board games ---------
+//
+// MINES and TOWER are different from the games above: their outcome is not one
+// float but a hidden BOARD that a player explores over several moves. The server
+// must hold the board and reveal one cell at a time, because a client that knows
+// where the mines are will always cash out on time.
+//
+// Everything below is ported from src/games/Mines.tsx and src/games/Tower.tsx,
+// including the shuffle, so the layout the server builds is the layout the board
+// draws. An approximation here pays the wrong multiplier, which is exactly the
+// wheel bug again.
+
+export const MINE_GRID = 25
+export const MINE_CHOICES = [1, 3, 5, 10, 15, 20, 24] as const
+
+/**
+ * Standard mines payout: 0.99 / P(surviving n picks),
+ * P = prod (safeRemaining / tilesRemaining) — matches C(25-mines, picks)/C(25, picks).
+ */
+export function minesMultiplier(mines: number, picks: number): number {
+  if (picks <= 0) return 1
+  let p = 1
+  for (let i = 0; i < picks; i++) p *= (MINE_GRID - mines - i) / (MINE_GRID - i)
+  if (p <= 0) return 0
+  return Math.max(1, Math.round((EDGE / p) * 100) / 100)
+}
+
+/**
+ * Unbiased Fisher-Yates, one float per step.
+ *
+ * Identical to the component's: it consumes GRID floats and walks from the end,
+ * which is why the server needs 25 of them and not one.
+ */
+export function mineLayout(floats: number[], mines: number): number[] {
+  const positions = Array.from({ length: MINE_GRID }, (_, i) => i)
+  for (let i = positions.length - 1; i > 0; i--) {
+    const j = Math.min(i, Math.floor(floats[i] * (i + 1)))
+    ;[positions[i], positions[j]] = [positions[j], positions[i]]
+  }
+  return positions.slice(0, mines)
+}
+
+export const TOWER_LEVELS = 8
+
+/** Easy: 4 tiles / 3 safe · Medium: 3 / 2 · Hard: 2 / 1. */
+export const towerCols = (difficulty: number) => 5 - difficulty
+
+export function towerLevelMultiplier(difficulty: number, level: number): number {
+  const cols = towerCols(difficulty)
+  const safe = cols - 1
+  let m = EDGE
+  for (let i = 0; i < level; i++) m *= cols / safe
+  return Math.round(Math.max(1, m) * 100) / 100
+}
+
+/**
+ * One safe tile per floor, exactly as the component draws it.
+ *
+ * The component calls this the "safe set" and reveals the tile for the floor the
+ * player is on; a floor's other tiles are fatal. Built from LEVELS floats.
+ */
+export function towerLayout(floats: number[], difficulty: number): number[] {
+  const cols = towerCols(difficulty)
+  const safe: number[] = []
+  for (let i = 0; i < TOWER_LEVELS; i++) {
+    const u = floats[i] ?? 0
+    safe.push(Math.min(cols - 1, Math.floor(u * cols)))
+  }
+  return safe
+}
+
+/** How many floats each board game needs from the seed stream. */
+export const floatsNeeded = (game: GameId): number => {
+  if (game === 'mines') return MINE_GRID
+  if (game === 'tower') return TOWER_LEVELS
+  return 1
 }
 
 export const RED_NUMBERS = new Set([1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36])
