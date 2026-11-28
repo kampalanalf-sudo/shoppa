@@ -66,6 +66,13 @@ begin
     raise exception 'account suspended' using errcode = '42501';
   end if;
 
+  -- Mines and Tower open a round that stays open while the player is deciding,
+  -- so a player who navigates away mid-board leaves one behind. This is the same
+  -- wedge as the arcade's (see abandon_stale_rounds in 0020, added with the
+  -- stuck-round fix): without the sweep, walking away from one Mine board
+  -- refused every later bet in every game, for good.
+  perform public.abandon_stale_rounds(v_uid);
+
   select count(*) into v_open from rounds where user_id = v_uid and status = 'open';
   if v_open > 0 then raise exception 'finish your last round first' using errcode = '55000'; end if;
 
