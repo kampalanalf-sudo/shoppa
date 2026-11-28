@@ -311,6 +311,53 @@ check('the cashout page no longer asks for phone verification',
   check('it is not callable by anon', /revoke all on function public\.cancel_cashout\(uuid\) from anon/.test(sql18))
 }
 
+// --------------------------- a refresh must not erase a player's win --------
+// The sync effect adopted wallets.balance_px unconditionally. The arcade settles
+// in the browser and writes the result nowhere, so on the next wallet refresh
+// the displayed balance snapped back to the server figure: "when a player
+// refreshes his session, the balance displayed is the balance from the
+// beginning of the session."
+{
+  const store = read('src/lib/store.tsx')
+  check('the sync effect keeps unsent gameplay on top of the server figure',
+    /unsent/.test(store) && /serverBaselineRef/.test(store))
+  check('it does not overwrite the balance when the server has not moved',
+    /server === prevServer\) \{\s*\n\s*\/\/ Server has not moved/.test(store))
+  check('a deposit still shows immediately, which is the original bug',
+    /serverBaselineRef\.current = server/.test(store))
+  check('the wallet tells the player which part is not withdrawable',
+    /unsentCredit/.test(read('src/components/Modals.tsx')) &&
+    /not\s+withdrawable yet/i.test(read('src/components/Modals.tsx')))
+}
+
+// --------------------------- no player can settle their own round ----------
+// settle_round(p_multiplier) credits floor(wager * multiplier) and takes the
+// multiplier from the caller. It was granted to `authenticated`, so any player
+// could call it from a console: place_bet(100) then settle_round(100, 100000)
+// turns UGX 100 into UGX 10,000,000, which then withdraws normally. This is the
+// same defect class as the wallet printer, except reachable by anyone with an
+// account rather than only through our own UI.
+{
+  const sql19 = read('supabase/migrations/0019_disable_client_settle.sql')
+    .split('\n').map((l: string) => l.replace(/--.*$/, '')).join('\n')
+  check('settle_round is revoked from authenticated',
+    /revoke all on function public\.settle_round\([^)]*\) from authenticated/.test(sql19))
+  check('place_bet is revoked from authenticated',
+    /revoke all on function public\.place_bet\([^)]*\) from authenticated/.test(sql19))
+  check('service_role keeps them, since it cannot be reached from a browser',
+    /grant execute on function public\.settle_round/.test(sql19))
+
+  // Nothing in the app calls them, so revoking removes no working feature.
+  const clientFiles = ['src/lib/store.tsx', 'src/lib/sportsbook.ts', 'src/pages/Sportsbook.tsx']
+  check('no client code calls the removed round functions',
+    clientFiles.every((f) => !/rpc\(\s*['"](place_bet|settle_round)['"]/.test(read(f))))
+
+  // The games still cannot reach the database: the arcade settles locally, which
+  // is the whole reason the balance above is not the server's.
+  check('the arcade settles locally rather than through the database',
+    /balance: Math\.round\(s\.balance \+ payout\)/.test(read('src/lib/store.tsx')))
+}
+
 // ------------------------------------------------------- the env is honest --
 const env = read('.env.example')
 check('the env template no longer documents the retired gateway', !/DGATEWAY/i.test(env))
