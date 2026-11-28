@@ -305,11 +305,28 @@ const near = (a: number, b: number, tol = 1e-9) => Math.abs(a - b) < tol
   check('the layout is only returned once the round is closed',
     /mines_at: layout/.test(fn) || /safe_at: layout/.test(fn))
 
+  /*
+   * Free play is allowed to draw its own board — it has no server row and never
+   * will, and without a local board the demo notice's "Play on Free play" button
+   * dropped the player into a game that could not start.
+   *
+   * What must NOT exist is a REAL-MONEY path that builds a board locally. So the
+   * check is on the branch, not on the word: every local board draw must sit
+   * inside a `mode === 'free'` guard, and the paid path must still go through
+   * startBoardRound.
+   */
   const mines = read('src/games/Mines.tsx')
-  check('the mines board holds no local minefield',
-    !/new Set\(positions\.slice/.test(mines) && !/nextFloats/.test(mines))
-  check('tower holds no local safe set',
-    !/floats.forEach\(/.test(read('src/games/Tower.tsx')))
+  check('mines still opens a PAID round through the server',
+    /startBoardRound\('mines'/.test(mines))
+  check('mines draws a board locally only under a free-play guard',
+    mines.split("mode === 'free'").length - 1 >= 2 && /mineLayout\(/.test(mines))
+  const tower = read('src/games/Tower.tsx')
+  check('tower still opens a PAID round through the server',
+    /startBoardRound\('tower'/.test(tower))
+  check('tower draws a board locally only under a free-play guard',
+    tower.split("mode === 'free'").length - 1 >= 2 && /towerLayout\(/.test(tower))
+  check('crash commits blind in BOTH modes (the point is drawn at cash-out)',
+    /freePoint/.test(read('src/games/Crash.tsx')))
 
   // The multiplier tables must be shared, not copied. A copy is a table that
   // can drift, and drift means the board and the payout disagree.

@@ -3,7 +3,7 @@ import { useStore } from '../lib/store'
 import { sfx } from '../lib/sound'
 import { combination } from '../lib/fair'
 import { revealCell, startBoardRound, type Reveal } from '../lib/play'
-import { MINE_GRID, minesMultiplier } from '../../supabase/functions/_shared/games'
+import { MINE_GRID, mineLayout, minesMultiplier } from '../../supabase/functions/_shared/games'
 import { money, mult } from '../lib/format'
 import { gameById } from '../lib/games'
 import { BetAmount, BetButton } from '../components/BetControls'
@@ -24,7 +24,8 @@ const multiplierFor = minesMultiplier
 
 export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('mines')!
-  const { balance, sound, toast, flashLoss, finishRound, syncBalance } = useStore()
+  const { balance, sound, toast, flashLoss, finishRound, syncBalance, mode, placeBet, settleBet, nextFloats } =
+    useStore()
   const [bet, setBet] = useState(MIN_BET)
   const [mines, setMines] = useState(3)
   const [active, setActive] = useState(false)
@@ -40,6 +41,17 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
   const [revealed, setRevealed] = useState<number[]>([])
   const [busted, setBusted] = useState<number[] | null>(null)
   const [busy, setBusy] = useState(false)
+  /**
+   * The FREE-PLAY board.
+   *
+   * Free play has no server row, so the minefield is drawn here from the same
+   * floats and the same `mineLayout` the server uses — the rules match, only the
+   * money is missing. Without this, switching to free play (which the demo
+   * notice offers) left Mines with no way to start a round at all: `start()`
+   * called the server, the server rightly refused, and the game looked broken.
+   */
+  const [, setFreeBoard] = useState<number[] | null>(null)
+  const freeRef = useRef<{ layout: number[]; picks: number[] } | null>(null)
 
   const picks = revealed.length
   const currentMult = useMemo(() => multiplierFor(mines, picks), [mines, picks])
@@ -54,6 +66,20 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
     }
     setBusy(true)
     try {
+      if (mode === 'free') {
+        // Practice credits only: debit locally, draw the board locally, and the
+        // same reveal rules decide the rest.
+        if (!placeBet('mines', Math.round(bet))) return
+        const floats = await nextFloats(MINE_GRID)
+        freeRef.current = { layout: mineLayout(floats, mines), picks: [] }
+        openRef.current = null
+        setFreeBoard(freeRef.current.layout)
+        sfx.place()
+        setRevealed([])
+        setBusted(null)
+        setActive(true)
+        return
+      }
       const started = await startBoardRound('mines', Math.round(bet), { mines })
       openRef.current = { round: String(started.round), nonce: started.nonce, server_hash: started.server_hash }
       sfx.place()
@@ -65,11 +91,32 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
     } finally {
       setBusy(false)
     }
-  }, [bet, balance, mines, toast])
+  }, [bet, balance, mines, toast, mode, placeBet, nextFloats])
 
   const pick = async (i: number) => {
+    if (!active || revealed.includes(i) || busted) return
+
+    // ---- free play: the board is here, and the rules are the same --------
+    if (mode === 'free') {
+      const free = freeRef.current
+      if (!free) return
+      if (free.layout.includes(i)) {
+        setBusted(free.layout)
+        setActive(false)
+        freeRef.current = null
+        settleBet({ game: 'mines', wager: Math.round(bet), multiplier: 0, detail: 'Hit a mine' })
+        flashLoss()
+        if (sound) sfx.bomb()
+        return
+      }
+      free.picks = [...free.picks, i]
+      setRevealed(free.picks)
+      if (sound) sfx.gem()
+      return
+    }
+
     const open = openRef.current
-    if (!active || !open || revealed.includes(i) || busted) return
+    if (!open) return
     try {
       const res: Reveal = await revealCell(open.round, i)
       if (res.busted) {
@@ -89,8 +136,32 @@ export function Mines({ onBack, onFair }: { onBack: () => void; onFair: () => vo
   }
 
   const cashout = async () => {
+    if (!active || !picks) return
+
+    if (mode === 'free') {
+      const free = freeRef.current
+      if (!free) return
+      const m = multiplierFor(mines, free.picks.length)
+      const paid = settleBet({
+        game: 'mines',
+        wager: Math.round(bet),
+        multiplier: m,
+        detail: `${mines} mines · ${free.picks.length} gems`,
+      })
+      freeRef.current = null
+      setActive(false)
+      setBusted(null)
+      if (sound) (m >= 5 ? sfx.bigwin : sfx.cashout)()
+      toast({
+        kind: 'win',
+        title: `Cashed out ${mult(m)}`,
+        body: `+UGX ${money(paid)} in practice credits. Not withdrawable.`,
+      })
+      return
+    }
+
     const open = openRef.current
-    if (!active || !open || !picks) return
+    if (!open) return
     try {
       const res = await revealCell(open.round, 0, true)
       openRef.current = null

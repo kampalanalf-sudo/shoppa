@@ -8,13 +8,13 @@ import { GameShell, PayoutRow } from '../components/GameShell'
 import { IconDiamond } from '../components/Icons'
 import { MIN_BET } from '../lib/currency'
 import { revealCell, startBoardRound, type Reveal } from '../lib/play'
-import { TOWER_LEVELS, towerCols, towerLevelMultiplier } from '../../supabase/functions/_shared/games'
+import { TOWER_LEVELS, towerCols, towerLayout, towerLevelMultiplier } from '../../supabase/functions/_shared/games'
 
 const LEVELS = TOWER_LEVELS
 
 export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => void }) {
   const game = gameById('tower')!
-  const { balance, sound, toast, flashLoss, syncBalance } = useStore()
+  const { balance, sound, toast, flashLoss, syncBalance, mode, placeBet, settleBet, nextFloats } = useStore()
   const [bet, setBet] = useState(MIN_BET)
   const [difficulty, setDifficulty] = useState<1 | 2 | 3>(1)
   const [active, setActive] = useState(false)
@@ -23,6 +23,12 @@ export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => vo
   const [safeTiles, setSafeTiles] = useState<Set<number>>(new Set())
   /** The open round. The layout stays on the server; see src/lib/play.ts. */
   const openRef = useRef<{ round: string } | null>(null)
+  /**
+   * The FREE-PLAY tower: one safe column per floor, drawn here with the same
+   * `towerLayout` the server uses. Without it, switching to free play left Tower
+   * unable to start at all, because every path called the server.
+   */
+  const freeRef = useRef<number[] | null>(null)
   const [crashed, setCrashed] = useState<number | null>(null)
   const [picked, setPicked] = useState<number[]>([])
   const [busy, setBusy] = useState(false)
@@ -45,6 +51,19 @@ export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => vo
     }
     setBusy(true)
     try {
+      if (mode === 'free') {
+        if (!placeBet('tower', Math.round(bet))) return
+        const floats = await nextFloats(LEVELS)
+        freeRef.current = towerLayout(floats, difficulty)
+        openRef.current = null
+        sfx.place()
+        setLevel(0)
+        setPicked([])
+        setCrashed(null)
+        setSafeTiles(new Set())
+        setActive(true)
+        return
+      }
       const started = await startBoardRound('tower', Math.round(bet), { difficulty })
       openRef.current = { round: String(started.round) }
       sfx.place()
@@ -57,12 +76,45 @@ export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => vo
     } finally {
       setBusy(false)
     }
-  }, [bet, balance, difficulty, toast])
+  }, [bet, balance, difficulty, toast, mode, placeBet, nextFloats])
 
   const pick = async (i: number) => {
-    const open = openRef.current
-    if (!active || crashed !== null || !open) return
+    if (!active || crashed !== null) return
     const cell = level * cols + i
+
+    // ---- free play: the tower is here, and the rules are the same --------
+    if (mode === 'free') {
+      const safe = freeRef.current
+      if (!safe) return
+      if (safe[level] !== i) {
+        setCrashed(cell)
+        setSafeTiles(new Set(safe.map((c, f) => f * cols + c)))
+        setActive(false)
+        freeRef.current = null
+        settleBet({ game: 'tower', wager: Math.round(bet), multiplier: 0, detail: `Fell on floor ${level + 1}` })
+        flashLoss()
+        if (sound) sfx.bomb()
+        return
+      }
+      const next = level + 1
+      setPicked((p) => [...p, cell])
+      if (sound) sfx.gem()
+      if (next >= LEVELS) {
+        const m = levelMult(LEVELS)
+        const paid = settleBet({ game: 'tower', wager: Math.round(bet), multiplier: m, detail: 'Cleared all floors' })
+        freeRef.current = null
+        setLevel(LEVELS)
+        setActive(false)
+        if (sound) sfx.bigwin()
+        toast({ kind: 'win', title: 'Tower cleared!', body: `+UGX ${money(paid)} in practice credits.` })
+      } else {
+        setLevel(next)
+      }
+      return
+    }
+
+    const open = openRef.current
+    if (!open) return
     try {
       const res: Reveal = await revealCell(open.round, cell)
       if (res.busted) {
@@ -94,8 +146,22 @@ export function Tower({ onBack, onFair }: { onBack: () => void; onFair: () => vo
   }
 
   const cashout = async () => {
+    if (!active || level === 0) return
+
+    if (mode === 'free') {
+      const m = levelMult(level)
+      const paid = settleBet({
+        game: 'tower', wager: Math.round(bet), multiplier: m, detail: `Climbed ${level} floors`,
+      })
+      freeRef.current = null
+      setActive(false)
+      if (sound) (m >= 5 ? sfx.bigwin : sfx.cashout)()
+      toast({ kind: 'win', title: `Cashed out ${mult(m)}`, body: `+UGX ${money(paid)} in practice credits. Not withdrawable.` })
+      return
+    }
+
     const open = openRef.current
-    if (!active || level === 0 || !open) return
+    if (!open) return
     try {
       const res = await revealCell(open.round, 0, true)
       openRef.current = null
