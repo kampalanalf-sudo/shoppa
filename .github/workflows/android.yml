@@ -50,7 +50,14 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      # Full history, not the default depth-1 clone. `versionCode` is derived from
+      # `git rev-list --count HEAD`, and in a shallow clone that number is always
+      # 1 — so every build claimed to be the very first, and Android would refuse
+      # to install a new APK over an older one ("app not installed"). It also
+      # makes the asset name below say 1 forever.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -218,7 +225,11 @@ jobs:
           SRC=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
           VERSION=$(node -p "require('./package.json').version")
           CODE=$(git rev-list --count HEAD)
-          OUT="FloatBet-${VERSION}.${CODE}-debug.apk"
+          # The ASSET name is fixed. Release assets are addressed by name, so a
+          # version-stamped file would mean the link changes on every build and
+          # anybody holding yesterday's link gets a 404. The version still goes in
+          # the title and the notes.
+          OUT="FloatBet-latest-debug.apk"
           cp "$SRC" "$OUT"
           echo "Publishing $OUT ($(stat -c%s "$OUT") bytes)"
 
@@ -238,7 +249,7 @@ jobs:
 
           gh release delete android-latest --yes --cleanup-tag 2>/dev/null || true
           gh release create android-latest "$OUT" \
-            --title "FloatBet Android — latest build" \
+            --title "FloatBet Android — ${VERSION}.${CODE}" \
             --notes-file notes.md
           rm -f notes.md
 
