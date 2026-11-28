@@ -59,6 +59,7 @@ export const ROUTES: Record<string, string> = {
   '/api/admin/audit': 'admin-ops?op=audit',
   '/api/admin/lookup': 'admin-ops?op=lookup',
   '/api/admin/players': 'admin-ops?op=players',
+  '/api/admin/sessions': 'admin-ops?op=sessions',
   '/api/admin/parked': 'admin-ops?op=parked',
   '/api/admin/actions': 'admin-ops?op=actions',
   '/api/support/agents': 'support?op=agents',

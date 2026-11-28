@@ -7,6 +7,7 @@
 //   GET  ?op=audit              the admin action log
 //   GET  ?op=lookup&q=          find an account
 //   GET  ?op=players[&id=]      player list, or one player's full picture
+//   GET  ?op=sessions&id=       where one player has signed in from
 //   GET  ?op=parked[&status=]   uncredited store top-ups
 //   POST ?op=actions            adjust / suspend / grant / settle cashout
 //   POST ?op=parked             release or dismiss a parked payment
@@ -603,6 +604,34 @@ function riskScore(w: Record<string, unknown> | undefined, claims: number): numb
   return score
 }
 
+/**
+ * Where one player has been signing in from.
+ *
+ * BY ID, NEVER A LIST. The database exposes `player_session_log(user_id)` and
+ * nothing fleet-wide, on purpose: the useful signal here is one account's own
+ * history — a new country, an address shared with another account — and a screen
+ * that pages through everybody's addresses is a liability with no extra insight.
+ * Every call is written to the admin audit log by `requireAdmin()`.
+ *
+ * The coordinates in the response are the DEVICE's claim, rounded to ~1 km in the
+ * database. They are shown to the operator labelled unverified, because a device
+ * can report a position it does not have; the address and country cannot be set by
+ * the client and are the part worth acting on.
+ */
+async function sessions(url: URL): Promise<Response> {
+  const id = (url.searchParams.get('id') || '').trim()
+  if (!id) return json({ error: 'id is required' }, 400)
+  if (!UUID.test(id)) return json({ error: 'invalid id' }, 400)
+
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200)
+  const { data, error } = await svc().rpc('player_session_log', {
+    p_user: id,
+    p_limit: limit,
+  })
+  if (error) return json({ error: 'could not load sessions' }, 502)
+  return json(data ?? { entries: [], shared_ip_accounts: [] })
+}
+
 async function players(url: URL): Promise<Response> {
   const id = (url.searchParams.get('id') || '').trim()
   const db = svc()
@@ -803,6 +832,7 @@ Deno.serve(async (req) => {
       if (op === 'audit') return await audit(url)
       if (op === 'lookup') return await lookup(url)
       if (op === 'players') return await players(url)
+      if (op === 'sessions') return await sessions(url)
       if (op === 'parked') return await parkedList(url)
       return json({ error: 'unknown operation' }, 400)
     }

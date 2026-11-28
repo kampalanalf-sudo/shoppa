@@ -212,6 +212,13 @@ jobs:
           # own error message — it returns a 500, a BOOT_ERROR or an HTML page.
           expect 'pay refuses an anonymous status read'        GET  "$BASE/pay?op=status&reference=smoke" 401 'not authenticated'
           expect 'admin-ops refuses an anonymous caller'       GET  "$BASE/admin-ops?op=health"           401 'not signed in'
+          # The session recorder refuses an anonymous caller with an empty body,
+          # which proves both that the module booted and that it gates on the JWT
+          # before it reads anything the caller sent.
+          expect 'session refuses an anonymous caller'         POST "$BASE/session"                     401 'not authenticated' '{}'
+          # The address of a player is never readable without an admin JWT -- and
+          # with none at all it must not even get as far as the lookup.
+          expect 'admin-ops refuses anonymous session reads'   GET  "$BASE/admin-ops?op=sessions&id=x"   401 'not signed in'
           expect 'feed-sports refuses an anonymous caller'     GET  "$BASE/feed-sports"                   401 'not authorised'
           expect 'feed-sync refuses an anonymous caller'       GET  "$BASE/feed-sync"                     401 'not authorised'
           expect 'feed-settle refuses an anonymous caller'     GET  "$BASE/feed-settle"                   401 'not authorised'

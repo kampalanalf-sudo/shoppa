@@ -99,6 +99,9 @@ jobs:
       # Float sessions. "Reduce the RTP to 65% for float sessions" is a claim
       # about money, and the three plausible implementations give 64.35%, 99% and
       # 65%. Measured per game, per outcome.
+      - name: Verify the player session record
+        run: npm run test:sessions
+
       - name: Verify the float-session RTP
         run: npm run test:floatrtp
 

@@ -624,7 +624,10 @@ export function ChatDock({ onOpenRoom }: { onOpenRoom?: () => void } = {}) {
 
 /* ------------------------------------------------------------------ Footer */
 
-export function Footer({ onSupport }: { onSupport?: () => void } = {}) {
+export function Footer({
+  onSupport,
+  onPrivacy,
+}: { onSupport?: () => void; onPrivacy?: () => void } = {}) {
   // Every support link points at the agents. They previously rendered as plain
   // buttons that did nothing, which on a betting site is worse than not offering
   // them: "Contact Us" that ignores a click reads as a company with nobody home.
@@ -635,6 +638,13 @@ export function Footer({ onSupport }: { onSupport?: () => void } = {}) {
     { title: 'Legal', items: ['Terms of Service', 'Privacy Policy', 'AML Policy', 'Provably Fair', 'Licenses'] },
   ]
   const TO_SUPPORT = new Set(['Help Center', 'Live Chat', 'Responsible Gaming', 'Self Exclusion', 'Contact Us'])
+  // The privacy page is real, so the link must be: it is the disclosure behind the
+  // session records, and a legal link that does nothing undercuts the disclosure.
+  const onItem = (item: string) => {
+    if (item === 'Privacy Policy') return onPrivacy
+    if (TO_SUPPORT.has(item) && onSupport) return onSupport
+    return undefined
+  }
   return (
     <footer className="mt-16 border-t border-white/[0.06] bg-ink-950/80">
       <div className="mx-auto max-w-[1500px] px-5 py-12">
@@ -664,7 +674,7 @@ export function Footer({ onSupport }: { onSupport?: () => void } = {}) {
                   <li key={i}>
                     <button
                       type="button"
-                      onClick={TO_SUPPORT.has(i) && onSupport ? onSupport : undefined}
+                      onClick={onItem(i)}
                       className="text-[12.5px] text-slate-500 transition hover:text-white"
                     >
                       {i}

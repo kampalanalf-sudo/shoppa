@@ -50,6 +50,9 @@ const SERVICE_KEY = readEnv('SUPABASE_SERVICE_ROLE_KEY')
 
 type User = { id: string }
 
+/** The caller's own `Authorization` header, for RPCs that read `auth.uid()`. */
+const authOf = (req: Request) => req.headers.get('Authorization') || ''
+
 async function requireUser(req: Request): Promise<User | null> {
   const auth = req.headers.get('Authorization') || ''
   if (!/^Bearer\s+\S+/i.test(auth)) return null
@@ -61,12 +64,18 @@ async function requireUser(req: Request): Promise<User | null> {
   return body?.id ? { id: body.id } : null
 }
 
-async function svc<T>(path: string, init?: { method?: string; body?: unknown }): Promise<T> {
+async function svc<T>(
+  path: string,
+  init?: { method?: string; body?: unknown; as?: string },
+): Promise<T> {
   const res = await fetch(`${SUPABASE_URL}${path}`, {
     method: init?.method || 'GET',
     headers: {
+      // `apikey` is always the service key so PostgREST is reached at all. The
+      // Authorization header decides WHO the call is: `init.as` carries the
+      // player's own JWT when a function reads `auth.uid()`.
       apikey: SERVICE_KEY,
-      Authorization: `Bearer ${SERVICE_KEY}`,
+      Authorization: `Bearer ${init?.as || SERVICE_KEY}`,
       'Content-Type': 'application/json',
     },
     body: init?.body === undefined ? undefined : JSON.stringify(init.body),
@@ -85,8 +94,20 @@ async function svc<T>(path: string, init?: { method?: string; body?: unknown }):
   return parsed as T
 }
 
-const rpc = <T,>(fn: string, args: Record<string, unknown>) =>
-  svc<T>(`/rest/v1/rpc/${fn}`, { method: 'POST', body: args })
+/**
+ * Call an RPC.
+ *
+ * `as` is the caller's JWT. It is REQUIRED for anything that reads `auth.uid()`,
+ * and `start_round` is one: it takes the player from `auth.uid()`, and under the
+ * service key `auth.uid()` is null, so the function raised "not authenticated"
+ * on every single spin. That is why the arcade could not be played at all — the
+ * round was never opened, and the player saw "Spin refused: not authenticated".
+ *
+ * Ownership is enforced by the database from that same JWT, so passing it is
+ * strictly safer than trusting a user id from the request body.
+ */
+const rpc = <T,>(fn: string, args: Record<string, unknown>, as?: string) =>
+  svc<T>(`/rest/v1/rpc/${fn}`, { method: 'POST', body: args, as })
 
 /**
  * The fraction of a winning multiplier this round pays.
@@ -195,6 +216,7 @@ async function start(req: Request, user: { id: string }): Promise<Response> {
     const started = await rpc<{ round: number; nonce: number; server_hash: string; balance: number }>(
       'start_board_round',
       { p_game: game, p_wager_px: wager, p_mines: mines, p_difficulty: difficulty },
+      authOf(req),
     )
 
     // Build the board from the same seed stream the settle step will re-derive,
@@ -232,6 +254,7 @@ async function start(req: Request, user: { id: string }): Promise<Response> {
     const started = await rpc<{ round: string; nonce: number; server_hash: string; balance: number }>(
       'start_round',
       { p_game: game, p_wager_px: wager, p_params: { slot: game } },
+      authOf(req),
     )
     // Craters carries a free-spin round; its state lives on the round row and is
     // read back at settle, never taken from the caller.
@@ -249,7 +272,7 @@ async function start(req: Request, user: { id: string }): Promise<Response> {
     p_game: game,
     p_wager_px: wager,
     p_params: params,
-  })
+  }, authOf(req))
 
   return json({ ...started, game, params })
 }

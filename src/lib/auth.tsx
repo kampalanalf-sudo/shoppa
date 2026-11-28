@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import type { Session, User } from '@supabase/supabase-js'
 import { isBackendConfigured, supabase } from './supabase'
 import { DAILY_BONUS_UGX } from './currency'
+import { forgetSessionPing, noteSession } from './session'
 
 /**
  * Where a referral code waits between signing up and having a session.
@@ -170,9 +171,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data.session?.user) void loadProfile(data.session.user.id)
     })
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, next) => {
       setSession(next)
       if (next?.user) void loadProfile(next.user.id)
+      /*
+       * The security record of where this player is signing in from.
+       *
+       * `SIGNED_IN` fires on a restored session too, which is why the ping is
+       * throttled by `noteSession` rather than fired blindly: one record per
+       * sign-in and at most one every half hour. It is deliberately not awaited
+       * and cannot fail the sign-in.
+       */
+      if (next?.user && event === 'SIGNED_IN') void noteSession('sign_in')
+      if (!next?.user) forgetSessionPing()
       else {
         setProfile(null)
         setWallet(null)
@@ -328,6 +339,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     void claimPendingReferral()
   }, [session?.user, claimPendingReferral])
 
+  /**
+   * Check the session against the auth server when the app comes back to life.
+   *
+   * `getSession()` reads localStorage and does not check expiry, so a tab left
+   * open overnight holds a dead token and every request answers 401 — which used
+   * to log the player out mid-session. Asking the server once on focus resolves
+   * it properly: a token that can still be refreshed is refreshed, and one that
+   * cannot is dropped HERE, on an explicit check, rather than as a side effect of
+   * a failed bet.
+   */
+  useEffect(() => {
+    const client = supabase
+    if (!client) return
+    const check = async () => {
+      const { data } = await client.auth.getUser()
+      if (!data?.user && session) await client.auth.signOut().catch(() => undefined)
+    }
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      void check()
+      // A returning tab is a returning session; the throttle decides whether it is
+      // time to append another entry.
+      if (session?.user) void noteSession('heartbeat')
+    }
+    window.addEventListener('focus', onVisible)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('focus', onVisible)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [session])
+
   const signInEmail = useCallback(async (email: string, password: string) => {
     if (!supabase) throw new Error('Backend is not configured.')
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password })
@@ -378,6 +421,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     if (!supabase) return
+    // Only ever by the player's own hand. A refused bet must not log anyone out:
+    // see the note in `api()` beside the 401 retry.
     await supabase.auth.signOut()
   }, [])
 
