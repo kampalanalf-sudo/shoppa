@@ -52,8 +52,25 @@ export const secrets = {
   get apiUrl() {
     return (Deno.env.get('ZENGAPAY_API_URL') || 'https://api.zengapay.com/v1').replace(/\/$/, '')
   },
+  /**
+   * The API key, under either name.
+   *
+   * The documented name is ZENGAPAY_API_TOKEN, but the ZENGAPAY dashboard calls
+   * the same value an "API key" and it is easy to store it as ZENGAPAY_API_KEY.
+   * That is exactly what happened on this project, and the only symptom was a
+   * 503 telling players mobile money was not configured while the secret sat
+   * there set under a name nothing read.
+   *
+   * Both names are accepted; the token name wins if both are present, so the
+   * documented one stays authoritative. Nothing is guessed: a missing value is
+   * still reported as missing.
+   */
   get apiToken() {
-    return (Deno.env.get('ZENGAPAY_API_TOKEN') || '').trim()
+    return (
+      Deno.env.get('ZENGAPAY_API_TOKEN') ||
+      Deno.env.get('ZENGAPAY_API_KEY') ||
+      ''
+    ).trim()
   },
   /** The "Secret Hash" from Developer Settings. Used to verify webhooks. */
   get webhookSecret() {
@@ -131,7 +148,9 @@ export function assertLiveSafety(): void {
 export function paymentReadiness(): { mode: 'live' | 'sandbox' | 'unconfigured'; blockers: string[] } {
   const blockers: string[] = []
   if (!secrets.apiToken) {
-    blockers.push('ZENGAPAY_API_TOKEN is not set, so no deposit can be requested')
+    blockers.push(
+      'ZENGAPAY_API_TOKEN is not set (nor ZENGAPAY_API_KEY), so no deposit can be requested',
+    )
   }
   if (secrets.apiToken && !/^ZPYPUBK-/i.test(secrets.apiToken)) {
     blockers.push('ZENGAPAY_API_TOKEN does not start with ZPYPUBK-, so it is probably not an API key')

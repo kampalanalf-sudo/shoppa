@@ -96,6 +96,21 @@ const withEnv = (env: Record<string, string>) => {
 }
 
 {
+  // The dashboard calls it an "API key", and storing it under that name is easy
+  // to do. It happened on this project and the symptom was a 503 while the
+  // secret sat there set under a name nothing read.
+  const restore = withEnv({
+    ZENGAPAY_API_URL: 'https://api.zengapay.com/v1',
+    ZENGAPAY_API_KEY: 'ZPYPUBK-under-the-other-name',
+    ZENGAPAY_WEBHOOK_SECRET: 'shh',
+  })
+  const r = paymentReadiness()
+  check('the key is accepted under the name the dashboard uses', r.blockers.length === 0, r.blockers.join('; '))
+  check('and that counts as live, not sandbox', r.mode === 'live')
+  restore()
+}
+
+{
   const restore = withEnv({ ZENGAPAY_API_TOKEN: 'not-a-real-key' })
   const r = paymentReadiness()
   check('a token that is not a ZPYPUBK key is called out',

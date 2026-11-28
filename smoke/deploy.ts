@@ -41,7 +41,10 @@ function walk(dir: string, out: string[] = []): string[] {
   for (const e of readdirSync(dir)) {
     const full = join(dir, e)
     if (statSync(full).isDirectory()) {
-      if (['node_modules', 'dist', '.git', 'smoke'].includes(e)) continue
+      // `.dist` is generated: scripts/build-edge-functions.mjs inlines the shared
+      // modules into supabase/.dist/, so those files necessarily contain the
+      // token name and are not source. Guarding them proves nothing.
+      if (['node_modules', 'dist', '.dist', '.git', 'smoke'].includes(e)) continue
       walk(full, out)
     } else if (/\.(ts|tsx|mjs|js)$/.test(e)) out.push(full)
   }
