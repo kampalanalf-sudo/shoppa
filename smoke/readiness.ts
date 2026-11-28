@@ -31,7 +31,8 @@ const envStore: Record<string, string> = {}
     delete: (k: string) => { delete envStore[k] },
   },
 }
-const { paymentReadiness } = await import('../supabase/functions/_shared/zengapay.ts')
+const { paymentReadiness, isIpNotPermitted, GatewayError } =
+  await import('../supabase/functions/_shared/zengapay.ts')
 
 let fail = 0
 const check = (name: string, cond: boolean, extra = '') => {
@@ -193,6 +194,102 @@ check('the minimum and the balance lock survive',
   /minimum cashout is 1,000 UGX/.test(sql17) && /for update/.test(sql17))
 check('the cashout page no longer asks for phone verification',
   !/Verify your phone number in Settings/.test(read('src/pages/Cashout.tsx')))
+
+// ------------------------------- an IP fault is not a token fault ----------
+// This cost real money and real confusion. ZENGAPAY refuses whitelisted
+// endpoints (checkout, transfers, account) from an unlisted host with HTTP 403,
+// and their body names the offending IP. We called every 403 "rejected our API
+// token", so the operator's obvious move -- rotate a perfectly good token --
+// could never have fixed it. The two have opposite fixes, so they must read
+// differently.
+{
+  const theirs =
+    'Connection refused from unauthorized IP: 81.202.241.36,  This IP is NOT ' +
+    'unauthorized to access the /account endpoint on your account. If you believe ' +
+    'this is in error, please contact support@zengapay.com'
+  check('an IP refusal is recognised', isIpNotPermitted(theirs))
+  check('a token complaint is not mistaken for an IP refusal',
+    !isIpNotPermitted('Invalid API token supplied'))
+  check('an invalid-token 401 message is not an IP refusal',
+    !isIpNotPermitted('Unauthorized: the token provided is invalid'))
+  check('an empty message is not an IP refusal', !isIpNotPermitted(''))
+
+  // The real `request` path, driven with a stubbed fetch. This is the assertion
+  // that keeps the two errors from collapsing back into one string.
+  const restore = withEnv({
+    ZENGAPAY_API_URL: 'https://api.zengapay.com/v1',
+    ZENGAPAY_API_TOKEN: 'ZPYPUBK-live-abc',
+    ZENGAPAY_WEBHOOK_SECRET: 'whsec_live',
+  })
+  const realFetch = globalThis.fetch
+  const stub = (status: number, body: unknown) => {
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })) as any
+  }
+  try {
+    const { disbursePayment } = await import('../supabase/functions/_shared/zengapay.ts')
+
+    stub(403, { code: 403, status: 'Forbidden', message: theirs })
+    let err: any = null
+    try { await disbursePayment({ amount: 1000, currency: 'UGX', phone_number: '0758443666', description: 'x', order_id: 'T1' }) }
+    catch (e) { err = e }
+    check('a 403 naming an IP becomes PROVIDER_IP_NOT_PERMITTED',
+      err instanceof GatewayError && err.code === 'PROVIDER_IP_NOT_PERMITTED', `(${err?.code})`)
+    check('and it says what to do, in the operator\'s language',
+      /whitelist/i.test(err?.message ?? '') && /Developer Settings/i.test(err?.message ?? ''))
+    check('and it keeps ZENGAPAY\'s own words, including the IP',
+      (err?.message ?? '').includes('81.202.241.36'))
+    check('and it does NOT blame the token', !/rejected our API token/i.test(err?.message ?? ''))
+
+    stub(401, { code: 401, status: 'Unauthorized', message: 'Invalid API token supplied' })
+    err = null
+    try { await disbursePayment({ amount: 1000, currency: 'UGX', phone_number: '0758443666', description: 'x', order_id: 'T2' }) }
+    catch (e) { err = e }
+    check('a 401 is still a credential fault',
+      err instanceof GatewayError && err.code === 'PAYMENT_NOT_CONFIGURED', `(${err?.code})`)
+    check('and still mentions the token', /token/i.test(err?.message ?? ''))
+  } finally {
+    globalThis.fetch = realFetch
+    restore()
+  }
+}
+
+// ------------------------------- the health screen can see a payout failure --
+// The IP probe exists so an operator does not have to find out from a player.
+{
+  const admin = read('supabase/functions/admin-ops/index.ts')
+  check('the health screen probes the payout path, not just deposits',
+    /checkIpAllowed\(\)/.test(admin) && /key: 'payouts'/.test(admin))
+  check('it names the setting to change',
+    /Developer Settings/.test(admin) && /IP Address/.test(admin))
+  check('it says deposits are unaffected, because they are',
+    /Deposits still work/.test(admin))
+  check('the probe is bounded so the screen cannot hang',
+    /timeoutMs: 8_000/.test(read('supabase/functions/_shared/zengapay.ts')))
+}
+
+// ------------------------------- a refused payout must not keep the money ---
+// request_cashout moves the amount out of the balance into a hold BEFORE the
+// provider is asked. If the provider then refuses, nothing gave it back: the
+// cashout sat at `requested` forever and the player was short with no
+// explanation. This is what an un-whitelisted IP did in production.
+{
+  const cashout = read('src/pages/Cashout.tsx')
+  check('a failed payout releases the hold it created',
+    /cancel_cashout/.test(cashout) && /held/.test(cashout))
+  check('the player is told the balance was restored',
+    /balance has been restored/.test(cashout))
+
+  const sql18 = read('supabase/migrations/0018_cancel_cashout.sql')
+    .split('\n').map((l: string) => l.replace(/--.*$/, '')).join('\n')
+  check('cancel_cashout refunds through settle_cashout, not a second money path',
+    /perform settle_cashout\(/.test(sql18))
+  check('it is limited to the caller\'s own cashout',
+    /v_co\.user_id <> v_uid/.test(sql18))
+  check('it cannot cancel a payout the provider already accepted',
+    /v_co\.status <> 'requested'/.test(sql18))
+  check('it is not callable by anon', /revoke all on function public\.cancel_cashout\(uuid\) from anon/.test(sql18))
+}
 
 // ------------------------------------------------------- the env is honest --
 const env = read('.env.example')
