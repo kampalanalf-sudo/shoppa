@@ -6,6 +6,16 @@ name: Build Android APK
 #
 # The APK embeds the web build, so it is NOT auto-updating. A new web deploy
 # does not reach installed apps; rebuild and republish.
+#
+# WHERE TO DOWNLOAD IT
+#
+#   https://github.com/kampalanalf-sudo/shoppa/releases/tag/android-latest
+#
+# A build on `main` publishes the debug APK to that release (a stable tag, moved
+# forward each time) as well as to Actions. Actions artifacts need a signed-in
+# GitHub session and expire after 30 days; a release asset is a plain link that
+# works on a phone and never rots. The release is deleted and re-created, so its
+# URL is permanently the same.
 
 on:
   push:
@@ -28,7 +38,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  # `contents: write` is for the android-latest release asset only. Everything
+  # else in this workflow only reads the repo.
+  contents: write
 
 concurrency:
   group: android-${{ github.ref }}
@@ -184,3 +196,51 @@ jobs:
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
+
+      # ------------------------------------------------------------------------
+      # Publish a link people can actually open.
+      #
+      # The artifact above is for CI forensics: downloading it needs a GitHub
+      # login, and it is gone in 30 days. A player who asks "where is the APK"
+      # needs a URL that opens on a phone with nothing signed in.
+      #
+      # Runs only on main, so a pull request cannot overwrite the download with a
+      # half-finished build. The tag `android-latest` is deliberately reused: the
+      # release is deleted first, so the link stays the same forever.
+      # ------------------------------------------------------------------------
+      - name: Publish the download link
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          SRC=$(ls android/app/build/outputs/apk/debug/*.apk | head -1)
+          VERSION=$(node -p "require('./package.json').version")
+          CODE=$(git rev-list --count HEAD)
+          OUT="FloatBet-${VERSION}.${CODE}-debug.apk"
+          cp "$SRC" "$OUT"
+          echo "Publishing $OUT ($(stat -c%s "$OUT") bytes)"
+
+          cat > notes.md <<NOTES
+          Installable Android build of FloatBet, from commit ${SHA}.
+
+          Download the .apk under Assets below, then open it on the phone. Android
+          will warn about an unknown source - allow it for this file.
+
+          The APK embeds the web app, so it does not auto-update. This page always
+          carries the newest build.
+
+          Permissions it asks for: mobile-money SMS (to notice a deposit early),
+          location (a country check for the payment rail), notifications, and
+          camera for support attachments. It never sends a text.
+          NOTES
+
+          gh release delete android-latest --yes --cleanup-tag 2>/dev/null || true
+          gh release create android-latest "$OUT" \
+            --title "FloatBet Android — latest build" \
+            --notes-file notes.md
+          rm -f notes.md
+
+          echo "### Download" >> "$GITHUB_STEP_SUMMARY"
+          echo "https://github.com/${GITHUB_REPOSITORY}/releases/tag/android-latest" >> "$GITHUB_STEP_SUMMARY"
