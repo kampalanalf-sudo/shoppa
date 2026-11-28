@@ -15,7 +15,9 @@ import { SetPassword } from './pages/SetPassword'
 import { Sportsbook } from './pages/Sportsbook'
 import { Cashout } from './pages/Cashout'
 import { ChatRoom } from './components/ChatRoom'
-import { TopUpPanel } from './components/TopUpPanel'
+import { Deposit } from './pages/Deposit'
+import { Float } from './pages/Float'
+import { FloatMe } from './pages/FloatMe'
 import { TopUpSuccess } from './pages/TopUpSuccess'
 import { AdminParked } from './pages/AdminParked'
 import { AdminPlayers } from './pages/AdminPlayers'
@@ -46,6 +48,9 @@ type View =
   | { name: 'set-password' }
   | { name: 'sportsbook' }
   | { name: 'support' }
+  | { name: 'deposit' }
+  | { name: 'float' }
+  | { name: 'float-me'; code: string }
   | { name: 'topup-success'; reference: string | null; sessionId: string | null }
   | { name: 'admin-parked' }
   | { name: 'admin-players' }
@@ -58,7 +63,19 @@ function Shell() {
   const [view, setView] = useState<View>({ name: 'home' })
   const [search, setSearch] = useState(false)
   const [roomOpen, setRoomOpen] = useState(false)
-  const [topUpOpen, setTopUpOpen] = useState(false)
+  // The deposit screen is a page, not a modal. A modal cannot be linked to, and
+  // a "Float Me" link has to open the sponsor's deposit page directly.
+  const openDeposit = useCallback(() => {
+    setView({ name: 'deposit' })
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+    try { window.history.replaceState(null, '', '#deposit') } catch { /* noop */ }
+  }, [])
+
+  const openFloat = useCallback(() => {
+    setView({ name: 'float' })
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
+    try { window.history.replaceState(null, '', '#float') } catch { /* noop */ }
+  }, [])
 
   useEffect(() => setSoundEnabled(sound), [sound])
 
@@ -89,6 +106,21 @@ function Shell() {
       const h = raw.split(/[?&]/)[0].replace(/\/$/, '')
       if (h === 'proxicash') { setView({ name: 'proxicash' }); return }
       if (h === 'cashout') { setView({ name: 'cashout' }); return }
+      // Deposit: the number is the account's own, so this needs a session.
+      if (h === 'deposit' || h === 'topup') { setView({ name: 'deposit' }); return }
+      if (h === 'float' || h === 'credit') { setView({ name: 'float' }); return }
+      /*
+       * "Float Me": the PUBLIC sponsor page.
+       *
+       * It must render before the signed-in guard below, because the person who
+       * pays for a friend's deposit usually has no account. The code is in the
+       * query string, so the link can be opened cold from WhatsApp.
+       */
+      if (h === 'float-me') {
+        const qs = new URLSearchParams(raw.split('?')[1] || '')
+        setView({ name: 'float-me', code: qs.get('code') || '' })
+        return
+      }
       // Sports needs an account: a slip is attached to a wallet.
       if (h === 'sports' || h === 'sportsbook') { setView({ name: 'sportsbook' }); return }
       if (h === 'support' || h === 'help' || h === 'care') { setView({ name: 'support' }); return }
@@ -143,15 +175,6 @@ function Shell() {
     setView({ name: 'sportsbook' })
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior })
     try { window.history.replaceState(null, '', '#sports') } catch { /* noop */ }
-  }, [])
-
-  const openSuccess = useCallback((reference: string | null) => {
-    setView({ name: 'topup-success', reference, sessionId: null })
-    try {
-      window.history.replaceState(
-        null, '', reference ? `#topup-success?reference=${encodeURIComponent(reference)}` : '#topup-success',
-      )
-    } catch { /* noop */ }
   }, [])
 
   /**
@@ -216,6 +239,15 @@ function Shell() {
       )
     }
     if (!user) {
+      // The sponsor page is the one screen that must work without an account.
+      if (view.name === 'float-me') {
+        return (
+          <>
+            <FloatMe code={view.code} onHome={home} />
+            <Toasts />
+          </>
+        )
+      }
       return (
         <>
           <Header view="home" onNavigate={() => {}} onSearch={() => {}} />
@@ -256,7 +288,7 @@ function Shell() {
                 : v === 'cashout'
                   ? openCashout()
                   : v === 'topup'
-                    ? setTopUpOpen(true)
+                    ? openDeposit()
                     : home()
         }
         onSearch={() => setSearch(true)}
@@ -286,6 +318,9 @@ function Shell() {
         {current === 'roulette' && <Roulette {...shared} />}
         {isProxiCash && <ProxiCash onBack={home} />}
         {view.name === 'cashout' && <Cashout onBack={home} />}
+        {view.name === 'deposit' && <Deposit onBack={home} onOpenFloat={openFloat} />}
+        {view.name === 'float' && <Float onBack={home} onDeposit={openDeposit} />}
+        {view.name === 'float-me' && <FloatMe code={view.code} onHome={home} />}
         {view.name === 'auth' && <Auth onDone={home} />}
         {view.name === 'set-password' && <SetPassword onDone={home} />}
         {view.name === 'sportsbook' && <Sportsbook onBack={home} />}
@@ -299,10 +334,11 @@ function Shell() {
             reference={view.reference}
             sessionId={view.sessionId}
             onHome={home}
-            onTopUpAgain={() => { home(); setTopUpOpen(true) }}
+            onTopUpAgain={() => { home(); openDeposit() }}
           />
         )}
-        {!current && !isProxiCash && view.name !== 'sportsbook' && view.name !== 'support' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} onSports={openSportsbook} />}
+        {!current && !isProxiCash && view.name !== 'sportsbook' && view.name !== 'support'
+          && view.name !== 'deposit' && view.name !== 'float' && view.name !== 'float-me' && <Home onPlay={play} onSearch={() => setSearch(true)} onFair={() => setFairOpen(true)} onProxiCash={openProxiCash} onSports={openSportsbook} />}
       </main>
 
       {/* On every page a player can reach, including sign-in: someone who
@@ -331,18 +367,12 @@ function Shell() {
                 : v === 'cashout'
                   ? openCashout()
                   : v === 'topup'
-                    ? setTopUpOpen(true)
+                    ? openDeposit()
                     : home()
         }
       />
       <ChatDock onOpenRoom={() => setRoomOpen(true)} />
       {roomOpen && <ChatRoom onClose={() => setRoomOpen(false)} />}
-      {topUpOpen && (
-        <TopUpPanel
-          onClose={() => setTopUpOpen(false)}
-          onStarted={(ref) => { setTopUpOpen(false); openSuccess(ref) }}
-        />
-      )}
       <WinFlash />
       <InstallPrompt />
       <Toasts />

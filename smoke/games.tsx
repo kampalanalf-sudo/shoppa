@@ -164,9 +164,11 @@ const ok = (name: string, cond: boolean, extra = '') => {
   console.log(`${cond ? 'ok  ' : 'FAIL'} ${name}${extra ? ` — ${extra}` : ''}`)
 }
 
-// The refusal's own words. Kept in step with store.tsx: the message must name
-// the game as a demo and name the way out, so this matches exactly that.
-const REFUSAL = /demo slot|settles on the device|settled in your browser/i
+// The words a paid press must never produce. Every game is server-settled, so
+// any refusal on a real press is a bug, whatever it says. This matches the
+// guard's current copy in store.tsx plus the old demo wording, so a regression
+// that reintroduces either one is caught.
+const REFUSAL = /cannot be settled right now|demo slot|settled in your browser/i
 const SWITCH_LABEL = /^Play .* on Free play$/i
 const text = () => (w.document.body.textContent ?? '').replace(/\s+/g, ' ').trim()
 

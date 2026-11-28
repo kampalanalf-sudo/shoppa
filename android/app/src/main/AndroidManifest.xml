@@ -35,7 +35,50 @@
         </provider>
     </application>
 
-    <!-- Permissions -->
+    <!--
+      PERMISSIONS
+
+      Each one below is used by something in the app. A declared permission that
+      nothing reads is a permission we asked a player for and then wasted, and on
+      Play it is a data-safety declaration that does not match the code.
+
+        INTERNET / ACCESS_NETWORK_STATE   the app is a web app; both are needed.
+        READ_SMS + RECEIVE_SMS            mobile-money confirmations, so a deposit
+                                          is noticed the moment the network says it
+                                          landed. Never used to send, never
+                                          uploaded (NativeBridge.recentSms).
+        ACCESS_FINE/COARSE_LOCATION       a coarse country check for the payment
+                                          rail, from the LAST KNOWN fix only —
+                                          no tracking, no background access.
+        POST_NOTIFICATIONS                Android 13+ needs it for anything to be
+                                          shown in the tray at all.
+        VIBRATE                           the game feedback the web layer asks for.
+        CAMERA                            taking a picture for support / KYC.
+        READ_MEDIA_IMAGES                 attaching that picture on Android 13+.
+
+      DELIBERATELY ABSENT: SEND_SMS (the app must never send a text, because a
+      premium-rate text is how this class of permission gets abused), READ_CONTACTS,
+      READ_CALL_LOG, ACCESS_BACKGROUND_LOCATION, and any storage permission wider
+      than the photo picker.
+    -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <uses-permission android:name="android.permission.READ_SMS" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+
+    <!-- Location is used for a country check, not navigation, so the coarse fix is
+         enough and the app does not need the hardware to be present. -->
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
 </manifest>

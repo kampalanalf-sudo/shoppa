@@ -24,6 +24,7 @@ type NavView =
   | 'sportsbook'
   | 'auth'
   | 'topup'
+  | 'float'
 
 type HeaderProps = {
   view: NavView
@@ -141,12 +142,19 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
             >
               {balanceHidden ? <IconEyeOff size={14} /> : <IconEye size={14} />}
             </button>
+            {/*
+              * Deposit, always one press away.
+              *
+              * It used to be reachable only through the wallet sheet, which is a
+              * balance readout — a player looking for "add money" had to guess
+              * that the balance itself was the button.
+              */}
             <button
               type="button"
-              onClick={() => setWalletOpen(true)}
+              onClick={() => onNavigate('topup')}
               className="flex items-center gap-1 bg-gradient-to-b from-neon-green to-[#8fdc1f] px-3 text-[12.5px] font-extrabold text-ink-950 transition hover:brightness-105"
             >
-              <IconWallet size={15} /> <span className="hidden sm:inline">Wallet</span>
+              <IconBolt size={15} /> <span className="hidden sm:inline">Deposit</span>
             </button>
           </div>
 
@@ -192,6 +200,12 @@ export function Header({ view, onNavigate, onSearch }: HeaderProps) {
                   )}
                 </div>
                 <MenuItem icon={<IconHistory size={15} />} onClick={() => { setHistoryOpen(true); setAccountOpen(false) }}>Bet history</MenuItem>
+                {/* Float is a credit line, so it belongs with the money items and
+                    not in a promo slot: a player should be able to find the terms
+                    again after they have borrowed. */}
+                <MenuItem icon={<IconBolt size={15} />} onClick={() => { setAccountOpen(false); onNavigate('float') }}>
+                  Float — borrow credit
+                </MenuItem>
                 {configured && (
                   <MenuItem icon={<IconUser size={15} />} onClick={() => { setAccountOpen(false); onNavigate('sportsbook') }}>
                     Sports book
@@ -677,7 +691,7 @@ export function BottomBar({ view, onNavigate }: { view: NavView; onNavigate: Hea
     { label: 'Home', icon: <IconHome size={19} />, onClick: () => onNavigate('home'), active: view === 'home' },
     { label: 'Wallet', icon: <IconWallet size={19} />, onClick: () => setWalletOpen(true) },
     { label: 'Top up', icon: <IconBolt size={19} />, onClick: () => onNavigate('topup'), active: view === 'topup' },
-    { label: 'Sports', icon: <IconBall size={19} />, onClick: () => onNavigate('sportsbook'), active: view === 'sportsbook' },
+    { label: 'Float', icon: <IconBolt size={19} />, onClick: () => onNavigate('float'), active: view === 'float' },
     { label: 'Cash out', icon: <IconWallet size={19} />, onClick: () => onNavigate('cashout'), active: view === 'cashout' },
   ]
   return (

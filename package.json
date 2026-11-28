@@ -43,7 +43,8 @@
     "test:settle": "vite build --config smoke/vite.settle.config.ts && node smoke/dist-settle/settle.js",
     "test:board": "npm run edge:build && vite build --config smoke/vite.board.config.ts && node smoke/dist-board/board.js",
     "test:games": "vite build --config smoke/vite.games.config.ts && node smoke/dist-games/games.js",
-    "test:slotvalue": "node scripts/gen-slot-configs.mjs && npm run edge:build && node scripts/slot-value-check.mjs"
+    "test:slotvalue": "node scripts/gen-slot-configs.mjs && npm run edge:build && node scripts/slot-value-check.mjs",
+    "test:float": "vite build --config smoke/vite.float.config.ts && node smoke/dist-float/float.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.6.2",

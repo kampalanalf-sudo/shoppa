@@ -158,7 +158,10 @@ ok('no default ETH withdrawal address survives', !/0x7f9A2c4B15eD8a3Ff61b0C9e2D4
 // printer, and it duplicated the real server-side daily bonus.
 ok('the hardcoded rewards hub is gone', !/REWARDS\b/.test(modals))
 ok('and so is its entry in the store', !/rewardsOpen/.test(storeSrc))
-ok('the wallet sends players to the real payment flow', /#topup/.test(modals))
+// The route moved from a modal (#topup) to a page (#deposit) so a "Float Me"
+// link can open it cold. What matters is unchanged: the wallet hands the player
+// to the real payment flow and never credits a balance itself.
+ok('the wallet sends players to the real payment flow', /#deposit/.test(modals))
 
 // The one thing that IS allowed to credit a balance is the payment webhook,
 // through the RPC the database owns.
