@@ -235,10 +235,34 @@ type RawCollection = {
   error?: unknown
 }
 
-async function request(path: string, init?: { method?: string; body?: unknown }): Promise<Record<string, unknown>> {
+/**
+ * Does this provider error mean "your IP is not on the allow-list"?
+ *
+ * ZENGAPAY answers those with HTTP 403 and a body naming the rejected address:
+ *
+ *   "Connection refused from unauthorized IP: 81.202.241.36, This IP is NOT
+ *    unauthorized to access the /account endpoint on your account."
+ *
+ * Note their own typo ("NOT unauthorized"). Matching the phrasing we have seen
+ * in their docs and in production, rather than the status code alone, is what
+ * lets a real token failure stay a token failure. Checkout, transfers and
+ * account reads are whitelisted; collections are not, which is why deposits can
+ * keep working while payouts are refused.
+ */
+export function isIpNotPermitted(message: string): boolean {
+  return (
+    /\bIP\b/i.test(message) &&
+    /(not\s+(permitted|unauthorized|allowed|whitelisted)|unauthorized\s+IP|connection\s+refused)/i.test(message)
+  )
+}
+
+async function request(
+  path: string,
+  init?: { method?: string; body?: unknown; timeoutMs?: number },
+): Promise<Record<string, unknown>> {
   const token = requireApiToken()
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 25_000)
+  const timeout = setTimeout(() => controller.abort(), init?.timeoutMs ?? 25_000)
   try {
     const res = await fetch(`${secrets.apiUrl}${path}`, {
       method: init?.method || 'GET',
@@ -254,13 +278,34 @@ async function request(path: string, init?: { method?: string; body?: unknown })
     const json = (await res.json().catch(() => null)) as RawCollection | null
 
     if (!res.ok) {
-      // 401/403 is a configuration fault, not an outage: the token is wrong for
-      // this environment. Say so, because the operator response is different.
-      const authy = res.status === 401 || res.status === 403
       const message =
         (typeof json?.message === 'string' && json.message) ||
         (json?.error !== undefined && typeof json.error === 'string' ? json.error : '') ||
         `ZENGAPAY returned HTTP ${res.status}`
+
+      // A 403 means two completely different things, and the operator response
+      // to each is the opposite of the other. Telling them apart matters more
+      // than the status code:
+      //
+      //   bad token      -> regenerate the token in the dashboard
+      //   IP not allowed -> add this host's IP in Settings -> Developer Settings
+      //
+      // This used to call both "rejected our API token", so a whitelisting
+      // problem read as a credential problem. Someone could rotate a perfectly
+      // good token, still fail, and have no idea why. ZENGAPAY's own message
+      // names the offending IP; we keep it verbatim.
+      if (isIpNotPermitted(message)) {
+        throw new GatewayError(
+          `ZENGAPAY refused this server's IP address. ${message} ` +
+            'Add this IP to the whitelist in the ZENGAPAY dashboard ' +
+            '(Settings -> Developer Settings -> IP Address(es)), then save.',
+          'PROVIDER_IP_NOT_PERMITTED',
+          503,
+        )
+      }
+      // 401, and a 403 that is not about IPs, is a credential fault: the token
+      // is wrong for this environment. That is configuration, not an outage.
+      const authy = res.status === 401 || res.status === 403
       throw new GatewayError(
         authy ? `ZENGAPAY rejected our API token. ${message}` : message,
         authy ? 'PAYMENT_NOT_CONFIGURED' : res.status === 429 ? 'PROVIDER_RATE_LIMITED' : 'PROVIDER_ERROR',
@@ -378,6 +423,44 @@ export async function disbursePayment(payload: CollectPayload): Promise<Transact
     direction: 'disburse',
     amount: payload.amount,
     currency: 'UGX',
+  }
+}
+
+/**
+ * One read-only call the operator can make to prove their IP is allowed.
+ *
+ * Both problems here look identical from inside the app — every payout fails —
+ * but they have opposite fixes. This turns the guess into a fact:
+ *
+ *   { allowed: true }                        -> the IP is on the list
+ *   { allowed: false, ip, code, detail }     -> it is not, and here is the IP
+ *
+ * `GET /account` is whitelisted exactly like `/transfers`, so a pass here is
+ * real evidence that a payout will not be refused for this reason. It moves no
+ * money: it is a balance read. A missing token is reported as such rather than
+ * silently passing.
+ */
+export async function checkIpAllowed(): Promise<{
+  allowed: boolean
+  code?: string
+  ip?: string | null
+  detail?: string
+}> {
+  if (!secrets.apiToken) return { allowed: false, code: 'NOT_CONFIGURED', detail: 'no API token is set' }
+  try {
+    // Short: this runs on the admin health screen, which must not hang for 25s
+    // to tell an operator something it could say in three.
+    await request('/account', { timeoutMs: 8_000 })
+    return { allowed: true, ip: null }
+  } catch (e) {
+    const err = e as GatewayError
+    if (err.code !== 'PROVIDER_IP_NOT_PERMITTED') {
+      // Reachable and authorised, so the IP is fine; something else is wrong and
+      // the caller will see that in the payments check.
+      return { allowed: true, ip: null }
+    }
+    const named = /([0-9a-f:.]+)\s*(?:,|$|\s)/i.exec(err.message.replace(/^[^:]*IP:[^0-9a-f]*/i, ''))
+    return { allowed: false, code: err.code, ip: named?.[1] ?? null, detail: err.message }
   }
 }
 

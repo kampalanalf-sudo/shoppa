@@ -285,10 +285,28 @@ and vice versa.
 |---|---|
 | **Allowed IPs** | Supabase's egress IPs |
 
-**Transfers (payouts) require the calling IP to be whitelisted.** Collections do
-not. If top-ups work and every withdrawal fails with `401`/`403`, this is why —
-not the token. Check the current egress address in the Supabase dashboard; it is
-not stable across all plans, so re-check after any platform network change.
+**Transfers (payouts), hosted checkout and account reads require the calling IP
+to be whitelisted. Collections do not.** That asymmetry is what makes this fault
+confusing: top-ups keep working perfectly while every withdrawal is refused.
+
+The error looks like a credential problem and is not:
+
+```
+Connection refused from unauthorized IP: 2a05:d01c:76e:790b:... ,
+This IP is NOT unauthorized to access the /transfers endpoint on your account.
+```
+
+Note ZENGAPAY's own wording ("NOT unauthorized"). **The fix is not a new
+token** — rotating a working token changes nothing. Add the address the message
+names to *Settings → Developer Settings → IP Address(es)*, comma-separated, and
+save. The admin health screen reads `/v1/account` (whitelisted identically to
+`/v1/transfers`) and reports the result as **Withdrawals (payout IP whitelist)**,
+so you can confirm the fix without attempting a real payout.
+
+Supabase egress addresses are not stable across all plans, and this project has
+already been refused once — **re-check after any platform network change.** A
+deposit succeeding is not evidence that the IP is allowed, because collections
+are not whitelisted.
 
 ### 3d. No store product, no per-product email matching
 

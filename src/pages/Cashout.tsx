@@ -83,6 +83,8 @@ export function Cashout({ onBack }: { onBack: () => void }) {
     }
 
     setBusy(true)
+    // The id of the hold this attempt created, if any. Needed in `catch`.
+    let held: string | null = null
     try {
       // 1. move the money out of the spendable balance into a hold
       const { data, error: rpcErr } = await supabase.rpc('request_cashout', {
@@ -94,6 +96,7 @@ export function Cashout({ onBack }: { onBack: () => void }) {
         p_address: tab === 'crypto' ? address.trim() : null,
       })
       if (rpcErr) throw new Error(rpcErr.message)
+      held = String(data)
 
       // 2. move the money. Mobile money goes through our server route, which
       //    holds the ZENGAPAY token; crypto stays on the ProxiCash desk.
@@ -118,7 +121,28 @@ export function Cashout({ onBack }: { onBack: () => void }) {
       sfx.win()
       setNotice(res.message || 'Payout submitted.')
     } catch (e) {
-      setError((e as Error).message)
+      // The hold was taken before the provider was asked. If the provider then
+      // refused, that money is sitting in a `requested` cashout that no payout
+      // will ever arrive for — the player's balance is short and there is
+      // nothing on screen to explain it. Put it back and say so.
+      //
+      // This is exactly what an un-whitelisted IP produces: request_cashout
+      // succeeds, the transfer 403s, and the balance drops by the amount with
+      // no payout. Refunding keeps a configuration fault from costing a player
+      // money. A cashout the provider *accepted* is untouched — that one is
+      // `pending_provider` and settles normally.
+      let refunded = false
+      if (held) {
+        const { error: cancelErr } = await supabase.rpc('cancel_cashout', { p_cashout: held })
+        refunded = !cancelErr
+        if (cancelErr) console.error('could not release cashout hold', cancelErr.message)
+      }
+      const reason = (e as Error).message
+      setError(
+        refunded
+          ? `${reason} Nothing was paid out and your balance has been restored.`
+          : reason,
+      )
       await refreshWallet()
       await loadedRows()
     } finally {

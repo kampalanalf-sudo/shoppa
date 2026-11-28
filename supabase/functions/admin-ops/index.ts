@@ -25,6 +25,7 @@ import { CORS, json, readEnv } from '../_shared/http.ts'
 import { createClient } from 'npm:@supabase/supabase-js@2.45.4'
 import {
   GatewayError, disbursePayment, normalizePhone, assertLiveSafety, paymentReadiness,
+  checkIpAllowed,
 } from '../_shared/zengapay.ts'
 
 /** Env var, trimmed. Missing becomes '' and never the string "undefined". */
@@ -291,6 +292,33 @@ async function health(): Promise<Response> {
         ? `live, ${p.mode} — collections and checkouts enabled`
         : p.blockers.join('; '),
     })
+  }
+
+  // ------------------------------------------------ can we actually pay OUT --
+  // Deposits and payouts fail differently, and only one of them was checked.
+  // ZENGAPAY whitelists transfers and checkout by IP but not collections, so
+  // this platform took two real deposits while every withdrawal was refused
+  // with "Connection refused from unauthorized host". Nothing on screen said
+  // so: the first sign was a player asking where their money went.
+  //
+  // A read of /account is whitelisted exactly like /transfers, so this is a
+  // real answer rather than an inference. Skipped when there is no token at
+  // all, because the payments check already reports that.
+  {
+    const p = paymentReadiness()
+    if (!p.blockers.some((b) => /API_TOKEN is not set/.test(b))) {
+      const ip = await checkIpAllowed()
+      checks.push({
+        key: 'payouts',
+        label: 'Withdrawals (payout IP whitelist)',
+        state: ip.allowed ? 'ok' : 'bad',
+        detail: ip.allowed
+          ? 'this server\'s IP is whitelisted for transfers'
+          : `ZENGAPAY refuses this server${ip.ip ? ` (${ip.ip})` : ''}. ` +
+            'Add that IP in Settings -> Developer Settings -> IP Address(es). ' +
+            'Deposits still work; payouts will fail until it is added.',
+      })
+    }
   }
 
   return json({ checks, overall: worst, checked_at: new Date(now).toISOString() })
